@@ -1,0 +1,5 @@
+{
+  "name": "Prototype Studio",
+  "description": "Electron editor for SS14 prototypes, components and RSI sprites.",
+  "requestFramePermissions": []
+}
