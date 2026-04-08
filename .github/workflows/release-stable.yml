@@ -51,7 +51,9 @@ jobs:
           generate_release_notes: ${{ inputs.release_notes == '' }}
           body: ${{ inputs.release_notes }}
           fail_on_unmatched_files: true
+          overwrite_files: true
           files: |
-            release/*.exe
-            release/*.blockmap
+            release/SS14-Studio-Setup-${{ steps.package.outputs.version }}.exe
+            release/SS14-Studio-Setup-${{ steps.package.outputs.version }}.exe.blockmap
+            release/SS14-Studio-Portable-${{ steps.package.outputs.version }}.exe
             release/latest.yml
