@@ -16,6 +16,7 @@ let updateState = {
   progress: null,
   downloadedVersion: null,
 };
+let splashWindow = null;
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -26,11 +27,28 @@ function createWindow() {
     frame: false,
     titleBarStyle: "hidden",
     backgroundColor: "#0a0a0a",
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+
+  if (!process.env.ELECTRON_RENDERER_URL) {
+    splashWindow = createSplashWindow();
+  }
+
+  const finishShow = () => {
+    if (!win.isDestroyed()) win.show();
+    if (splashWindow && !splashWindow.isDestroyed()) splashWindow.close();
+    splashWindow = null;
+  };
+
+  win.once("ready-to-show", finishShow);
+  win.on("closed", () => {
+    if (splashWindow && !splashWindow.isDestroyed()) splashWindow.close();
+    splashWindow = null;
   });
 
   const rendererUrl = process.env.ELECTRON_RENDERER_URL;
@@ -47,6 +65,159 @@ function createWindow() {
   }
 
   win.loadURL("http://127.0.0.1:3000");
+}
+
+function createSplashWindow() {
+  const splash = new BrowserWindow({
+    width: 640,
+    height: 360,
+    frame: false,
+    transparent: false,
+    resizable: false,
+    movable: true,
+    minimizable: false,
+    maximizable: false,
+    alwaysOnTop: true,
+    center: true,
+    show: true,
+    backgroundColor: "#090909",
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  splash.loadURL(`data:text/html;charset=UTF-8,${encodeURIComponent(renderSplashHtml())}`);
+  return splash;
+}
+
+function renderSplashHtml() {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SS14 Studio</title>
+    <style>
+      html, body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at top, rgba(37,99,235,0.16), transparent 36%),
+          radial-gradient(circle at bottom right, rgba(16,185,129,0.1), transparent 28%),
+          #090909;
+        color: #e5e5e5;
+        font-family: "Segoe UI", system-ui, sans-serif;
+      }
+      .shell {
+        display: grid;
+        place-items: center;
+        width: 100%;
+        height: 100%;
+        padding: 24px;
+        box-sizing: border-box;
+      }
+      .card {
+        position: relative;
+        overflow: hidden;
+        width: min(560px, 100%);
+        border-radius: 24px;
+        border: 1px solid #262626;
+        background: linear-gradient(180deg, rgba(10,10,10,0.98), rgba(18,18,18,0.92));
+        box-shadow: 0 24px 70px rgba(0,0,0,0.48);
+        padding: 28px;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid #2b2b2b;
+        border-radius: 999px;
+        padding: 6px 12px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #93c5fd;
+        background: rgba(17,24,39,0.72);
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 84px minmax(0, 1fr);
+        gap: 16px;
+        align-items: center;
+        margin-top: 18px;
+      }
+      .orbit {
+        position: relative;
+        width: 72px;
+        height: 72px;
+        border-radius: 999px;
+        border: 1px solid rgba(96,165,250,0.2);
+        background: radial-gradient(circle, rgba(59,130,246,0.18), rgba(59,130,246,0.03) 58%, transparent 60%);
+      }
+      .orbit span {
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        border: 1px solid rgba(96,165,250,0.18);
+        animation: ring 1.6s ease-in-out infinite;
+      }
+      .orbit span:nth-child(2) { inset: 8px; animation-delay: 0.2s; }
+      .orbit span:nth-child(3) { inset: 16px; animation-delay: 0.4s; }
+      h1 {
+        margin: 0;
+        font-size: 28px;
+        line-height: 1.1;
+        letter-spacing: -0.03em;
+      }
+      p {
+        margin: 10px 0 0;
+        color: #9ca3af;
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      .dots {
+        display: flex;
+        gap: 6px;
+        margin-top: 18px;
+      }
+      .dots span {
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: #60a5fa;
+        opacity: 0.35;
+        animation: dot 0.95s ease-in-out infinite;
+      }
+      .dots span:nth-child(2) { animation-delay: 0.12s; }
+      .dots span:nth-child(3) { animation-delay: 0.24s; }
+      @keyframes ring {
+        0%,100% { transform: scale(0.92); opacity: 0.55; }
+        50% { transform: scale(1.08); opacity: 1; }
+      }
+      @keyframes dot {
+        0%,100% { transform: translateY(0); opacity: 0.35; }
+        50% { transform: translateY(-5px); opacity: 1; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="card">
+        <div class="badge">SS14 Studio</div>
+        <div class="row">
+          <div class="orbit"><span></span><span></span><span></span></div>
+          <div>
+            <h1>Loading application</h1>
+            <p>Preparing the editor, UI bundle and local project services.</p>
+            <div class="dots"><span></span><span></span><span></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>`;
 }
 
 ipcMain.handle("project:select", async () => {

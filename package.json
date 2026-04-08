@@ -1,7 +1,7 @@
 {
   "name": "ss14-studio",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Desktop studio for SS14 prototypes, RSI sprites and project resources.",
   "license": "AGPL-3.0-or-later",
   "author": "darvin7531",
@@ -23,6 +23,7 @@
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "clsx": "^2.1.1",
+    "electron-updater": "^6.6.2",
     "lucide-react": "^0.546.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -39,7 +40,6 @@
     "cross-env": "^7.0.3",
     "electron": "^41.2.0",
     "electron-builder": "^26.0.12",
-    "electron-updater": "^6.6.2",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
