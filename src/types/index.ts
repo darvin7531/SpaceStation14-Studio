@@ -220,6 +220,14 @@ export interface UpdateState {
   downloadedVersion?: string | null;
 }
 
+export interface AppInfo {
+  name: string;
+  version: string;
+  author: string;
+  license: string;
+  repositoryUrl: string;
+}
+
 declare global {
   interface Window {
     prototypeStudio: {
@@ -248,6 +256,8 @@ declare global {
       checkForUpdates: () => Promise<UpdateState>;
       installUpdate: () => Promise<boolean>;
       onUpdateStatus: (callback: (status: UpdateState) => void) => () => void;
+      getAppInfo: () => Promise<AppInfo>;
+      openExternal: (url: string) => Promise<boolean>;
       saveWorkspaceUiState: (patch: { selectedPrototypeId?: string | null; searchQuery?: string; lastProjectRoot?: string }) => Promise<void>;
       minimizeWindow: () => Promise<void>;
       toggleMaximizeWindow: () => Promise<void>;

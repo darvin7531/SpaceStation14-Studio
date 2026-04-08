@@ -1,6 +1,7 @@
 import { MouseEvent } from 'react';
 import { ValidationIssue } from '../types';
 import { navigateToIssue, openPrototypeByKey, openRsiByPath } from '../services/navigation';
+import { useI18n } from '../i18n';
 
 interface Props {
   issue: ValidationIssue;
@@ -8,6 +9,7 @@ interface Props {
 }
 
 export default function IssueCard({ issue, compact = false }: Props) {
+  const { t } = useI18n();
   const canOpenPrototype = Boolean(issue.prototypeKey);
   const canOpenRsi = Boolean(issue.rsiPath);
 
@@ -36,9 +38,9 @@ export default function IssueCard({ issue, compact = false }: Props) {
         <div className="min-w-0">
           <div>
             <span className={issue.level === 'error' ? 'text-red-400' : issue.level === 'warning' ? 'text-yellow-400' : 'text-blue-400'}>
-              {issue.level}
+              {t(`issue.${issue.level}`)}
             </span>
-            <span className="text-neutral-500"> / {issue.field ?? 'issue'}</span>
+            <span className="text-neutral-500"> / {issue.field ?? t('issue.defaultField')}</span>
           </div>
           <div className="mt-1 text-neutral-300">{issue.message}</div>
         </div>
@@ -46,12 +48,12 @@ export default function IssueCard({ issue, compact = false }: Props) {
           <div className="flex shrink-0 gap-2">
             {canOpenPrototype && (
               <button onClick={onPrototypeClick} className="rounded bg-neutral-800 px-2 py-1 text-[11px] text-neutral-300 hover:bg-neutral-700">
-                Prototype
+                {t('issue.prototype')}
               </button>
             )}
             {canOpenRsi && (
               <button onClick={onRsiClick} className="rounded bg-neutral-800 px-2 py-1 text-[11px] text-neutral-300 hover:bg-neutral-700">
-                RSI
+                {t('issue.rsi')}
               </button>
             )}
           </div>

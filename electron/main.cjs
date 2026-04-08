@@ -1,10 +1,11 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const { Worker } = require("worker_threads");
 const YAML = require("yaml");
 const { autoUpdater } = require("electron-updater");
 const { readLatestProjectCache, readPrototypeBlock, savePrototypeBlock, createPrototype } = require("./scanner.cjs");
+const appPackage = require("../package.json");
 
 Menu.setApplicationMenu(null);
 let activeIndex = null;
@@ -139,6 +140,18 @@ ipcMain.handle("update:install", async () => {
     downloadedVersion: updateState.downloadedVersion ?? null,
   });
   setImmediate(() => autoUpdater.quitAndInstall());
+  return true;
+});
+ipcMain.handle("app:get-info", async () => ({
+  name: appPackage.build?.productName || appPackage.name || "SS14 Studio",
+  version: app.getVersion(),
+  author: appPackage.author || "darvin7531",
+  license: appPackage.license || "AGPL-3.0-or-later",
+  repositoryUrl: `https://github.com/${appPackage.build?.publish?.[0]?.owner || "darvin7531"}/${appPackage.build?.publish?.[0]?.repo || "SpaceStation14-Studio"}`,
+}));
+ipcMain.handle("app:open-external", async (_event, url) => {
+  if (!url || typeof url !== "string") return false;
+  await shell.openExternal(url);
   return true;
 });
 ipcMain.handle("window:minimize", (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());

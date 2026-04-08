@@ -29,6 +29,21 @@ npm run dist:portable
 
 Artifacts are written to `release/`.
 
+## Manual Stable Release In GitHub
+
+There is a manual GitHub Actions workflow for stable releases:
+
+1. Bump `version` in [package.json](./package.json) and push it to `main`.
+2. Open `Actions` -> `Release Stable`.
+3. Click `Run workflow`.
+4. The workflow builds:
+   - NSIS installer
+   - portable `.exe`
+   - updater metadata (`latest.yml`, blockmaps)
+5. It then publishes a GitHub Release with the current package version.
+
+The updater expects the version in `package.json` to already be correct before you run the workflow.
+
 ## License
 
 This repository is licensed under `GNU Affero General Public License v3.0 or later`.

@@ -6,11 +6,13 @@ import { PrototypeListItem, ResourceTreeNode } from '../types';
 import { cn } from '../lib/utils';
 import CreatePrototypeModal from './CreatePrototypeModal';
 import CreateRsiModal from './CreateRsiModal';
+import { useI18n } from '../i18n';
 
 const PAGE_SIZE = 250;
 type SidebarMode = 'search' | 'resources';
 
 export default function Sidebar() {
+  const { t } = useI18n();
   const {
     projectRoot,
     searchQuery,
@@ -111,7 +113,7 @@ export default function Sidebar() {
   const handleCreated = async (key: string) => {
     if (!projectRoot) return;
     setIsScanning(true);
-    setScanProgress(`Refreshing after creating ${key}`);
+    setScanProgress(t('sidebar.refreshCreated', { value: key }));
     try {
       const result = await scanProject(projectRoot);
       setProject(result);
@@ -119,7 +121,7 @@ export default function Sidebar() {
       setSelectedPrototype(await window.prototypeStudio.getPrototype(key));
       setOffset(0);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to refresh project.');
+      alert(err instanceof Error ? err.message : t('sidebar.refreshFailed'));
     } finally {
       setIsScanning(false);
       setScanProgress('');
@@ -129,7 +131,7 @@ export default function Sidebar() {
   const handleCreatedRsi = async (rsiPath: string) => {
     if (!projectRoot) return;
     setIsScanning(true);
-    setScanProgress(`Refreshing after creating ${rsiPath}`);
+    setScanProgress(t('sidebar.refreshCreated', { value: rsiPath }));
     try {
       const result = await scanProject(projectRoot);
       setProject(result);
@@ -138,7 +140,7 @@ export default function Sidebar() {
       setSelectedRsiPath(rsiPath);
       setSelectedRsi(await window.prototypeStudio.getRsiAsset(rsiPath));
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to refresh project.');
+      alert(err instanceof Error ? err.message : t('sidebar.refreshFailed'));
     } finally {
       setIsScanning(false);
       setScanProgress('');
@@ -153,20 +155,20 @@ export default function Sidebar() {
             onClick={() => setMode('search')}
             className={cn("rounded px-2 py-1.5", mode === 'search' ? "bg-neutral-800 text-neutral-100" : "text-neutral-500 hover:text-neutral-300")}
           >
-            Search
+            {t('sidebar.searchTab')}
           </button>
           <button
             onClick={() => setMode('resources')}
             className={cn("rounded px-2 py-1.5", mode === 'resources' ? "bg-neutral-800 text-neutral-100" : "text-neutral-500 hover:text-neutral-300")}
           >
-            Resources
+            {t('sidebar.resourcesTab')}
           </button>
         </div>
         <div className="relative">
           <Search size={14} className="absolute left-2.5 top-2.5 text-neutral-500" />
           <input
             type="text"
-            placeholder="Search prototypes..."
+            placeholder={t('sidebar.searchPlaceholder')}
             disabled={mode !== 'search'}
             value={searchQuery}
             onChange={(event) => {
@@ -178,19 +180,19 @@ export default function Sidebar() {
         </div>
         <button onClick={() => setCreateOpen(true)} className="flex items-center justify-center gap-2 rounded-md border border-neutral-800 bg-neutral-950/60 px-2 py-1.5 text-xs text-neutral-300 hover:bg-neutral-900">
           <Plus size={13} className="text-blue-400" />
-          Create prototype
+          {t('sidebar.createPrototype')}
         </button>
         {mode === 'resources' && (
           <button onClick={() => setCreateRsiOpen(true)} className="flex items-center justify-center gap-2 rounded-md border border-neutral-800 bg-neutral-950/60 px-2 py-1.5 text-xs text-neutral-300 hover:bg-neutral-900">
             <ImageIcon size={13} className="text-emerald-400" />
-            Create RSI
+            {t('sidebar.createRsi')}
           </button>
         )}
         {mode === 'search' && <div className="flex items-center justify-between text-[11px] text-neutral-500">
-          <span>{isLoading ? 'Loading...' : `${offset + 1}-${Math.min(offset + PAGE_SIZE, total)} / ${total}`}</span>
+          <span>{isLoading ? t('sidebar.loading') : `${offset + 1}-${Math.min(offset + PAGE_SIZE, total)} / ${total}`}</span>
           <div className="flex gap-1">
-            <button className="px-2 py-0.5 rounded bg-neutral-800 disabled:opacity-40" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>Prev</button>
-            <button className="px-2 py-0.5 rounded bg-neutral-800 disabled:opacity-40" disabled={offset + PAGE_SIZE >= total} onClick={() => setOffset(offset + PAGE_SIZE)}>Next</button>
+            <button className="px-2 py-0.5 rounded bg-neutral-800 disabled:opacity-40" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>{t('sidebar.prev')}</button>
+            <button className="px-2 py-0.5 rounded bg-neutral-800 disabled:opacity-40" disabled={offset + PAGE_SIZE >= total} onClick={() => setOffset(offset + PAGE_SIZE)}>{t('sidebar.next')}</button>
           </div>
         </div>}
       </div>
@@ -214,13 +216,13 @@ export default function Sidebar() {
               </div>
             </button>
           ))}
-          {items.length === 0 && <div className="text-center text-neutral-500 text-sm py-4">No prototypes found.</div>}
+          {items.length === 0 && <div className="text-center text-neutral-500 text-sm py-4">{t('sidebar.noPrototypes')}</div>}
         </>}
 
         {mode === 'resources' && (
           resourceTree
             ? <ResourceNode node={resourceTree} depth={0} openPaths={openPaths} selectedPrototypeId={selectedPrototypeId} selectedRsiPath={selectedRsiPath} onToggle={togglePath} onSelect={handleSelect} onSelectRsi={handleSelectRsi} />
-            : <div className="text-center text-neutral-500 text-sm py-4">Loading Resources...</div>
+            : <div className="text-center text-neutral-500 text-sm py-4">{t('sidebar.loadingResources')}</div>
         )}
       </div>
       <CreatePrototypeModal open={createOpen} onClose={() => setCreateOpen(false)} onCreated={handleCreated} />
@@ -248,6 +250,7 @@ function ResourceNode({
   onSelect: (key: string) => void;
   onSelectRsi: (path: string) => void;
 }) {
+  const { t } = useI18n();
   const children = node.children ?? [];
   const expandable = children.length > 0;
   const open = openPaths.has(node.path);
@@ -267,9 +270,11 @@ function ResourceNode({
     : node.name;
 
   const meta = node.kind === 'rsi'
-    ? `${node.stateCount ?? 0} states`
+    ? t('sidebar.resource.states', { count: node.stateCount ?? 0 })
     : node.kind === 'folder' || node.kind === 'file'
-      ? `${node.prototypeCount ?? 0} proto${node.rsiCount ? ` / ${node.rsiCount} rsi` : ''}`
+      ? node.rsiCount
+        ? t('sidebar.resource.meta', { prototypes: node.prototypeCount ?? 0, rsis: node.rsiCount })
+        : t('sidebar.resource.metaProtoOnly', { prototypes: node.prototypeCount ?? 0 })
       : '';
 
   const handleClick = () => {

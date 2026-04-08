@@ -29,6 +29,8 @@ contextBridge.exposeInMainWorld("prototypeStudio", {
   getUpdateState: () => ipcRenderer.invoke("update:get-state"),
   checkForUpdates: () => ipcRenderer.invoke("update:check"),
   installUpdate: () => ipcRenderer.invoke("update:install"),
+  getAppInfo: () => ipcRenderer.invoke("app:get-info"),
+  openExternal: (url) => ipcRenderer.invoke("app:open-external", url),
   onUpdateStatus: (callback) => {
     const listener = (_event, status) => callback(status);
     ipcRenderer.on("update:status", listener);

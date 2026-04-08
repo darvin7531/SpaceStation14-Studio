@@ -3,8 +3,10 @@ import { useProjectStore } from '../store/projectStore';
 import MonacoEditor from '@monaco-editor/react';
 import { Save, AlertCircle } from 'lucide-react';
 import { parseDocument } from 'yaml';
+import { useI18n } from '../i18n';
 
 export default function Editor() {
+  const { t } = useI18n();
   const { projectRoot, selectedPrototypeId, selectedPrototype, selectedEditorTab, editorJumpQuery, setSelectedEditorTab, setEditorJumpQuery, setSelectedPrototype, updateSelectedPrototype } = useProjectStore();
   const [yamlContent, setYamlContent] = useState('');
   const [isDirty, setIsDirty] = useState(false);
@@ -45,7 +47,7 @@ export default function Editor() {
   }, [editorJumpQuery, selectedEditorTab, setEditorJumpQuery, yamlContent]);
 
   if (!proto) {
-    return <div className="flex-1 flex items-center justify-center text-neutral-500 bg-neutral-950">Select a prototype to edit</div>;
+    return <div className="flex-1 flex items-center justify-center text-neutral-500 bg-neutral-950">{t('editor.empty')}</div>;
   }
 
   const handleSave = async () => {
@@ -53,7 +55,7 @@ export default function Editor() {
     try {
       const doc = parseDocument(yamlContent);
       if (doc.errors.length > 0) {
-        alert("Invalid YAML. Cannot save.");
+        alert(t('editor.invalidYaml'));
         return;
       }
 
@@ -68,7 +70,7 @@ export default function Editor() {
       setIsDirty(false);
     } catch (error) {
       console.error("Failed to save", error);
-      alert(error instanceof Error ? error.message : "Failed to save file.");
+      alert(error instanceof Error ? error.message : t('editor.saveFailed'));
     }
   };
 
@@ -142,7 +144,7 @@ export default function Editor() {
                   selectedEditorTab === tab ? 'bg-neutral-800 text-neutral-100 shadow-sm' : 'text-neutral-400 hover:text-neutral-200'
                 }`}
               >
-                {tab}
+                {t(`editor.tab.${tab}`)}
               </button>
             ))}
           </div>
@@ -155,7 +157,7 @@ export default function Editor() {
           }`}
         >
           <Save size={14} />
-          Save
+          {t('editor.save')}
         </button>
       </div>
 
@@ -164,21 +166,21 @@ export default function Editor() {
           <div className="p-6 max-w-3xl mx-auto space-y-6">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-neutral-400">ID</label>
+                <label className="text-xs font-medium text-neutral-400">{t('editor.field.id')}</label>
                 <input type="text" value={text(proto.id)} readOnly className="w-full bg-neutral-900 border border-neutral-800 rounded-md px-3 py-2 text-sm text-neutral-300 focus:outline-none" />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-neutral-400">Name</label>
+                <label className="text-xs font-medium text-neutral-400">{t('editor.field.name')}</label>
                 <input type="text" value={text(proto.name)} readOnly className="w-full bg-neutral-900 border border-neutral-800 rounded-md px-3 py-2 text-sm text-neutral-300 focus:outline-none" />
               </div>
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-neutral-400">Description</label>
+              <label className="text-xs font-medium text-neutral-400">{t('editor.field.description')}</label>
               <textarea value={proto.description || ''} readOnly className="w-full bg-neutral-900 border border-neutral-800 rounded-md px-3 py-2 text-sm text-neutral-300 focus:outline-none min-h-[80px]" />
             </div>
             <div className="p-4 bg-blue-900/20 border border-blue-900/50 rounded-md flex gap-3 text-blue-200 text-sm">
               <AlertCircle size={16} className="shrink-0 mt-0.5" />
-              <p>Use the Raw YAML tab to edit properties without losing unknown fields.</p>
+              <p>{t('editor.rawHint')}</p>
             </div>
           </div>
         )}

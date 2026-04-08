@@ -11,10 +11,13 @@ import Editor from './components/Editor';
 import Inspector from './components/Inspector';
 import RsiEditor from './components/RsiEditor';
 import IssueCard from './components/IssueCard';
+import SettingsModal from './components/SettingsModal';
+import { useI18n } from './i18n';
 import { UpdateState } from './types';
-import { AlertTriangle, CheckCircle2, ChevronUp, Download, FolderOpen, Minus, RefreshCw, Square, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronUp, FolderOpen, Minus, Settings, Square, X } from 'lucide-react';
 
 export default function App() {
+  const { t } = useI18n();
   const { 
     setProject,
     setSearchQuery,
@@ -29,12 +32,13 @@ export default function App() {
     selectedRsi,
   } = useProjectStore();
   const [statusOpen, setStatusOpen] = useState(false);
-  const [statusLog, setStatusLog] = useState<string[]>(['Ready. Open an SS14 source folder to begin.']);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [statusLog, setStatusLog] = useState<string[]>([t('app.status.ready')]);
   const [statusHeight, setStatusHeight] = useState(176);
   const [isBooting, setIsBooting] = useState(true);
   const [updateState, setUpdateState] = useState<UpdateState>({
     status: 'idle',
-    message: 'Ready to check for updates.',
+    message: '',
     version: '0.0.0',
     progress: null,
     downloadedVersion: null,
@@ -80,6 +84,12 @@ export default function App() {
   }, [setScanProgress]);
 
   useEffect(() => {
+    setStatusLog((items) => items.length === 0 ? [t('app.status.ready')] : items);
+    setUpdateState((current) => current.message ? current : { ...current, message: t('app.checkUpdates') });
+    document.title = t('app.title');
+  }, [t]);
+
+  useEffect(() => {
     let cancelled = false;
     void window.prototypeStudio.getUpdateState().then((state) => {
       if (!cancelled) setUpdateState(state);
@@ -109,12 +119,12 @@ export default function App() {
         }
 
         setStatusLog((items) => [
-          `${new Date().toLocaleTimeString()}  restored cached workspace: ${restored.counts.prototypes} prototypes`,
+          `${new Date().toLocaleTimeString()}  ${t('app.status.restoredWorkspace', { count: restored.counts.prototypes })}`,
           ...items,
         ].slice(0, 80));
 
         setIsScanning(true);
-        setScanProgress(`Checking ${restored.projectRoot} for changes`);
+        setScanProgress(`${t('loading.eyebrow.scan')}: ${restored.projectRoot}`);
         const refreshed = await scanProject(restored.projectRoot);
         if (cancelled) return;
         setProject(refreshed);
@@ -124,7 +134,7 @@ export default function App() {
           setSelectedPrototype(await window.prototypeStudio.getPrototype(restored.selectedPrototypeId));
         }
         setStatusLog((items) => [
-          `${new Date().toLocaleTimeString()}  ${refreshed.cache?.hit ? 'workspace verified from cache' : 'workspace refreshed'}: ${refreshed.counts.prototypes} prototypes`,
+          `${new Date().toLocaleTimeString()}  ${refreshed.cache?.hit ? t('app.status.workspaceVerified', { count: refreshed.counts.prototypes }) : t('app.status.workspaceRefreshed', { count: refreshed.counts.prototypes })}`,
           ...items,
         ].slice(0, 80));
       } catch (error) {
@@ -149,18 +159,23 @@ export default function App() {
       if (!projectRoot) return;
 
       setIsScanning(true);
-      setScanProgress(`Scanning ${projectRoot}`);
-      setStatusLog((items) => [`${new Date().toLocaleTimeString()}  scan started: ${projectRoot}`, ...items].slice(0, 80));
+      setScanProgress(`${t('loading.eyebrow.scan')}: ${projectRoot}`);
+      setStatusLog((items) => [`${new Date().toLocaleTimeString()}  ${t('app.status.scanStarted', { path: projectRoot })}`, ...items].slice(0, 80));
       const result = await scanProject(projectRoot);
       setProject(result);
       setStatusLog((items) => [
-        `${new Date().toLocaleTimeString()}  ${result.cache?.hit ? 'cache loaded' : 'scan complete'}: ${result.counts.prototypes} prototypes, ${result.counts.components} components, ${result.counts.rsis} RSI`,
+        `${new Date().toLocaleTimeString()}  ${t('app.status.scanComplete', {
+          mode: result.cache?.hit ? t('app.status.scanMode.cache') : t('app.status.scanMode.complete'),
+          prototypes: result.counts.prototypes,
+          components: result.counts.components,
+          rsis: result.counts.rsis,
+        })}`,
         ...items,
       ].slice(0, 80));
     } catch (err) {
       console.error(err);
-      setStatusLog((items) => [`${new Date().toLocaleTimeString()}  error: ${err instanceof Error ? err.message : 'Failed to open project.'}`, ...items].slice(0, 80));
-      alert(err instanceof Error ? err.message : 'Failed to open project.');
+      setStatusLog((items) => [`${new Date().toLocaleTimeString()}  ${t('app.status.error', { message: err instanceof Error ? err.message : t('sidebar.refreshFailed') })}`, ...items].slice(0, 80));
+      alert(err instanceof Error ? err.message : t('sidebar.refreshFailed'));
     } finally {
       setIsScanning(false);
       setScanProgress('');
@@ -193,7 +208,7 @@ export default function App() {
         className="relative z-[70] h-9 border-b border-neutral-800 flex items-center justify-between bg-neutral-950 shrink-0 select-none"
         style={{ WebkitAppRegion: 'drag' } as CSSProperties}
       >
-        <div className="px-3 text-xs font-semibold tracking-wide text-neutral-300">SS14 Studio</div>
+        <div className="px-3 text-xs font-semibold tracking-wide text-neutral-300">{t('app.title')}</div>
         <div className="flex h-full" style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}>
           <button className="titlebar-button" onClick={() => window.prototypeStudio.minimizeWindow()} title="Minimize">
             <Minus size={14} />
@@ -209,42 +224,24 @@ export default function App() {
 
       <header className="h-14 border-b border-neutral-800 flex items-center px-4 justify-between bg-neutral-950 shrink-0">
         <div className="flex items-center gap-4">
-          <h1 className="font-semibold text-neutral-100 tracking-tight">SS14 Studio</h1>
+          <h1 className="font-semibold text-neutral-100 tracking-tight">{t('app.title')}</h1>
           <button 
             onClick={handleOpenProject}
             disabled={isScanning}
             className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50"
           >
             <FolderOpen size={16} />
-            {isScanning ? 'Scanning...' : 'Open Project'}
-          </button>
-          <button
-            onClick={updateState.status === 'downloaded' ? handleInstallUpdate : handleCheckUpdates}
-            disabled={isCheckingUpdates || updateState.status === 'installing'}
-            className="flex items-center gap-2 rounded-md border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-sm font-medium text-neutral-200 transition-colors hover:bg-neutral-800 disabled:opacity-50"
-            title={updateState.message}
-          >
-            {updateState.status === 'downloaded' ? (
-              <Download size={16} />
-            ) : (
-              <RefreshCw size={16} className={isCheckingUpdates ? 'animate-spin' : ''} />
-            )}
-            {updateState.status === 'downloaded'
-              ? 'Restart to Update'
-              : updateState.status === 'downloading'
-                ? `Downloading ${Math.round(updateState.progress?.percent ?? 0)}%`
-                : updateState.status === 'installing'
-                  ? 'Installing...'
-                  : 'Check Updates'}
+            {isScanning ? t('app.scanning') : t('app.openProject')}
           </button>
         </div>
-        <div className="max-w-md text-right text-xs text-neutral-400">
-          <div className="truncate">{isScanning ? scanProgress : updateState.message}</div>
-          {updateState.status === 'downloading' && (
-            <div className="mt-1 text-[11px] text-neutral-500">
-              {Math.round(updateState.progress?.percent ?? 0)}% downloaded
-            </div>
-          )}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-neutral-800 bg-neutral-900 text-neutral-200 transition-colors hover:bg-neutral-800"
+            title={t('settings.open')}
+          >
+            <Settings size={16} />
+          </button>
         </div>
       </header>
       {(isScanning || isCheckingUpdates) && <div className={`studio-scan-strip shrink-0 ${updateState.status === 'downloading' ? 'studio-scan-strip--emerald' : ''}`} />}
@@ -258,9 +255,9 @@ export default function App() {
           {isScanning && (
             <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-neutral-950/28 backdrop-blur-[2px]">
               <LoadingPanel
-                eyebrow="Project Scan"
-                title="Updating workspace index"
-                message={scanProgress || 'Scanning project files, prototypes, components and RSI assets.'}
+                eyebrow={t('loading.eyebrow.scan')}
+                title={t('app.projectScanOverlayTitle')}
+                message={scanProgress || t('app.projectScanMessage')}
                 tone="blue"
               />
             </div>
@@ -269,9 +266,9 @@ export default function App() {
       ) : isBooting ? (
         <div className="flex-1 studio-boot-shell">
           <LoadingPanel
-            eyebrow="SS14 Studio"
-            title="Restoring previous workspace"
-            message="Loading cached project state and checking the source tree for changes."
+            eyebrow={t('loading.eyebrow.app')}
+            title={t('app.bootTitle')}
+            message={t('app.bootMessage')}
             tone="blue"
             fullScreen
           />
@@ -279,9 +276,9 @@ export default function App() {
       ) : isScanning ? (
         <div className="flex-1 studio-boot-shell">
           <LoadingPanel
-            eyebrow="Project Scan"
-            title="Opening SS14 project"
-            message={scanProgress || 'Scanning project files, prototypes, components and RSI assets.'}
+            eyebrow={t('loading.eyebrow.scan')}
+            title={t('app.projectScanTitle')}
+            message={scanProgress || t('app.projectScanMessage')}
             tone="emerald"
             fullScreen
           />
@@ -289,7 +286,7 @@ export default function App() {
       ) : (
         <div className="flex-1 flex items-center justify-center flex-col gap-4 text-neutral-500">
           <FolderOpen size={48} className="opacity-20" />
-          <p>Open an SS14 source project folder to scan prototypes, components and RSI sprites.</p>
+          <p>{t('app.emptyState')}</p>
         </div>
       )}
 
@@ -314,13 +311,13 @@ export default function App() {
           </span>
           <span className="flex items-center gap-4">
             <span className={updateState.status === 'error' ? 'text-red-400' : updateState.status === 'downloaded' ? 'text-emerald-400' : 'text-neutral-500'}>
-              update: {formatUpdateLabel(updateState)}
+              update: {formatUpdateLabel(updateState, t)}
             </span>
-            <span>{counts.prototypes} prototypes</span>
-            <span>{counts.components} components</span>
-            <span>{counts.prototypeKinds} schemas</span>
-            <span>{counts.rsis} RSI</span>
-            <span>{validationIssues.length} issues</span>
+            <span>{t('app.count.prototypes', { count: counts.prototypes })}</span>
+            <span>{t('app.count.components', { count: counts.components })}</span>
+            <span>{t('app.count.schemas', { count: counts.prototypeKinds })}</span>
+            <span>{t('app.count.rsis', { count: counts.rsis })}</span>
+            <span>{t('app.count.issues', { count: validationIssues.length })}</span>
             <ChevronUp size={14} className={statusOpen ? 'rotate-180' : ''} />
           </span>
         </button>
@@ -330,9 +327,9 @@ export default function App() {
               {statusLog.map((item, index) => <div key={index}>{item}</div>)}
             </div>
             <div className="overflow-auto custom-scrollbar border-l border-neutral-900 p-3">
-              <div className="text-neutral-300 font-semibold mb-2">Issues</div>
+              <div className="text-neutral-300 font-semibold mb-2">{t('app.status.issues')}</div>
               {validationIssues.length === 0 ? (
-                <div className="text-green-500">No indexed issues.</div>
+                <div className="text-green-500">{t('app.status.issueNone')}</div>
               ) : validationIssues.slice(0, 80).map((issue, index) => (
                 <div key={index} className="mb-2">
                   <IssueCard issue={issue} compact />
@@ -342,30 +339,37 @@ export default function App() {
           </div>
         )}
       </footer>
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        updateState={updateState}
+        onCheckUpdates={handleCheckUpdates}
+        onInstallUpdate={handleInstallUpdate}
+      />
     </div>
   );
 }
 
-function formatUpdateLabel(state: UpdateState) {
+function formatUpdateLabel(state: UpdateState, t: (key: string, params?: Record<string, string | number | null | undefined>) => string) {
   switch (state.status) {
     case 'checking':
-      return 'checking';
+      return t('app.updateLabel.checking');
     case 'available':
-      return `found ${state.downloadedVersion ?? ''}`.trim();
+      return t('app.updateLabel.found', { version: state.downloadedVersion ?? '' }).trim();
     case 'downloading':
       return `${Math.round(state.progress?.percent ?? 0)}%`;
     case 'downloaded':
-      return 'ready';
+      return t('app.updateLabel.ready');
     case 'installing':
-      return 'installing';
+      return t('app.updateLabel.installing');
     case 'error':
-      return 'error';
+      return t('app.updateLabel.error');
     case 'unavailable':
-      return 'latest';
+      return t('app.updateLabel.latest');
     case 'disabled':
-      return 'local build';
+      return t('app.updateLabel.local');
     default:
-      return 'idle';
+      return t('app.updateLabel.idle');
   }
 }
 
