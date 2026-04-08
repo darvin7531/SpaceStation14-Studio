@@ -29,6 +29,14 @@ npm run dist:portable
 
 Artifacts are written to `release/`.
 
+## License
+
+This repository is licensed under `GNU Affero General Public License v3.0 or later`.
+
+The full license text is in [LICENSE](./LICENSE).
+
+Important: AGPL is a strong copyleft license, but it does not require redistribution to be free of charge. If later you want an additional no-sale restriction for bundled assets/resources, that would need a separate custom asset license and would no longer be plain AGPL.
+
 ## Current Features
 
 - Scans YAML prototypes under `Resources/Prototypes`.

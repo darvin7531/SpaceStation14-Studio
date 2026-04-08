@@ -205,6 +205,21 @@ export interface ScanProgress {
   processed: number;
 }
 
+export interface UpdateProgress {
+  percent: number;
+  bytesPerSecond: number;
+  transferred: number;
+  total: number;
+}
+
+export interface UpdateState {
+  status: 'idle' | 'disabled' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'installing' | 'unavailable' | 'error';
+  message: string;
+  version: string;
+  progress?: UpdateProgress | null;
+  downloadedVersion?: string | null;
+}
+
 declare global {
   interface Window {
     prototypeStudio: {
@@ -229,6 +244,10 @@ declare global {
       readPrototype: (request: { projectRoot: string; filePath: string; line: number }) => Promise<{ filePath: string; line: number; text: string }>;
       savePrototype: (request: { projectRoot: string; filePath: string; line: number; text: string }) => Promise<{ filePath: string; line: number; text: string }>;
       createPrototype: (request: { projectRoot: string; type: string; id: string; parent?: string; name?: string; filePath?: string }) => Promise<{ filePath: string; line: number; text: string }>;
+      getUpdateState: () => Promise<UpdateState>;
+      checkForUpdates: () => Promise<UpdateState>;
+      installUpdate: () => Promise<boolean>;
+      onUpdateStatus: (callback: (status: UpdateState) => void) => () => void;
       saveWorkspaceUiState: (patch: { selectedPrototypeId?: string | null; searchQuery?: string; lastProjectRoot?: string }) => Promise<void>;
       minimizeWindow: () => Promise<void>;
       toggleMaximizeWindow: () => Promise<void>;

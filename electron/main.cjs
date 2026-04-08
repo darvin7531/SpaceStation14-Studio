@@ -3,10 +3,18 @@ const fs = require("fs");
 const path = require("path");
 const { Worker } = require("worker_threads");
 const YAML = require("yaml");
+const { autoUpdater } = require("electron-updater");
 const { readLatestProjectCache, readPrototypeBlock, savePrototypeBlock, createPrototype } = require("./scanner.cjs");
 
 Menu.setApplicationMenu(null);
 let activeIndex = null;
+let updateState = {
+  status: "idle",
+  message: "Ready to check for updates.",
+  version: app.getVersion(),
+  progress: null,
+  downloadedVersion: null,
+};
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -121,6 +129,18 @@ ipcMain.handle("project:create-from-draft", async (_event, draft = {}) => create
 ipcMain.handle("workspace:save-ui-state", async (_event, patch = {}) => {
   writeWorkspaceState({ ...readWorkspaceState(), ...patch });
 });
+ipcMain.handle("update:get-state", async () => updateState);
+ipcMain.handle("update:check", async () => checkForAppUpdates("manual"));
+ipcMain.handle("update:install", async () => {
+  if (updateState.status !== "downloaded") return false;
+  setUpdateState({
+    status: "installing",
+    message: "Installing update and restarting SS14 Studio...",
+    downloadedVersion: updateState.downloadedVersion ?? null,
+  });
+  setImmediate(() => autoUpdater.quitAndInstall());
+  return true;
+});
 ipcMain.handle("window:minimize", (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());
 ipcMain.handle("window:toggle-maximize", (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
@@ -130,7 +150,20 @@ ipcMain.handle("window:toggle-maximize", (event) => {
 });
 ipcMain.handle("window:close", (event) => BrowserWindow.fromWebContents(event.sender)?.close());
 
-app.whenReady().then(createWindow);
+app.whenReady().then(async () => {
+  configureAutoUpdater();
+  createWindow();
+  if (app.isPackaged) {
+    setTimeout(() => {
+      void checkForAppUpdates("startup");
+    }, 3500);
+  } else {
+    setUpdateState({
+      status: "disabled",
+      message: "Auto-update works in the installed build. Use release installer or packaged app to test it.",
+    });
+  }
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
@@ -157,6 +190,119 @@ function summarizeIndex(index) {
     issues: index.issues.slice(0, 500),
     cache: index.cache,
   };
+}
+
+function configureAutoUpdater() {
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on("checking-for-update", () => {
+    setUpdateState({
+      status: "checking",
+      message: "Checking GitHub releases for a newer build...",
+      progress: null,
+      downloadedVersion: null,
+    });
+  });
+
+  autoUpdater.on("update-available", (info) => {
+    setUpdateState({
+      status: "available",
+      message: `Update ${info.version} found. Downloading in background...`,
+      downloadedVersion: info.version ?? null,
+      progress: { percent: 0, bytesPerSecond: 0, transferred: 0, total: 0 },
+    });
+  });
+
+  autoUpdater.on("update-not-available", (info) => {
+    setUpdateState({
+      status: "unavailable",
+      message: `SS14 Studio is up to date${info?.version ? ` (${info.version})` : ""}.`,
+      progress: null,
+      downloadedVersion: null,
+    });
+  });
+
+  autoUpdater.on("download-progress", (progress) => {
+    setUpdateState({
+      status: "downloading",
+      message: `Downloading update${updateState.downloadedVersion ? ` ${updateState.downloadedVersion}` : ""}... ${Math.round(progress.percent || 0)}%`,
+      progress: {
+        percent: Number(progress.percent || 0),
+        bytesPerSecond: Number(progress.bytesPerSecond || 0),
+        transferred: Number(progress.transferred || 0),
+        total: Number(progress.total || 0),
+      },
+      downloadedVersion: updateState.downloadedVersion ?? null,
+    });
+  });
+
+  autoUpdater.on("update-downloaded", (info) => {
+    setUpdateState({
+      status: "downloaded",
+      message: `Update ${info.version} is ready. Restart SS14 Studio to install it.`,
+      progress: { percent: 100, bytesPerSecond: 0, transferred: 0, total: 0 },
+      downloadedVersion: info.version ?? null,
+    });
+  });
+
+  autoUpdater.on("error", (error) => {
+    setUpdateState({
+      status: "error",
+      message: error?.message ? `Update error: ${error.message}` : "Update check failed.",
+      progress: null,
+      downloadedVersion: null,
+    });
+  });
+}
+
+async function checkForAppUpdates(reason = "manual") {
+  if (!app.isPackaged) {
+    setUpdateState({
+      status: "disabled",
+      message: "Auto-update works in the installed build. Build and install SS14 Studio first.",
+      progress: null,
+      downloadedVersion: null,
+    });
+    return updateState;
+  }
+
+  try {
+    if (reason === "manual") {
+      setUpdateState({
+        status: "checking",
+        message: "Checking GitHub releases for a newer build...",
+        progress: null,
+        downloadedVersion: null,
+      });
+    }
+    await autoUpdater.checkForUpdates();
+  } catch (error) {
+    setUpdateState({
+      status: "error",
+      message: error?.message ? `Update error: ${error.message}` : "Update check failed.",
+      progress: null,
+      downloadedVersion: null,
+    });
+  }
+  return updateState;
+}
+
+function setUpdateState(patch) {
+  updateState = {
+    ...updateState,
+    ...patch,
+    version: app.getVersion(),
+  };
+  broadcastUpdateState();
+}
+
+function broadcastUpdateState() {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send("update:status", updateState);
+    }
+  }
 }
 
 function listPrototypes({ query = "", offset = 0, limit = 250 }) {

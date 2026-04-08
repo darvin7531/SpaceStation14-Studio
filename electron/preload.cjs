@@ -26,6 +26,14 @@ contextBridge.exposeInMainWorld("prototypeStudio", {
   readPrototype: (request) => ipcRenderer.invoke("prototype:read", request),
   savePrototype: (request) => ipcRenderer.invoke("prototype:save", request),
   createPrototype: (request) => ipcRenderer.invoke("prototype:create", request),
+  getUpdateState: () => ipcRenderer.invoke("update:get-state"),
+  checkForUpdates: () => ipcRenderer.invoke("update:check"),
+  installUpdate: () => ipcRenderer.invoke("update:install"),
+  onUpdateStatus: (callback) => {
+    const listener = (_event, status) => callback(status);
+    ipcRenderer.on("update:status", listener);
+    return () => ipcRenderer.removeListener("update:status", listener);
+  },
   saveWorkspaceUiState: (patch) => ipcRenderer.invoke("workspace:save-ui-state", patch),
   minimizeWindow: () => ipcRenderer.invoke("window:minimize"),
   toggleMaximizeWindow: () => ipcRenderer.invoke("window:toggle-maximize"),

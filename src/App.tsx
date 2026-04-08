@@ -11,7 +11,8 @@ import Editor from './components/Editor';
 import Inspector from './components/Inspector';
 import RsiEditor from './components/RsiEditor';
 import IssueCard from './components/IssueCard';
-import { AlertTriangle, CheckCircle2, ChevronUp, FolderOpen, Minus, Square, X } from 'lucide-react';
+import { UpdateState } from './types';
+import { AlertTriangle, CheckCircle2, ChevronUp, Download, FolderOpen, Minus, RefreshCw, Square, X } from 'lucide-react';
 
 export default function App() {
   const { 
@@ -31,6 +32,13 @@ export default function App() {
   const [statusLog, setStatusLog] = useState<string[]>(['Ready. Open an SS14 source folder to begin.']);
   const [statusHeight, setStatusHeight] = useState(176);
   const [isBooting, setIsBooting] = useState(true);
+  const [updateState, setUpdateState] = useState<UpdateState>({
+    status: 'idle',
+    message: 'Ready to check for updates.',
+    version: '0.0.0',
+    progress: null,
+    downloadedVersion: null,
+  });
   const footerResizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
 
   useEffect(() => {
@@ -70,6 +78,21 @@ export default function App() {
       setStatusLog((items) => [`${new Date().toLocaleTimeString()}  ${message}`, ...items].slice(0, 80));
     });
   }, [setScanProgress]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void window.prototypeStudio.getUpdateState().then((state) => {
+      if (!cancelled) setUpdateState(state);
+    });
+    const unsubscribe = window.prototypeStudio.onUpdateStatus((state) => {
+      setUpdateState(state);
+      setStatusLog((items) => [`${new Date().toLocaleTimeString()}  update: ${state.message}`, ...items].slice(0, 80));
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -145,6 +168,24 @@ export default function App() {
   };
 
   const hasProject = counts.prototypes > 0 || counts.rsis > 0 || counts.components > 0;
+  const isCheckingUpdates = updateState.status === 'checking' || updateState.status === 'available' || updateState.status === 'downloading';
+
+  const handleCheckUpdates = async () => {
+    try {
+      const next = await window.prototypeStudio.checkForUpdates();
+      setUpdateState(next);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleInstallUpdate = async () => {
+    try {
+      await window.prototypeStudio.installUpdate();
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
   return (
     <div className="flex flex-col h-screen bg-neutral-900 text-neutral-200 font-sans overflow-hidden">
@@ -177,14 +218,36 @@ export default function App() {
             <FolderOpen size={16} />
             {isScanning ? 'Scanning...' : 'Open Project'}
           </button>
+          <button
+            onClick={updateState.status === 'downloaded' ? handleInstallUpdate : handleCheckUpdates}
+            disabled={isCheckingUpdates || updateState.status === 'installing'}
+            className="flex items-center gap-2 rounded-md border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-sm font-medium text-neutral-200 transition-colors hover:bg-neutral-800 disabled:opacity-50"
+            title={updateState.message}
+          >
+            {updateState.status === 'downloaded' ? (
+              <Download size={16} />
+            ) : (
+              <RefreshCw size={16} className={isCheckingUpdates ? 'animate-spin' : ''} />
+            )}
+            {updateState.status === 'downloaded'
+              ? 'Restart to Update'
+              : updateState.status === 'downloading'
+                ? `Downloading ${Math.round(updateState.progress?.percent ?? 0)}%`
+                : updateState.status === 'installing'
+                  ? 'Installing...'
+                  : 'Check Updates'}
+          </button>
         </div>
-        {isScanning && (
-          <div className="text-xs text-neutral-400 max-w-md truncate">
-            {scanProgress}
-          </div>
-        )}
+        <div className="max-w-md text-right text-xs text-neutral-400">
+          <div className="truncate">{isScanning ? scanProgress : updateState.message}</div>
+          {updateState.status === 'downloading' && (
+            <div className="mt-1 text-[11px] text-neutral-500">
+              {Math.round(updateState.progress?.percent ?? 0)}% downloaded
+            </div>
+          )}
+        </div>
       </header>
-      {isScanning && <div className="studio-scan-strip shrink-0" />}
+      {(isScanning || isCheckingUpdates) && <div className={`studio-scan-strip shrink-0 ${updateState.status === 'downloading' ? 'studio-scan-strip--emerald' : ''}`} />}
 
       {/* Main Content */}
       {hasProject ? (
@@ -247,9 +310,12 @@ export default function App() {
         >
           <span className="flex items-center gap-2 truncate">
             {validationIssues.length > 0 ? <AlertTriangle size={14} className="text-yellow-500" /> : <CheckCircle2 size={14} className="text-green-500" />}
-            <span className="truncate">{isScanning ? scanProgress : statusLog[0]}</span>
+            <span className="truncate">{isScanning ? scanProgress : updateState.status === 'downloading' || updateState.status === 'downloaded' || updateState.status === 'error' ? updateState.message : statusLog[0]}</span>
           </span>
           <span className="flex items-center gap-4">
+            <span className={updateState.status === 'error' ? 'text-red-400' : updateState.status === 'downloaded' ? 'text-emerald-400' : 'text-neutral-500'}>
+              update: {formatUpdateLabel(updateState)}
+            </span>
             <span>{counts.prototypes} prototypes</span>
             <span>{counts.components} components</span>
             <span>{counts.prototypeKinds} schemas</span>
@@ -278,6 +344,29 @@ export default function App() {
       </footer>
     </div>
   );
+}
+
+function formatUpdateLabel(state: UpdateState) {
+  switch (state.status) {
+    case 'checking':
+      return 'checking';
+    case 'available':
+      return `found ${state.downloadedVersion ?? ''}`.trim();
+    case 'downloading':
+      return `${Math.round(state.progress?.percent ?? 0)}%`;
+    case 'downloaded':
+      return 'ready';
+    case 'installing':
+      return 'installing';
+    case 'error':
+      return 'error';
+    case 'unavailable':
+      return 'latest';
+    case 'disabled':
+      return 'local build';
+    default:
+      return 'idle';
+  }
 }
 
 function LoadingPanel({

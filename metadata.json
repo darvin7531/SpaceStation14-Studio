@@ -1,5 +1,6 @@
 {
   "name": "SS14 Studio",
   "description": "Electron studio for SS14 prototypes, RSI sprites and project resources.",
+  "license": "AGPL-3.0-or-later",
   "requestFramePermissions": []
 }
