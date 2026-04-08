@@ -5,6 +5,7 @@ import { scanProject } from '../services/scanner';
 import { PrototypeListItem, ResourceTreeNode } from '../types';
 import { cn } from '../lib/utils';
 import CreatePrototypeModal from './CreatePrototypeModal';
+import CreateRsiModal from './CreateRsiModal';
 
 const PAGE_SIZE = 250;
 type SidebarMode = 'search' | 'resources';
@@ -17,12 +18,16 @@ export default function Sidebar() {
     selectedPrototypeId,
     setSelectedPrototypeId,
     setSelectedPrototype,
+    selectedRsiPath,
+    setSelectedRsiPath,
+    setSelectedRsi,
     setProject,
     setIsScanning,
     setScanProgress,
     counts,
   } = useProjectStore();
   const [createOpen, setCreateOpen] = useState(false);
+  const [createRsiOpen, setCreateRsiOpen] = useState(false);
   const [items, setItems] = useState<PrototypeListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -75,6 +80,8 @@ export default function Sidebar() {
   }, [projectRoot, searchQuery]);
 
   const handleSelect = async (key: string) => {
+    setSelectedRsiPath(null);
+    setSelectedRsi(null);
     setSelectedPrototypeId(key);
     if (projectRoot) {
       void window.prototypeStudio.saveWorkspaceUiState({ selectedPrototypeId: key, lastProjectRoot: projectRoot });
@@ -82,6 +89,14 @@ export default function Sidebar() {
     setSelectedPrototype(null);
     const detail = await window.prototypeStudio.getPrototype(key);
     setSelectedPrototype(detail);
+  };
+
+  const handleSelectRsi = async (rsiPath: string) => {
+    setSelectedPrototypeId(null);
+    setSelectedPrototype(null);
+    setSelectedRsiPath(rsiPath);
+    const detail = await window.prototypeStudio.getRsiAsset(rsiPath);
+    setSelectedRsi(detail);
   };
 
   const togglePath = (path: string) => {
@@ -103,6 +118,25 @@ export default function Sidebar() {
       setSelectedPrototypeId(key);
       setSelectedPrototype(await window.prototypeStudio.getPrototype(key));
       setOffset(0);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to refresh project.');
+    } finally {
+      setIsScanning(false);
+      setScanProgress('');
+    }
+  };
+
+  const handleCreatedRsi = async (rsiPath: string) => {
+    if (!projectRoot) return;
+    setIsScanning(true);
+    setScanProgress(`Refreshing after creating ${rsiPath}`);
+    try {
+      const result = await scanProject(projectRoot);
+      setProject(result);
+      setSelectedPrototypeId(null);
+      setSelectedPrototype(null);
+      setSelectedRsiPath(rsiPath);
+      setSelectedRsi(await window.prototypeStudio.getRsiAsset(rsiPath));
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to refresh project.');
     } finally {
@@ -146,6 +180,12 @@ export default function Sidebar() {
           <Plus size={13} className="text-blue-400" />
           Create prototype
         </button>
+        {mode === 'resources' && (
+          <button onClick={() => setCreateRsiOpen(true)} className="flex items-center justify-center gap-2 rounded-md border border-neutral-800 bg-neutral-950/60 px-2 py-1.5 text-xs text-neutral-300 hover:bg-neutral-900">
+            <ImageIcon size={13} className="text-emerald-400" />
+            Create RSI
+          </button>
+        )}
         {mode === 'search' && <div className="flex items-center justify-between text-[11px] text-neutral-500">
           <span>{isLoading ? 'Loading...' : `${offset + 1}-${Math.min(offset + PAGE_SIZE, total)} / ${total}`}</span>
           <div className="flex gap-1">
@@ -179,11 +219,12 @@ export default function Sidebar() {
 
         {mode === 'resources' && (
           resourceTree
-            ? <ResourceNode node={resourceTree} depth={0} openPaths={openPaths} selectedPrototypeId={selectedPrototypeId} onToggle={togglePath} onSelect={handleSelect} />
+            ? <ResourceNode node={resourceTree} depth={0} openPaths={openPaths} selectedPrototypeId={selectedPrototypeId} selectedRsiPath={selectedRsiPath} onToggle={togglePath} onSelect={handleSelect} onSelectRsi={handleSelectRsi} />
             : <div className="text-center text-neutral-500 text-sm py-4">Loading Resources...</div>
         )}
       </div>
       <CreatePrototypeModal open={createOpen} onClose={() => setCreateOpen(false)} onCreated={handleCreated} />
+      <CreateRsiModal open={createRsiOpen} onClose={() => setCreateRsiOpen(false)} onCreated={handleCreatedRsi} />
     </div>
   );
 }
@@ -193,20 +234,24 @@ function ResourceNode({
   depth,
   openPaths,
   selectedPrototypeId,
+  selectedRsiPath,
   onToggle,
   onSelect,
+  onSelectRsi,
 }: {
   node: ResourceTreeNode;
   depth: number;
   openPaths: Set<string>;
   selectedPrototypeId: string | null;
+  selectedRsiPath: string | null;
   onToggle: (path: string) => void;
   onSelect: (key: string) => void;
+  onSelectRsi: (path: string) => void;
 }) {
   const children = node.children ?? [];
   const expandable = children.length > 0;
   const open = openPaths.has(node.path);
-  const selected = node.prototypeKey === selectedPrototypeId;
+  const selected = node.prototypeKey === selectedPrototypeId || (node.kind === 'rsi' && node.path === selectedRsiPath);
   const left = depth * 12;
 
   const icon = node.kind === 'folder'
@@ -229,6 +274,7 @@ function ResourceNode({
 
   const handleClick = () => {
     if (node.kind === 'prototype' && node.prototypeKey) void onSelect(node.prototypeKey);
+    else if (node.kind === 'rsi') void onSelectRsi(node.path);
     else if (expandable) onToggle(node.path);
   };
 
@@ -257,8 +303,10 @@ function ResourceNode({
                 depth={depth + 1}
                 openPaths={openPaths}
                 selectedPrototypeId={selectedPrototypeId}
+                selectedRsiPath={selectedRsiPath}
                 onToggle={onToggle}
                 onSelect={onSelect}
+                onSelectRsi={onSelectRsi}
               />
             </div>
           ))}

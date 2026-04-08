@@ -3,12 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CSSProperties, useEffect, useState } from 'react';
+import { CSSProperties, PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import { useProjectStore } from './store/projectStore';
 import { scanProject, selectProject } from './services/scanner';
 import Sidebar from './components/Sidebar';
 import Editor from './components/Editor';
 import Inspector from './components/Inspector';
+import RsiEditor from './components/RsiEditor';
+import IssueCard from './components/IssueCard';
 import { AlertTriangle, CheckCircle2, ChevronUp, FolderOpen, Minus, Square, X } from 'lucide-react';
 
 export default function App() {
@@ -23,9 +25,43 @@ export default function App() {
     scanProgress,
     counts,
     validationIssues,
+    selectedRsi,
   } = useProjectStore();
   const [statusOpen, setStatusOpen] = useState(false);
   const [statusLog, setStatusLog] = useState<string[]>(['Ready. Open an SS14 source folder to begin.']);
+  const [statusHeight, setStatusHeight] = useState(176);
+  const [isBooting, setIsBooting] = useState(true);
+  const footerResizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
+
+  useEffect(() => {
+    const onPointerMove = (event: PointerEvent) => {
+      const state = footerResizeRef.current;
+      if (!state) return;
+      const nextHeight = Math.max(120, Math.min(520, state.startHeight + (state.startY - event.clientY)));
+      setStatusHeight(nextHeight);
+      setStatusOpen(true);
+    };
+
+    const onPointerUp = () => {
+      footerResizeRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+  }, []);
+
+  const handleFooterResizeStart = (event: ReactPointerEvent<HTMLDivElement>) => {
+    footerResizeRef.current = { startY: event.clientY, startHeight: statusHeight };
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+    setStatusOpen(true);
+  };
 
   useEffect(() => {
     return window.prototypeStudio.onScanProgress((progress) => {
@@ -74,6 +110,7 @@ export default function App() {
         if (!cancelled) {
           setIsScanning(false);
           setScanProgress('');
+          setIsBooting(false);
         }
       }
     })();
@@ -107,15 +144,15 @@ export default function App() {
     }
   };
 
-  const hasProject = counts.prototypes > 0;
+  const hasProject = counts.prototypes > 0 || counts.rsis > 0 || counts.components > 0;
 
   return (
     <div className="flex flex-col h-screen bg-neutral-900 text-neutral-200 font-sans overflow-hidden">
       <div
-        className="h-9 border-b border-neutral-800 flex items-center justify-between bg-neutral-950 shrink-0 select-none"
+        className="relative z-[70] h-9 border-b border-neutral-800 flex items-center justify-between bg-neutral-950 shrink-0 select-none"
         style={{ WebkitAppRegion: 'drag' } as CSSProperties}
       >
-        <div className="px-3 text-xs font-semibold tracking-wide text-neutral-300">Prototype Studio</div>
+        <div className="px-3 text-xs font-semibold tracking-wide text-neutral-300">SS14 Studio</div>
         <div className="flex h-full" style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}>
           <button className="titlebar-button" onClick={() => window.prototypeStudio.minimizeWindow()} title="Minimize">
             <Minus size={14} />
@@ -131,7 +168,7 @@ export default function App() {
 
       <header className="h-14 border-b border-neutral-800 flex items-center px-4 justify-between bg-neutral-950 shrink-0">
         <div className="flex items-center gap-4">
-          <h1 className="font-semibold text-neutral-100 tracking-tight">SS14 Prototype Editor</h1>
+          <h1 className="font-semibold text-neutral-100 tracking-tight">SS14 Studio</h1>
           <button 
             onClick={handleOpenProject}
             disabled={isScanning}
@@ -147,13 +184,44 @@ export default function App() {
           </div>
         )}
       </header>
+      {isScanning && <div className="studio-scan-strip shrink-0" />}
 
       {/* Main Content */}
       {hasProject ? (
-        <div className="flex flex-1 min-h-0 overflow-hidden">
+        <div className="relative flex flex-1 min-h-0 overflow-hidden">
           <Sidebar />
-          <Editor />
+          {selectedRsi ? <RsiEditor /> : <Editor />}
           <Inspector />
+          {isScanning && (
+            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-neutral-950/28 backdrop-blur-[2px]">
+              <LoadingPanel
+                eyebrow="Project Scan"
+                title="Updating workspace index"
+                message={scanProgress || 'Scanning project files, prototypes, components and RSI assets.'}
+                tone="blue"
+              />
+            </div>
+          )}
+        </div>
+      ) : isBooting ? (
+        <div className="flex-1 studio-boot-shell">
+          <LoadingPanel
+            eyebrow="SS14 Studio"
+            title="Restoring previous workspace"
+            message="Loading cached project state and checking the source tree for changes."
+            tone="blue"
+            fullScreen
+          />
+        </div>
+      ) : isScanning ? (
+        <div className="flex-1 studio-boot-shell">
+          <LoadingPanel
+            eyebrow="Project Scan"
+            title="Opening SS14 project"
+            message={scanProgress || 'Scanning project files, prototypes, components and RSI assets.'}
+            tone="emerald"
+            fullScreen
+          />
         </div>
       ) : (
         <div className="flex-1 flex items-center justify-center flex-col gap-4 text-neutral-500">
@@ -162,7 +230,17 @@ export default function App() {
         </div>
       )}
 
-      <footer className={`border-t border-neutral-800 bg-neutral-950 shrink-0 ${statusOpen ? 'h-44' : 'h-8'}`}>
+      <footer
+        className="border-t border-neutral-800 bg-neutral-950 shrink-0"
+        style={{ height: statusOpen ? statusHeight : 32 }}
+      >
+        {statusOpen && (
+          <div
+            className="h-1 cursor-ns-resize bg-neutral-950 hover:bg-blue-500/50"
+            onPointerDown={handleFooterResizeStart}
+            title="Resize panel"
+          />
+        )}
         <button
           onClick={() => setStatusOpen(!statusOpen)}
           className="h-8 w-full px-3 flex items-center justify-between text-xs text-neutral-400 hover:bg-neutral-900"
@@ -181,7 +259,7 @@ export default function App() {
           </span>
         </button>
         {statusOpen && (
-          <div className="grid grid-cols-[1fr_420px] h-[calc(100%-2rem)] border-t border-neutral-900 text-xs">
+          <div className="grid grid-cols-[1fr_420px] h-[calc(100%-2.25rem)] border-t border-neutral-900 text-xs">
             <div className="overflow-auto custom-scrollbar p-3 font-mono text-neutral-400">
               {statusLog.map((item, index) => <div key={index}>{item}</div>)}
             </div>
@@ -190,16 +268,55 @@ export default function App() {
               {validationIssues.length === 0 ? (
                 <div className="text-green-500">No indexed issues.</div>
               ) : validationIssues.slice(0, 80).map((issue, index) => (
-                <div key={index} className="mb-2 rounded bg-neutral-900 p-2 text-neutral-300">
-                  <span className={issue.level === 'error' ? 'text-red-400' : 'text-yellow-400'}>{issue.level}</span>
-                  <span className="text-neutral-500"> / {issue.field}</span>
-                  <div>{issue.message}</div>
+                <div key={index} className="mb-2">
+                  <IssueCard issue={issue} compact />
                 </div>
               ))}
             </div>
           </div>
         )}
       </footer>
+    </div>
+  );
+}
+
+function LoadingPanel({
+  eyebrow,
+  title,
+  message,
+  tone = 'blue',
+  fullScreen = false,
+}: {
+  eyebrow: string;
+  title: string;
+  message: string;
+  tone?: 'blue' | 'emerald';
+  fullScreen?: boolean;
+}) {
+  return (
+    <div className={fullScreen ? 'studio-loading-stage' : 'studio-loading-stage studio-loading-stage--floating'}>
+      <div className={`studio-loading-card ${tone === 'emerald' ? 'studio-loading-card--emerald' : ''}`}>
+        <div className="studio-loading-grid" />
+        <div className="studio-loading-content">
+          <div className="studio-loading-badge">{eyebrow}</div>
+          <div className="studio-loading-core">
+            <div className="studio-loading-orbit">
+              <span />
+              <span />
+              <span />
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold tracking-tight text-neutral-100">{title}</h2>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-neutral-400">{message}</p>
+            </div>
+          </div>
+          <div className="studio-loading-pulse">
+            <span />
+            <span />
+            <span />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

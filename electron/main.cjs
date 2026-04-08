@@ -109,6 +109,11 @@ ipcMain.handle("project:get-prototype", async (_event, key) => getPrototype(key)
 ipcMain.handle("project:autocomplete", async (_event, request = {}) => autocomplete(request));
 ipcMain.handle("project:component-info", async (_event, name) => componentInfo(name));
 ipcMain.handle("project:resource-tree", async () => resourceTree());
+ipcMain.handle("project:pick-folder", async (_event, request = {}) => pickProjectFolder(request));
+ipcMain.handle("asset:get-rsi", async (_event, rsiPath) => getRsiAsset(rsiPath));
+ipcMain.handle("asset:save-rsi", async (_event, request = {}) => saveRsiAsset(request));
+ipcMain.handle("asset:import-rsi-images", async (_event, request = {}) => importRsiImages(request));
+ipcMain.handle("asset:create-rsi", async (_event, draft = {}) => createRsiAsset(draft));
 ipcMain.handle("project:validate-prototype-yaml", async (_event, request = {}) => validatePrototypeYaml(request));
 ipcMain.handle("project:create-options", async () => createOptions());
 ipcMain.handle("project:validate-draft", async (_event, draft = {}) => validateDraft(draft));
@@ -228,7 +233,7 @@ function validatePrototypeYaml({ key, text }) {
   const sprite = spriteComponent?.sprite;
   const preferredState = spriteComponent?.state || spriteComponent?.layers?.find?.((layer) => layer?.state)?.state;
   const rsi = sprite ? findRsi(sprite, preferredState) : null;
-  if (sprite && !rsi) issues.push({ level: "warning", field: "Sprite.sprite", message: `sprite '${sprite}' was not found`, prototypeKey: key });
+  if (sprite && !rsi) issues.push({ level: "warning", field: "Sprite.sprite", message: `sprite '${sprite}' was not found`, prototypeKey: key, rsiPath: normalizeSpritePath(sprite) });
 
   return { prototype: draft, resolved, issues, rsi, kind: activeIndex.prototypeKinds[String(draft.type)] ?? null };
 }
@@ -392,6 +397,90 @@ function resourceTree() {
   }
   sortTree(root);
   return root;
+}
+
+async function pickProjectFolder({ scope = "prototypes", currentPath = "" }) {
+  ensureIndex();
+  const root = activeIndex.projectRoot;
+  const baseRel = scope === "textures" ? "Resources/Textures" : "Resources/Prototypes";
+  const normalizedCurrent = String(currentPath || "").replace(/\\/g, "/");
+  const defaultRel = normalizedCurrent && isUnderProjectFolder(normalizedCurrent, baseRel) ? normalizedCurrent : baseRel;
+  const result = await dialog.showOpenDialog({
+    title: scope === "textures" ? "Select folder in Resources/Textures" : "Select folder in Resources/Prototypes",
+    defaultPath: safeProjectPath(root, defaultRel),
+    properties: ["openDirectory"],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  const relative = path.relative(root, result.filePaths[0]).replace(/\\/g, "/");
+  if (!isUnderProjectFolder(relative, baseRel)) {
+    throw new Error(`Selected folder must stay inside ${baseRel}.`);
+  }
+  return relative;
+}
+
+function getRsiAsset(rsiPath) {
+  ensureIndex();
+  const key = normalizeRsiKey(rsiPath);
+  const rsi = activeIndex.rsis[key];
+  if (!rsi) return null;
+  return formatRsiAsset(rsi);
+}
+
+function saveRsiAsset({ path: rsiPath, meta }) {
+  ensureIndex();
+  const key = normalizeRsiKey(rsiPath);
+  const rsi = activeIndex.rsis[key];
+  if (!rsi) return null;
+  const nextMeta = sanitizeRsiMeta(meta);
+  fs.writeFileSync(path.join(rsi.dirPath, "meta.json"), `${JSON.stringify(nextMeta, null, 2)}\n`, "utf8");
+  rsi.meta = nextMeta;
+  return formatRsiAsset(rsi);
+}
+
+function importRsiImages({ path: rsiPath, files = [] }) {
+  ensureIndex();
+  const key = normalizeRsiKey(rsiPath);
+  const rsi = activeIndex.rsis[key];
+  if (!rsi) return null;
+  const known = new Set((rsi.meta?.states ?? []).map((state) => state.name));
+  for (const file of files) {
+    const stateName = safeStateName(file.name);
+    const dataUrl = String(file.dataUrl ?? "");
+    const match = dataUrl.match(/^data:image\/png;base64,(.+)$/);
+    if (!match) continue;
+    fs.writeFileSync(path.join(rsi.dirPath, `${stateName}.png`), Buffer.from(match[1], "base64"));
+    if (!known.has(stateName)) {
+      rsi.meta.states.push({ name: stateName });
+      known.add(stateName);
+    }
+  }
+  rsi.meta = sanitizeRsiMeta(rsi.meta);
+  fs.writeFileSync(path.join(rsi.dirPath, "meta.json"), `${JSON.stringify(rsi.meta, null, 2)}\n`, "utf8");
+  return formatRsiAsset(rsi);
+}
+
+function createRsiAsset(draft) {
+  ensureIndex();
+  const root = activeIndex.projectRoot;
+  const relDir = normalizeTextureDirectory(draft.directory);
+  const name = safeRsiFolderName(draft.name);
+  const rsiPath = `${relDir}/${name}.rsi`;
+  const fullDir = safeProjectPath(root, rsiPath);
+  fs.mkdirSync(fullDir, { recursive: true });
+  const meta = sanitizeRsiMeta({
+    version: 1,
+    license: String(draft.license || "CC-BY-SA-3.0"),
+    copyright: String(draft.copyright || ""),
+    size: {
+      x: Math.max(1, Number(draft.sizeX || 32)),
+      y: Math.max(1, Number(draft.sizeY || 32)),
+    },
+    states: [{ name: "icon" }],
+  });
+  fs.writeFileSync(path.join(fullDir, "meta.json"), `${JSON.stringify(meta, null, 2)}\n`, "utf8");
+  const entry = { path: rsiPath, meta, images: {}, dirPath: fullDir };
+  activeIndex.rsis[rsiPath] = entry;
+  return formatRsiAsset(entry);
 }
 
 function insertResourcePath(root, parts, leaf) {
@@ -624,6 +713,92 @@ function findRsi(sprite, preferredState = null) {
     previewState: state ?? null,
     previewDataUrl,
   };
+}
+
+function formatRsiAsset(rsi) {
+  const states = (rsi.meta?.states ?? []).map((state) => ({
+    ...state,
+    previewDataUrl: readRsiStateDataUrl(rsi.dirPath, state.name),
+  }));
+  const knownFiles = new Set(states.map((state) => `${state.name}.png`.toLowerCase()));
+  const issues = [];
+  for (const state of states) {
+    if (!state.previewDataUrl) {
+      issues.push({ level: "warning", field: "state", message: `PNG for state '${state.name}' is missing`, rsiPath: rsi.path, stateName: state.name });
+    }
+  }
+  for (const file of fs.readdirSync(rsi.dirPath)) {
+    if (!file.toLowerCase().endsWith(".png")) continue;
+    if (!knownFiles.has(file.toLowerCase())) {
+      issues.push({ level: "info", field: "png", message: `PNG '${file}' exists but is not listed in meta.json`, rsiPath: rsi.path, stateName: file.replace(/\.png$/i, "") });
+    }
+  }
+  return {
+    path: rsi.path,
+    dirPath: rsi.dirPath,
+    meta: rsi.meta,
+    states,
+    issues,
+  };
+}
+
+function sanitizeRsiMeta(meta) {
+  const sizeX = Math.max(1, Number(meta?.size?.x || 32));
+  const sizeY = Math.max(1, Number(meta?.size?.y || 32));
+  const states = [];
+  const seen = new Set();
+  for (const state of meta?.states ?? []) {
+    const name = safeStateName(state?.name ?? "");
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    const next = { name };
+    if (state?.directions && Number(state.directions) > 1) next.directions = Number(state.directions);
+    if (state?.delays) next.delays = state.delays;
+    if (state?.flags) next.flags = state.flags;
+    states.push(next);
+  }
+  if (states.length === 0) states.push({ name: "icon" });
+  return {
+    version: 1,
+    license: String(meta?.license || "CC-BY-SA-3.0"),
+    copyright: String(meta?.copyright || ""),
+    size: { x: sizeX, y: sizeY },
+    states,
+  };
+}
+
+function normalizeRsiKey(value) {
+  return String(value || "").replace(/\\/g, "/");
+}
+
+function normalizeTextureDirectory(value) {
+  let normalized = String(value || "Resources/Textures/_Studio").replace(/\\/g, "/").replace(/\/+$/, "");
+  if (!normalized.startsWith("Resources/Textures")) normalized = `Resources/Textures/${normalized.replace(/^\/+/, "")}`;
+  return normalized;
+}
+
+function isUnderProjectFolder(value, baseRel) {
+  const normalized = String(value || "").replace(/\\/g, "/");
+  return normalized === baseRel || normalized.startsWith(`${baseRel}/`);
+}
+
+function safeRsiFolderName(value) {
+  const normalized = String(value || "new-rsi").trim().replace(/\.rsi$/i, "").replace(/[^A-Za-z0-9_\-]/g, "-");
+  return normalized || "new-rsi";
+}
+
+function safeStateName(value) {
+  return String(value || "")
+    .replace(/\.png$/i, "")
+    .trim()
+    .replace(/[^A-Za-z0-9_\-]/g, "-");
+}
+
+function safeProjectPath(projectRoot, relPath) {
+  const root = path.resolve(projectRoot);
+  const full = path.resolve(root, relPath);
+  if (!full.startsWith(root)) throw new Error("Path escapes project root.");
+  return full;
 }
 
 function readRsiStateDataUrl(dirPath, state) {

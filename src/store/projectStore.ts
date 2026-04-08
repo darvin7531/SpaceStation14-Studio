@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { ProjectSummary, PrototypeDetail, ValidationIssue } from '../types';
+import { ProjectSummary, PrototypeDetail, RsiAssetDetail, ValidationIssue } from '../types';
 
 interface ProjectState {
   projectRoot: string | null;
@@ -7,6 +7,11 @@ interface ProjectState {
   validationIssues: ValidationIssue[];
   selectedPrototypeId: string | null;
   selectedPrototype: PrototypeDetail | null;
+  selectedRsiPath: string | null;
+  selectedRsi: RsiAssetDetail | null;
+  selectedEditorTab: 'form' | 'raw' | 'resolved';
+  editorJumpQuery: string | null;
+  highlightedRsiState: string | null;
   searchQuery: string;
   filterType: string;
   isScanning: boolean;
@@ -16,6 +21,11 @@ interface ProjectState {
   setValidationIssues: (issues: ValidationIssue[]) => void;
   setSelectedPrototypeId: (id: string | null) => void;
   setSelectedPrototype: (detail: PrototypeDetail | null) => void;
+  setSelectedRsiPath: (path: string | null) => void;
+  setSelectedRsi: (detail: RsiAssetDetail | null) => void;
+  setSelectedEditorTab: (tab: 'form' | 'raw' | 'resolved') => void;
+  setEditorJumpQuery: (query: string | null) => void;
+  setHighlightedRsiState: (state: string | null) => void;
   setSearchQuery: (query: string) => void;
   setFilterType: (type: string) => void;
   setIsScanning: (isScanning: boolean) => void;
@@ -37,6 +47,11 @@ export const useProjectStore = create<ProjectState>((set) => ({
   validationIssues: [],
   selectedPrototypeId: null,
   selectedPrototype: null,
+  selectedRsiPath: null,
+  selectedRsi: null,
+  selectedEditorTab: 'form',
+  editorJumpQuery: null,
+  highlightedRsiState: null,
   searchQuery: '',
   filterType: 'all',
   isScanning: false,
@@ -48,10 +63,20 @@ export const useProjectStore = create<ProjectState>((set) => ({
     validationIssues: result.issues,
     selectedPrototypeId: null,
     selectedPrototype: null,
+    selectedRsiPath: null,
+    selectedRsi: null,
+    selectedEditorTab: 'form',
+    editorJumpQuery: null,
+    highlightedRsiState: null,
   }),
   setValidationIssues: (issues) => set({ validationIssues: issues }),
   setSelectedPrototypeId: (id) => set({ selectedPrototypeId: id }),
   setSelectedPrototype: (detail) => set({ selectedPrototype: detail }),
+  setSelectedRsiPath: (path) => set({ selectedRsiPath: path }),
+  setSelectedRsi: (detail) => set({ selectedRsi: detail }),
+  setSelectedEditorTab: (tab) => set({ selectedEditorTab: tab }),
+  setEditorJumpQuery: (query) => set({ editorJumpQuery: query }),
+  setHighlightedRsiState: (state) => set({ highlightedRsiState: state }),
   setSearchQuery: (query) => set({ searchQuery: query }),
   setFilterType: (type) => set({ filterType: type }),
   setIsScanning: (isScanning) => set({ isScanning }),

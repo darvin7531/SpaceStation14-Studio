@@ -1,9 +1,11 @@
 import { useProjectStore } from '../store/projectStore';
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Info, XCircle, Layers, Image as ImageIcon, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
+import { Layers, Image as ImageIcon, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
+import IssueCard from './IssueCard';
 
 export default function Inspector() {
   const detail = useProjectStore((state) => state.selectedPrototype);
+  const selectedRsi = useProjectStore((state) => state.selectedRsi);
   const proto = detail?.prototype ?? null;
   const resolvedProto = detail?.resolved;
   const protoIssues = detail?.issues ?? [];
@@ -14,6 +16,48 @@ export default function Inspector() {
   useEffect(() => {
     setZoom(4);
   }, [proto?._key, rsi?.previewState, rsi?.path]);
+
+  if (selectedRsi && !proto) {
+    return (
+      <div className="w-80 border-l border-neutral-800 bg-neutral-900/50 flex flex-col shrink-0 overflow-y-auto custom-scrollbar">
+        <div className="p-4 border-b border-neutral-800">
+          <h3 className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-3">RSI Validation</h3>
+          {selectedRsi.issues.length === 0 ? (
+            <div className="flex items-center gap-2 text-sm text-green-500">
+              <div className="w-2 h-2 rounded-full bg-green-500" />
+              No RSI issues found
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {selectedRsi.issues.map((issue, index) => (
+                <div key={index}>
+                  <IssueCard issue={issue} compact />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="p-4 space-y-3 text-sm text-neutral-300">
+          <div className="flex justify-between gap-3">
+            <span className="text-neutral-500">Path</span>
+            <span className="truncate text-right" title={selectedRsi.path}>{selectedRsi.path}</span>
+          </div>
+          <div className="flex justify-between gap-3">
+            <span className="text-neutral-500">Size</span>
+            <span>{selectedRsi.meta.size.x} x {selectedRsi.meta.size.y}</span>
+          </div>
+          <div className="flex justify-between gap-3">
+            <span className="text-neutral-500">States</span>
+            <span>{selectedRsi.states.length}</span>
+          </div>
+          <div className="flex justify-between gap-3">
+            <span className="text-neutral-500">License</span>
+            <span className="truncate text-right">{selectedRsi.meta.license}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!proto) {
     return (
@@ -35,15 +79,8 @@ export default function Inspector() {
         ) : (
           <div className="space-y-2">
             {protoIssues.map((issue, index) => (
-              <div key={index} className={`flex gap-2 text-sm p-2 rounded-md ${
-                issue.level === 'error' ? 'bg-red-500/10 text-red-400' :
-                issue.level === 'warning' ? 'bg-yellow-500/10 text-yellow-400' :
-                'bg-blue-500/10 text-blue-400'
-              }`}>
-                {issue.level === 'error' && <XCircle size={16} className="shrink-0 mt-0.5" />}
-                {issue.level === 'warning' && <AlertTriangle size={16} className="shrink-0 mt-0.5" />}
-                {issue.level === 'info' && <Info size={16} className="shrink-0 mt-0.5" />}
-                <div><span className="font-medium">{issue.field}: </span>{issue.message}</div>
+              <div key={index}>
+                <IssueCard issue={issue} compact />
               </div>
             ))}
           </div>

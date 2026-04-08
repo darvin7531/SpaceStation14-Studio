@@ -27,7 +27,7 @@ export interface PrototypeListItem {
 
 export interface RSIState {
   name: string;
-  directions: number;
+  directions?: number;
   delays?: number[][];
   flags?: Record<string, any>;
 }
@@ -56,12 +56,39 @@ export interface RsiSummary {
   previewDataUrl?: string | null;
 }
 
+export interface RsiAssetState {
+  name: string;
+  directions?: number;
+  delays?: number[][];
+  flags?: Record<string, any>;
+  previewDataUrl?: string | null;
+}
+
+export interface RsiAssetDetail {
+  path: string;
+  dirPath: string;
+  meta: RSIMeta;
+  states: RsiAssetState[];
+  issues: ValidationIssue[];
+}
+
+export interface CreateRsiDraft {
+  directory: string;
+  name: string;
+  sizeX: number;
+  sizeY: number;
+  license: string;
+  copyright: string;
+}
+
 export interface ValidationIssue {
   level: 'error' | 'warning' | 'info';
   message: string;
   prototypeId?: string;
   field?: string;
   prototypeKey?: string;
+  rsiPath?: string;
+  stateName?: string;
 }
 
 export interface ComponentSchema {
@@ -189,6 +216,11 @@ declare global {
       autocomplete: (request: { query?: string; limit?: number; context?: 'any' | 'componentEntryStart' | 'componentType' | 'componentField'; componentType?: string }) => Promise<CompletionSuggestion[]>;
       componentInfo: (name: string) => Promise<ComponentSchema | null>;
       resourceTree: () => Promise<ResourceTreeNode>;
+      pickProjectFolder: (request: { scope: 'prototypes' | 'textures'; currentPath?: string }) => Promise<string | null>;
+      getRsiAsset: (path: string) => Promise<RsiAssetDetail | null>;
+      saveRsiAsset: (request: { path: string; meta: RSIMeta }) => Promise<RsiAssetDetail | null>;
+      importRsiImages: (request: { path: string; files: Array<{ name: string; dataUrl: string }> }) => Promise<RsiAssetDetail | null>;
+      createRsiAsset: (draft: CreateRsiDraft) => Promise<RsiAssetDetail | null>;
       validatePrototypeYaml: (request: { key: string; text: string }) => Promise<PrototypeDetail | null>;
       createOptions: () => Promise<CreatePrototypeOptions>;
       validateDraft: (draft: PrototypeDraft) => Promise<DraftValidation>;

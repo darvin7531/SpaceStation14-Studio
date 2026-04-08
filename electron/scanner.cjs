@@ -5,7 +5,7 @@ const zlib = require("zlib");
 const YAML = require("yaml");
 
 const TEXT_EXTENSIONS = new Set([".yml", ".yaml", ".cs", ".json"]);
-const CACHE_VERSION = 5;
+const CACHE_VERSION = 6;
 
 function scanProject(projectRoot, onProgress = null, options = {}) {
   const root = path.resolve(projectRoot || "");
@@ -217,7 +217,7 @@ function validate(prototypes, rsis) {
     if (sprite) {
       const normalized = normalizeSpritePath(sprite);
       if (!rsiPaths.has(normalized.toLowerCase())) {
-        issues.push({ level: "warning", message: `Sprite RSI not found: ${sprite}`, prototypeKey: proto._key, field: "Sprite.sprite" });
+        issues.push({ level: "warning", message: `Sprite RSI not found: ${sprite}`, prototypeKey: proto._key, field: "Sprite.sprite", rsiPath: normalized });
       }
     }
   }

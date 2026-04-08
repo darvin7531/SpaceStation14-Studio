@@ -1,7 +1,8 @@
 {
-  "name": "prototype-studio",
+  "name": "ss14-studio",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Desktop studio for SS14 prototypes, RSI sprites and project resources.",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -9,6 +10,9 @@
     "web": "vite --port=3000 --host=127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "start": "npm run build && electron .",
+    "pack:win": "npm run build && electron-builder --win --dir",
+    "dist:win": "npm run build && electron-builder --win nsis",
+    "dist:portable": "npm run build && electron-builder --win portable",
     "preview": "vite preview",
     "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\"",
     "lint": "tsc --noEmit"
@@ -31,6 +35,7 @@
     "concurrently": "^9.1.2",
     "cross-env": "^7.0.3",
     "electron": "^41.2.0",
+    "electron-builder": "^26.0.12",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
@@ -39,5 +44,40 @@
   },
   "overrides": {
     "dompurify": "^3.3.3"
+  },
+  "build": {
+    "appId": "com.darvin7531.ss14studio",
+    "productName": "SS14 Studio",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "electron/main.cjs"
+    },
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "SS14-Studio-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "SS14 Studio"
+    }
   }
 }

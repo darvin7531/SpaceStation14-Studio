@@ -1,6 +1,6 @@
-# Prototype Studio
+# SS14 Studio
 
-Electron + React editor for SS14 prototype content.
+Electron + React desktop editor for SS14 prototypes, RSI sprites and project resources.
 
 ## Run
 
@@ -10,6 +10,24 @@ npm run dev
 ```
 
 Then click `Open Project` and select the SS14 source root that contains `Resources/Prototypes`.
+
+## Build Installer
+
+Windows installer:
+
+```powershell
+npm install
+npm run dist:win
+```
+
+Portable Windows build:
+
+```powershell
+npm install
+npm run dist:portable
+```
+
+Artifacts are written to `release/`.
 
 ## Current Features
 

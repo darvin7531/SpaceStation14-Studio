@@ -1,15 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useProjectStore } from '../store/projectStore';
 import MonacoEditor from '@monaco-editor/react';
 import { Save, AlertCircle } from 'lucide-react';
 import { parseDocument } from 'yaml';
 
 export default function Editor() {
-  const { projectRoot, selectedPrototypeId, selectedPrototype, setSelectedPrototype, updateSelectedPrototype } = useProjectStore();
-  const [activeTab, setActiveTab] = useState<'form' | 'raw' | 'resolved'>('form');
+  const { projectRoot, selectedPrototypeId, selectedPrototype, selectedEditorTab, editorJumpQuery, setSelectedEditorTab, setEditorJumpQuery, setSelectedPrototype, updateSelectedPrototype } = useProjectStore();
   const [yamlContent, setYamlContent] = useState('');
   const [isDirty, setIsDirty] = useState(false);
+  const editorRef = useRef<any>(null);
   const proto = selectedPrototype?.prototype ?? null;
+
+  useEffect(() => {
+    if (proto) setSelectedEditorTab('form');
+  }, [proto?._key, setSelectedEditorTab]);
 
   useEffect(() => {
     if (proto && projectRoot) {
@@ -26,6 +30,19 @@ export default function Editor() {
     }, 250);
     return () => window.clearTimeout(handle);
   }, [isDirty, selectedPrototypeId, setSelectedPrototype, yamlContent]);
+
+  useEffect(() => {
+    if (!editorRef.current || selectedEditorTab !== 'raw' || !editorJumpQuery) return;
+    const model = editorRef.current.getModel?.();
+    if (!model) return;
+    const matches = model.findMatches(editorJumpQuery, true, false, false, null, true);
+    const match = matches[0];
+    if (!match) return;
+    editorRef.current.revealLineInCenter(match.range.startLineNumber);
+    editorRef.current.setPosition({ lineNumber: match.range.startLineNumber, column: match.range.startColumn });
+    editorRef.current.focus();
+    setEditorJumpQuery(null);
+  }, [editorJumpQuery, selectedEditorTab, setEditorJumpQuery, yamlContent]);
 
   if (!proto) {
     return <div className="flex-1 flex items-center justify-center text-neutral-500 bg-neutral-950">Select a prototype to edit</div>;
@@ -120,9 +137,9 @@ export default function Editor() {
             {(['form', 'raw', 'resolved'] as const).map(tab => (
               <button
                 key={tab}
-                onClick={() => setActiveTab(tab)}
+                onClick={() => setSelectedEditorTab(tab)}
                 className={`px-3 py-1 text-xs font-medium rounded-sm capitalize transition-colors ${
-                  activeTab === tab ? 'bg-neutral-800 text-neutral-100 shadow-sm' : 'text-neutral-400 hover:text-neutral-200'
+                  selectedEditorTab === tab ? 'bg-neutral-800 text-neutral-100 shadow-sm' : 'text-neutral-400 hover:text-neutral-200'
                 }`}
               >
                 {tab}
@@ -143,7 +160,7 @@ export default function Editor() {
       </div>
 
       <div className="flex-1 overflow-y-auto relative">
-        {activeTab === 'form' && (
+        {selectedEditorTab === 'form' && (
           <div className="p-6 max-w-3xl mx-auto space-y-6">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
@@ -166,12 +183,15 @@ export default function Editor() {
           </div>
         )}
 
-        {activeTab === 'raw' && (
+        {selectedEditorTab === 'raw' && (
           <MonacoEditor
             height="100%"
             language="yaml"
             theme="vs-dark"
             value={yamlContent}
+            onMount={(editor) => {
+              editorRef.current = editor;
+            }}
             onChange={(value) => {
               if (value !== undefined) {
                 setYamlContent(value);
@@ -190,7 +210,7 @@ export default function Editor() {
           />
         )}
 
-        {activeTab === 'resolved' && (
+        {selectedEditorTab === 'resolved' && (
           <div className="p-6">
             <pre className="text-xs font-mono text-neutral-300 bg-neutral-900 p-4 rounded-md overflow-x-auto">
               {JSON.stringify(selectedPrototype?.resolved, null, 2)}

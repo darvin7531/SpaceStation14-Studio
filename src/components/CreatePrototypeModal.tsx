@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, FilePlus2, FolderInput, Layers, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, FilePlus2, FolderInput, FolderOpen, Layers, X } from 'lucide-react';
 import { CreatePrototypeOptions, DraftValidation, PrototypeDraft } from '../types';
 
 interface Props {
@@ -76,6 +76,14 @@ export default function CreatePrototypeModal({ open, onClose, onCreated }: Props
 
   const update = (patch: Partial<PrototypeDraft>) => setDraft((current) => ({ ...current, ...patch }));
 
+  async function handleBrowseFolder() {
+    const currentDir = directoryOfPath(draft.filePath);
+    const selected = await window.prototypeStudio.pickProjectFolder({ scope: 'prototypes', currentPath: currentDir });
+    if (!selected) return;
+    const fileName = fileNameOfPath(draft.filePath) || `${draft.type || 'entity'}.yml`;
+    update({ filePath: `${selected}/${fileName}` });
+  }
+
   async function handleCreate() {
     const checked = await window.prototypeStudio.validateDraft(draft);
     setValidation(checked);
@@ -93,7 +101,7 @@ export default function CreatePrototypeModal({ open, onClose, onCreated }: Props
   }
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-black/65 p-4 md:p-6">
+    <div className="fixed inset-x-0 bottom-0 top-9 z-[60] overflow-hidden bg-black/65 p-4 md:p-6">
       <div className="mx-auto flex h-full items-center justify-center">
         <div className="grid max-h-[min(920px,calc(100vh-2rem))] min-h-0 w-[min(1180px,96vw)] grid-cols-1 overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-950 shadow-2xl lg:grid-cols-[minmax(420px,520px)_1fr]">
         <section className="min-h-0 overflow-y-auto border-b border-neutral-800 p-5 custom-scrollbar lg:border-b-0 lg:border-r">
@@ -147,7 +155,13 @@ export default function CreatePrototypeModal({ open, onClose, onCreated }: Props
                 <button className={draft.mode === 'new' ? 'wizard-toggle active' : 'wizard-toggle'} onClick={() => update({ mode: 'new' })}>Create new file</button>
               </div>
               <label className="wizard-label">file path
-                <input list="prototype-files" value={draft.filePath} onChange={(event) => update({ filePath: event.target.value })} className="wizard-input" />
+                <div className="grid grid-cols-[1fr_auto] gap-2">
+                  <input list="prototype-files" value={draft.filePath} onChange={(event) => update({ filePath: event.target.value })} className="wizard-input" />
+                  <button type="button" onClick={() => void handleBrowseFolder()} className="inline-flex items-center gap-2 rounded-md border border-neutral-800 bg-neutral-900 px-3 text-xs text-neutral-300 hover:bg-neutral-800">
+                    <FolderOpen size={14} />
+                    Browse
+                  </button>
+                </div>
                 <datalist id="prototype-files">{options?.files.slice(0, 2000).map((file) => <option key={file} value={file} />)}</datalist>
                 <span className="wizard-help">Must stay inside Resources/Prototypes and end with .yml/.yaml.</span>
               </label>
@@ -212,4 +226,16 @@ export default function CreatePrototypeModal({ open, onClose, onCreated }: Props
       </div>
     </div>
   );
+}
+
+function directoryOfPath(filePath: string) {
+  const normalized = String(filePath || '').replace(/\\/g, '/');
+  const index = normalized.lastIndexOf('/');
+  return index >= 0 ? normalized.slice(0, index) : 'Resources/Prototypes';
+}
+
+function fileNameOfPath(filePath: string) {
+  const normalized = String(filePath || '').replace(/\\/g, '/');
+  const index = normalized.lastIndexOf('/');
+  return index >= 0 ? normalized.slice(index + 1) : normalized;
 }

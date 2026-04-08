@@ -1,5 +1,5 @@
 {
-  "name": "Prototype Studio",
-  "description": "Electron editor for SS14 prototypes, components and RSI sprites.",
+  "name": "SS14 Studio",
+  "description": "Electron studio for SS14 prototypes, RSI sprites and project resources.",
   "requestFramePermissions": []
 }
