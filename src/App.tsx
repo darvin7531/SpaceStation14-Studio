@@ -42,7 +42,7 @@ export default function App() {
   const updateActiveRsiDetail = useProjectStore((state) => state.updateActiveRsiDetail);
   const [statusOpen, setStatusOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'general' | 'updates' | 'about'>('general');
+  const [settingsTab, setSettingsTab] = useState<'general' | 'editor' | 'updates' | 'about'>('general');
   const [createPrototypeOpen, setCreatePrototypeOpen] = useState(false);
   const [createRsiOpen, setCreateRsiOpen] = useState(false);
   const [statusLog, setStatusLog] = useState<string[]>([t('app.status.ready')]);

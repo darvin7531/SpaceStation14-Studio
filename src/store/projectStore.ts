@@ -40,7 +40,9 @@ interface ProjectState {
   closeTab: (tabId: string) => void;
   reorderTab: (tabId: string, targetIndex: number) => void;
   updateActivePrototypeDraft: (yaml: string) => void;
+  updatePrototypeDraftById: (tabId: string, yaml: string) => void;
   updateActivePrototypeDetail: (detail: PrototypeDetail | null, options?: { preserveDraft?: boolean; dirty?: boolean }) => void;
+  updatePrototypeDetailById: (tabId: string, detail: PrototypeDetail | null, options?: { preserveDraft?: boolean; dirty?: boolean }) => void;
   updateActivePrototypeSaved: (detail: PrototypeDetail | null, rawYaml: string) => void;
   updateActiveRsiDetail: (detail: RsiAssetDetail | null, dirty?: boolean) => void;
   updateActiveRsiMeta: (updater: (detail: RsiAssetDetail) => RsiAssetDetail) => void;
@@ -301,6 +303,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       selectedPrototype: nextTab.detail,
     };
   }),
+  updatePrototypeDraftById: (tabId, yaml) => set((state) => {
+    const tab = state.tabsById[tabId];
+    if (!tab || tab.kind !== 'prototype') return {};
+    if (tab.rawYaml === yaml && tab.dirty) return {};
+    const nextTab: PrototypeEditorTab = { ...tab, rawYaml: yaml, dirty: true };
+    return {
+      tabsById: { ...state.tabsById, [tabId]: nextTab },
+      ...(state.activeTabId === tabId ? { selectedPrototype: nextTab.detail } : {}),
+    };
+  }),
   updateActivePrototypeDetail: (detail, options) => set((state) => {
     const active = getTabById(state, state.activeTabId);
     if (!active || active.kind !== 'prototype') return {};
@@ -318,6 +330,27 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       selectedPrototypeId: nextTab.prototypeKey,
       selectedEditorTab: nextTab.editorTab,
       editorJumpQuery: nextTab.jumpQuery ?? null,
+    };
+  }),
+  updatePrototypeDetailById: (tabId, detail, options) => set((state) => {
+    const tab = state.tabsById[tabId];
+    if (!tab || tab.kind !== 'prototype') return {};
+    const nextTab: PrototypeEditorTab = {
+      ...tab,
+      detail,
+      title: String(detail?.prototype.id ?? tab.title),
+      subtitle: detail?.prototype._filePath ?? tab.subtitle,
+      rawYaml: options?.preserveDraft ? tab.rawYaml : detail?.prototype._rawYaml || tab.rawYaml,
+      dirty: options?.dirty ?? tab.dirty,
+    };
+    return {
+      tabsById: { ...state.tabsById, [tabId]: nextTab },
+      ...(state.activeTabId === tabId ? {
+        selectedPrototype: nextTab.detail,
+        selectedPrototypeId: nextTab.prototypeKey,
+        selectedEditorTab: nextTab.editorTab,
+        editorJumpQuery: nextTab.jumpQuery ?? null,
+      } : {}),
     };
   }),
   updateActivePrototypeSaved: (detail, rawYaml) => set((state) => {

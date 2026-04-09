@@ -1,4 +1,4 @@
-import { MouseEvent } from 'react';
+import { KeyboardEvent, MouseEvent } from 'react';
 import { ValidationIssue } from '../types';
 import { navigateToIssue, openPrototypeByKey, openRsiByPath } from '../services/navigation';
 import { useI18n } from '../i18n';
@@ -17,6 +17,12 @@ export default function IssueCard({ issue, compact = false }: Props) {
     void navigateToIssue(issue);
   };
 
+  const onCardKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    void navigateToIssue(issue);
+  };
+
   const onPrototypeClick = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     if (!issue.prototypeKey) return;
@@ -30,8 +36,11 @@ export default function IssueCard({ issue, compact = false }: Props) {
   };
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onCardClick}
+      onKeyDown={onCardKeyDown}
       className={`w-full text-left rounded border border-neutral-800 bg-neutral-900 transition-colors hover:bg-neutral-800 ${compact ? 'p-2' : 'p-3'}`}
     >
       <div className="flex items-start justify-between gap-3">
@@ -59,6 +68,6 @@ export default function IssueCard({ issue, compact = false }: Props) {
           </div>
         )}
       </div>
-    </button>
+    </div>
   );
 }

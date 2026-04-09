@@ -1,13 +1,16 @@
 import { useProjectStore } from '../store/projectStore';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Layers, Image as ImageIcon, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
 import IssueCard from './IssueCard';
 import { useI18n } from '../i18n';
 
 export default function Inspector() {
   const { t } = useI18n();
-  const detail = useProjectStore((state) => state.selectedPrototype);
-  const selectedRsi = useProjectStore((state) => state.selectedRsi);
+  const activeTabId = useProjectStore((state) => state.activeTabId);
+  const tabsById = useProjectStore((state) => state.tabsById);
+  const activeTab = useMemo(() => activeTabId ? tabsById[activeTabId] ?? null : null, [activeTabId, tabsById]);
+  const detail = activeTab?.kind === 'prototype' ? activeTab.detail : null;
+  const selectedRsi = activeTab?.kind === 'rsi' ? activeTab.detail : null;
   const proto = detail?.prototype ?? null;
   const resolvedProto = detail?.resolved;
   const protoIssues = detail?.issues ?? [];

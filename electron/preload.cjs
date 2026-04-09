@@ -30,6 +30,9 @@ contextBridge.exposeInMainWorld("prototypeStudio", {
   checkForUpdates: () => ipcRenderer.invoke("update:check"),
   installUpdate: () => ipcRenderer.invoke("update:install"),
   getAppInfo: () => ipcRenderer.invoke("app:get-info"),
+  getAppSettings: () => ipcRenderer.invoke("app:get-settings"),
+  updateAppSettings: (patch) => ipcRenderer.invoke("app:update-settings", patch),
+  restartApp: () => ipcRenderer.invoke("app:restart"),
   openExternal: (url) => ipcRenderer.invoke("app:open-external", url),
   getRecentProjects: () => ipcRenderer.invoke("workspace:get-recent-projects"),
   onUpdateStatus: (callback) => {

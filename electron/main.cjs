@@ -7,6 +7,15 @@ const { autoUpdater } = require("electron-updater");
 const { readLatestProjectCache, readPrototypeBlock, savePrototypeBlock, createPrototype } = require("./scanner.cjs");
 const appPackage = require("../package.json");
 
+const DEFAULT_APP_SETTINGS = {
+  useHardwareAcceleration: true,
+};
+
+const bootAppSettings = readAppSettings();
+if (!bootAppSettings.useHardwareAcceleration) {
+  app.disableHardwareAcceleration();
+}
+
 Menu.setApplicationMenu(null);
 let activeIndex = null;
 let mainWindow = null;
@@ -334,9 +343,29 @@ ipcMain.handle("app:get-info", async () => ({
   license: appPackage.license || "AGPL-3.0-or-later",
   repositoryUrl: `https://github.com/${appPackage.build?.publish?.[0]?.owner || "darvin7531"}/${appPackage.build?.publish?.[0]?.repo || "SpaceStation14-Studio"}`,
 }));
+ipcMain.handle("app:get-settings", async () => ({
+  useHardwareAcceleration: readAppSettings().useHardwareAcceleration,
+  appliedUseHardwareAcceleration: bootAppSettings.useHardwareAcceleration,
+}));
+ipcMain.handle("app:update-settings", async (_event, patch = {}) => {
+  const next = {
+    ...readAppSettings(),
+    ...(patch && typeof patch === "object" ? patch : {}),
+  };
+  writeAppSettings(next);
+  return {
+    useHardwareAcceleration: next.useHardwareAcceleration,
+    appliedUseHardwareAcceleration: bootAppSettings.useHardwareAcceleration,
+  };
+});
 ipcMain.handle("app:open-external", async (_event, url) => {
   if (!url || typeof url !== "string") return false;
   await shell.openExternal(url);
+  return true;
+});
+ipcMain.handle("app:restart", async () => {
+  app.relaunch();
+  app.exit(0);
   return true;
 });
 ipcMain.handle("window:minimize", (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());
@@ -537,7 +566,7 @@ function getPrototype(key) {
   const prototype = activeIndex.prototypes[key];
   if (!prototype) return null;
   const resolved = resolvePrototype(key);
-  const issues = activeIndex.issues.filter((issue) => issue.prototypeKey === key);
+  const issues = collectPrototypeIssues({ key, draft: prototype, resolved });
   const spriteComponent = resolved?.components?.find?.((component) => component?.type === "Sprite");
   const sprite = spriteComponent?.sprite;
   const preferredState = spriteComponent?.state || spriteComponent?.layers?.find?.((layer) => layer?.state)?.state;
@@ -565,28 +594,85 @@ function validatePrototypeYaml({ key, text }) {
   }
 
   const draft = { ...base, ...parsed, _key: key, _filePath: base._filePath, _line: base._line, _rawYaml: String(text ?? "") };
-  if (draft.type == null) issues.push({ level: "error", field: "type", message: "type is required", prototypeKey: key });
-  if (draft.id == null) issues.push({ level: "error", field: "id", message: "id is required", prototypeKey: key });
-  const nextKey = `${String(draft.type)}:${String(draft.id)}`;
-  if (nextKey !== key && activeIndex.prototypes[nextKey]) {
-    issues.push({ level: "error", field: "id", message: `prototype ${nextKey} already exists`, prototypeKey: key });
-  }
-
-  const parents = Array.isArray(draft.parent) ? draft.parent : draft.parent ? [draft.parent] : [];
-  for (const parent of parents) {
-    if (!findPrototypeKey(parent, draft.type)) {
-      issues.push({ level: "warning", field: "parent", message: `parent '${parent}' was not found`, prototypeKey: key });
-    }
-  }
-
   const resolved = resolvePrototypeWithOverride(key, draft);
+  issues.push(...collectPrototypeIssues({ key, draft, resolved, includeDuplicateCheck: true }));
   const spriteComponent = resolved?.components?.find?.((component) => component?.type === "Sprite");
   const sprite = spriteComponent?.sprite;
   const preferredState = spriteComponent?.state || spriteComponent?.layers?.find?.((layer) => layer?.state)?.state;
   const rsi = sprite ? findRsi(sprite, preferredState) : null;
-  if (sprite && !rsi) issues.push({ level: "warning", field: "Sprite.sprite", message: `sprite '${sprite}' was not found`, prototypeKey: key, rsiPath: normalizeSpritePath(sprite) });
+  return { prototype: draft, resolved, issues: dedupeIssues(issues), rsi, kind: activeIndex.prototypeKinds[String(draft.type)] ?? null };
+}
 
-  return { prototype: draft, resolved, issues, rsi, kind: activeIndex.prototypeKinds[String(draft.type)] ?? null };
+function collectPrototypeIssues({ key, draft, resolved, includeDuplicateCheck = false }) {
+  const issues = [];
+  if (draft?.type == null) issues.push({ level: "error", field: "type", message: "type is required", prototypeKey: key });
+  if (draft?.id == null) issues.push({ level: "error", field: "id", message: "id is required", prototypeKey: key });
+
+  if (includeDuplicateCheck && draft?.type != null && draft?.id != null) {
+    const nextKey = `${String(draft.type)}:${String(draft.id)}`;
+    if (nextKey !== key && activeIndex.prototypes[nextKey]) {
+      issues.push({ level: "error", field: "id", message: `prototype ${nextKey} already exists`, prototypeKey: key });
+    }
+  }
+
+  const parents = Array.isArray(draft?.parent) ? draft.parent : draft?.parent ? [draft.parent] : [];
+  for (const parent of parents) {
+    if (!findPrototypeKey(parent, draft?.type)) {
+      issues.push({ level: "warning", field: "parent", message: `parent '${parent}' was not found`, prototypeKey: key });
+    }
+  }
+
+  if (!resolved?.components) return issues;
+
+  for (const component of resolved.components) {
+    if (!component || typeof component !== "object") continue;
+    const componentType = String(component.type ?? "");
+    if (componentType === "Sprite" || componentType === "Clothing") {
+      if (Object.prototype.hasOwnProperty.call(component, "sprite")) {
+        const spriteValue = component.sprite;
+        if (spriteValue == null || String(spriteValue).trim() === "") {
+          issues.push({
+            level: "warning",
+            field: `${componentType}.sprite`,
+            message: `${componentType}.sprite is empty`,
+            prototypeKey: key,
+          });
+          continue;
+        }
+
+        const preferredState = component.state || component.layers?.find?.((layer) => layer?.state)?.state;
+        const rsi = findRsi(spriteValue, preferredState);
+        if (!rsi) {
+          issues.push({
+            level: "warning",
+            field: `${componentType}.sprite`,
+            message: `${componentType}.sprite '${spriteValue}' was not found`,
+            prototypeKey: key,
+            rsiPath: normalizeSpritePath(spriteValue),
+          });
+        }
+      }
+    }
+  }
+
+  return dedupeIssues(issues);
+}
+
+function dedupeIssues(issues) {
+  const seen = new Set();
+  return issues.filter((issue) => {
+    const key = [
+      issue.level,
+      issue.field,
+      issue.message,
+      issue.prototypeKey,
+      issue.rsiPath,
+      issue.stateName,
+    ].join("|");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function autocomplete({ query = "", limit = 150, context = "any", componentType = "" }) {
@@ -617,6 +703,44 @@ function autocomplete({ query = "", limit = 150, context = "any", componentType 
         documentation: field.description
           ? `${component.className} / ${field.member}\n\n${field.description}`
           : `${component.className} / ${field.member}`,
+      }));
+  }
+
+  if (context === "rsiPath") {
+    return Object.values(activeIndex.rsis)
+      .map((rsi) => {
+        const shortPath = displaySpritePath(rsi.path);
+        const basename = path.posix.basename(shortPath, ".rsi");
+        return {
+          rsi,
+          shortPath,
+          basename,
+          states: rsi.meta?.states?.length ?? 0,
+        };
+      })
+      .filter((item) => {
+        if (!normalized) return true;
+        const full = item.rsi.path.toLowerCase();
+        const short = item.shortPath.toLowerCase();
+        const basename = item.basename.toLowerCase();
+        return full.includes(normalized) || short.includes(normalized) || basename.includes(normalized);
+      })
+      .sort((a, b) =>
+        spriteSuggestionRank(a, normalized) - spriteSuggestionRank(b, normalized) ||
+        a.shortPath.localeCompare(b.shortPath))
+      .slice(0, limit)
+      .map((item) => ({
+        label: item.shortPath,
+        kind: "field",
+        insertText: item.shortPath,
+        detail: `${item.states} states`,
+        documentation: [
+          `### ${item.basename}.rsi`,
+          "",
+          `Path: \`${item.shortPath}\``,
+          `Project path: \`${item.rsi.path}\``,
+          `States: ${item.states}`,
+        ].join("\n"),
       }));
   }
 
@@ -660,6 +784,22 @@ function suggestionRank(label, normalizedQuery) {
   if (value.startsWith(normalizedQuery)) return 10 + value.length;
   const index = value.indexOf(normalizedQuery);
   return index >= 0 ? 100 + index + value.length : 1000 + value.length;
+}
+
+function spriteSuggestionRank(item, normalizedQuery) {
+  if (!normalizedQuery) return item.shortPath.length;
+  const short = item.shortPath.toLowerCase();
+  const full = item.rsi.path.toLowerCase();
+  const basename = item.basename.toLowerCase();
+  if (short === normalizedQuery || basename === normalizedQuery) return 0;
+  if (short.startsWith(normalizedQuery)) return 10 + short.length;
+  if (basename.startsWith(normalizedQuery)) return 20 + basename.length;
+  const shortIndex = short.indexOf(normalizedQuery);
+  if (shortIndex >= 0) return 100 + shortIndex + short.length;
+  const baseIndex = basename.indexOf(normalizedQuery);
+  if (baseIndex >= 0) return 200 + baseIndex + basename.length;
+  const fullIndex = full.indexOf(normalizedQuery);
+  return fullIndex >= 0 ? 300 + fullIndex + full.length : 1000 + short.length;
 }
 
 function componentInfo(name) {
@@ -771,7 +911,7 @@ async function pickProjectFolder({ scope = "prototypes", currentPath = "" }) {
 
 function getRsiAsset(rsiPath) {
   ensureIndex();
-  const key = normalizeRsiKey(rsiPath);
+  const key = resolveRsiKey(rsiPath);
   const rsi = activeIndex.rsis[key];
   if (!rsi) return null;
   return formatRsiAsset(rsi);
@@ -1122,6 +1262,15 @@ function normalizeRsiKey(value) {
   return String(value || "").replace(/\\/g, "/");
 }
 
+function resolveRsiKey(value) {
+  const direct = normalizeRsiKey(value);
+  if (activeIndex.rsis[direct]) return direct;
+  const normalizedSprite = normalizeSpritePath(value);
+  if (activeIndex.rsis[normalizedSprite]) return normalizedSprite;
+  const normalizedLower = normalizedSprite.toLowerCase();
+  return Object.keys(activeIndex.rsis).find((key) => key.toLowerCase() === normalizedLower) ?? direct;
+}
+
 function normalizeTextureDirectory(value) {
   let normalized = String(value || "Resources/Textures/_Studio").replace(/\\/g, "/").replace(/\/+$/, "");
   if (!normalized.startsWith("Resources/Textures")) normalized = `Resources/Textures/${normalized.replace(/^\/+/, "")}`;
@@ -1171,12 +1320,23 @@ function normalizeSpritePath(sprite) {
   return normalized;
 }
 
+function displaySpritePath(sprite) {
+  const normalized = normalizeSpritePath(sprite);
+  return normalized.startsWith("Resources/Textures/")
+    ? normalized.slice("Resources/Textures/".length)
+    : normalized;
+}
+
 function ensureIndex() {
   if (!activeIndex) throw new Error("Project index is not loaded.");
 }
 
 function scanCacheDir() {
   return path.join(app.getPath("userData"), "scan-cache");
+}
+
+function appSettingsPath() {
+  return path.join(app.getPath("userData"), "app-settings.json");
 }
 
 function workspaceStatePath() {
@@ -1201,4 +1361,30 @@ function writeWorkspaceState(patch) {
   } catch {
     // Workspace restore is a performance optimization, not critical project data.
   }
+}
+
+function readAppSettings() {
+  try {
+    const file = appSettingsPath();
+    if (!fs.existsSync(file)) return { ...DEFAULT_APP_SETTINGS };
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+    return {
+      ...DEFAULT_APP_SETTINGS,
+      ...(parsed && typeof parsed === "object" ? parsed : {}),
+      useHardwareAcceleration: parsed?.useHardwareAcceleration !== false,
+    };
+  } catch {
+    return { ...DEFAULT_APP_SETTINGS };
+  }
+}
+
+function writeAppSettings(patch) {
+  const next = {
+    ...DEFAULT_APP_SETTINGS,
+    ...(patch && typeof patch === "object" ? patch : {}),
+    useHardwareAcceleration: patch?.useHardwareAcceleration !== false,
+  };
+  fs.mkdirSync(path.dirname(appSettingsPath()), { recursive: true });
+  fs.writeFileSync(appSettingsPath(), JSON.stringify(next, null, 2), "utf8");
+  return next;
 }

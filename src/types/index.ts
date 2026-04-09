@@ -254,6 +254,11 @@ export interface AppInfo {
   repositoryUrl: string;
 }
 
+export interface AppSettings {
+  useHardwareAcceleration: boolean;
+  appliedUseHardwareAcceleration: boolean;
+}
+
 declare global {
   interface Window {
     prototypeStudio: {
@@ -262,7 +267,7 @@ declare global {
       scanProject: (projectRoot: string) => Promise<ProjectScanResult>;
       listPrototypes: (request: { query?: string; offset?: number; limit?: number }) => Promise<PrototypeListResult>;
       getPrototype: (key: string) => Promise<PrototypeDetail | null>;
-      autocomplete: (request: { query?: string; limit?: number; context?: 'any' | 'componentEntryStart' | 'componentType' | 'componentField'; componentType?: string }) => Promise<CompletionSuggestion[]>;
+      autocomplete: (request: { query?: string; limit?: number; context?: 'any' | 'componentEntryStart' | 'componentType' | 'componentField' | 'rsiPath'; componentType?: string }) => Promise<CompletionSuggestion[]>;
       componentInfo: (name: string) => Promise<ComponentSchema | null>;
       resourceTree: () => Promise<ResourceTreeNode>;
       pickProjectFolder: (request: { scope: 'prototypes' | 'textures'; currentPath?: string }) => Promise<string | null>;
@@ -283,6 +288,9 @@ declare global {
       installUpdate: () => Promise<boolean>;
       onUpdateStatus: (callback: (status: UpdateState) => void) => () => void;
       getAppInfo: () => Promise<AppInfo>;
+      getAppSettings: () => Promise<AppSettings>;
+      updateAppSettings: (patch: Partial<Pick<AppSettings, 'useHardwareAcceleration'>>) => Promise<AppSettings>;
+      restartApp: () => Promise<boolean>;
       openExternal: (url: string) => Promise<boolean>;
       getRecentProjects: () => Promise<string[]>;
       saveWorkspaceUiState: (patch: { selectedPrototypeId?: string | null; searchQuery?: string; lastProjectRoot?: string }) => Promise<void>;

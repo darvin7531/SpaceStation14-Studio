@@ -1,22 +1,32 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useProjectStore } from '../store/projectStore';
 import MonacoEditor from '@monaco-editor/react';
 import { Save, AlertCircle } from 'lucide-react';
 import { parseDocument } from 'yaml';
 import { useI18n } from '../i18n';
+import { useEditorSettings } from '../editorSettings';
+import { openRsiByPath } from '../services/navigation';
 
 export default function Editor() {
   const { t } = useI18n();
+  const { settings } = useEditorSettings();
   const projectRoot = useProjectStore((state) => state.projectRoot);
   const editorJumpQuery = useProjectStore((state) => state.editorJumpQuery);
   const activeTabId = useProjectStore((state) => state.activeTabId);
   const tabsById = useProjectStore((state) => state.tabsById);
   const setSelectedEditorTab = useProjectStore((state) => state.setSelectedEditorTab);
   const setEditorJumpQuery = useProjectStore((state) => state.setEditorJumpQuery);
-  const updateActivePrototypeDetail = useProjectStore((state) => state.updateActivePrototypeDetail);
-  const updateActivePrototypeDraft = useProjectStore((state) => state.updateActivePrototypeDraft);
+  const updatePrototypeDraftById = useProjectStore((state) => state.updatePrototypeDraftById);
+  const updatePrototypeDetailById = useProjectStore((state) => state.updatePrototypeDetailById);
   const updateActivePrototypeSaved = useProjectStore((state) => state.updateActivePrototypeSaved);
   const editorRef = useRef<any>(null);
+  const draftCacheRef = useRef<Record<string, string>>({});
+  const validatedCacheRef = useRef<Record<string, string>>({});
+  const validationRequestRef = useRef<Record<string, number>>({});
+  const previousTabIdRef = useRef<string | null>(null);
+  const syncedModelTabIdRef = useRef<string | null>(null);
+  const draftSyncTimeoutRef = useRef<number | null>(null);
+  const validationTimeoutRef = useRef<number | null>(null);
   const activePrototypeTab = useMemo(
     () => {
       const tab = activeTabId ? tabsById[activeTabId] : null;
@@ -26,18 +36,51 @@ export default function Editor() {
   );
   const detail = activePrototypeTab?.detail ?? null;
   const proto = detail?.prototype ?? null;
-  const editorTab = activePrototypeTab?.editorTab ?? 'form';
-  const yamlContent = activePrototypeTab?.rawYaml ?? '';
+  const editorTab = activePrototypeTab?.editorTab === 'resolved' ? 'form' : (activePrototypeTab?.editorTab ?? 'form');
+  const editorModelPath = activePrototypeTab ? `inmemory://prototype/${activePrototypeTab.id}.yml` : 'inmemory://prototype/empty.yml';
+  const [editorText, setEditorText] = useState(activePrototypeTab?.rawYaml ?? '');
+  const yamlContent = editorText;
   const isDirty = activePrototypeTab?.dirty ?? false;
 
   useEffect(() => {
-    if (!activePrototypeTab?.prototypeKey || !isDirty) return;
-    const handle = window.setTimeout(async () => {
-      const nextDetail = await window.prototypeStudio.validatePrototypeYaml({ key: activePrototypeTab.prototypeKey, text: yamlContent });
-      if (nextDetail) updateActivePrototypeDetail(nextDetail, { preserveDraft: true, dirty: true });
-    }, 250);
-    return () => window.clearTimeout(handle);
-  }, [activePrototypeTab?.prototypeKey, isDirty, updateActivePrototypeDetail, yamlContent]);
+    const previousTabId = previousTabIdRef.current;
+    if (previousTabId && previousTabId !== activePrototypeTab?.id) {
+      if (draftSyncTimeoutRef.current != null) {
+        window.clearTimeout(draftSyncTimeoutRef.current);
+        draftSyncTimeoutRef.current = null;
+      }
+      if (validationTimeoutRef.current != null) {
+        window.clearTimeout(validationTimeoutRef.current);
+        validationTimeoutRef.current = null;
+      }
+      const cached = draftCacheRef.current[previousTabId];
+      if (cached != null) {
+        updatePrototypeDraftById(previousTabId, cached);
+      }
+      validationRequestRef.current[previousTabId] = 0;
+      syncedModelTabIdRef.current = null;
+    }
+
+    previousTabIdRef.current = activePrototypeTab?.id ?? null;
+
+    if (!activePrototypeTab) {
+      setEditorText('');
+      return;
+    }
+
+    const nextText = draftCacheRef.current[activePrototypeTab.id] ?? activePrototypeTab.rawYaml ?? '';
+    if (validatedCacheRef.current[activePrototypeTab.id] == null) {
+      validatedCacheRef.current[activePrototypeTab.id] = detail?.prototype?._rawYaml ?? activePrototypeTab.rawYaml ?? '';
+    }
+    setEditorText(nextText);
+  }, [activePrototypeTab?.id, activePrototypeTab?.rawYaml, detail?.prototype?._rawYaml, updatePrototypeDraftById]);
+
+  useEffect(() => {
+    return () => {
+      if (draftSyncTimeoutRef.current != null) window.clearTimeout(draftSyncTimeoutRef.current);
+      if (validationTimeoutRef.current != null) window.clearTimeout(validationTimeoutRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!editorRef.current || editorTab !== 'raw' || !editorJumpQuery) return;
@@ -51,6 +94,24 @@ export default function Editor() {
     editorRef.current.focus();
     setEditorJumpQuery(null);
   }, [editorJumpQuery, editorTab, setEditorJumpQuery, yamlContent]);
+
+  useEffect(() => {
+    if (!editorRef.current || editorTab !== 'raw' || !activePrototypeTab) return;
+    if (syncedModelTabIdRef.current === activePrototypeTab.id) return;
+    const model = editorRef.current.getModel?.();
+    if (!model) return;
+    const nextText = draftCacheRef.current[activePrototypeTab.id] ?? activePrototypeTab.rawYaml ?? '';
+    if (model.getValue() !== nextText) {
+      model.setValue(nextText);
+    }
+    syncedModelTabIdRef.current = activePrototypeTab.id;
+  }, [activePrototypeTab, editorTab, editorModelPath]);
+
+  useEffect(() => {
+    if (!activePrototypeTab || !settings.liveValidation) return;
+    if (editorText === (validatedCacheRef.current[activePrototypeTab.id] ?? detail?.prototype?._rawYaml ?? '')) return;
+    scheduleValidation(activePrototypeTab.id, activePrototypeTab.prototypeKey, editorText);
+  }, [activePrototypeTab?.id, activePrototypeTab?.prototypeKey, detail?.prototype?._rawYaml, editorText, settings.liveValidation, settings.validationDelay]);
 
   if (!proto) {
     return <div className="flex-1 flex items-center justify-center text-neutral-500 bg-neutral-950">{t('editor.empty')}</div>;
@@ -73,11 +134,41 @@ export default function Editor() {
       });
 
       const refreshed = await window.prototypeStudio.getPrototype(activePrototypeTab!.prototypeKey);
+      validationRequestRef.current[activePrototypeTab!.id] = 0;
+      validatedCacheRef.current[activePrototypeTab!.id] = saved.text;
       updateActivePrototypeSaved(refreshed, saved.text);
     } catch (error) {
       console.error("Failed to save", error);
       alert(error instanceof Error ? error.message : t('editor.saveFailed'));
     }
+  };
+
+  const scheduleDraftSync = (tabId: string, text: string) => {
+    if (draftSyncTimeoutRef.current != null) window.clearTimeout(draftSyncTimeoutRef.current);
+    draftSyncTimeoutRef.current = window.setTimeout(() => {
+      updatePrototypeDraftById(tabId, text);
+      draftSyncTimeoutRef.current = null;
+    }, 160);
+  };
+
+  const scheduleValidation = (tabId: string, prototypeKey: string, text: string) => {
+    if (validationTimeoutRef.current != null) window.clearTimeout(validationTimeoutRef.current);
+    const baseline = validatedCacheRef.current[tabId] ?? detail?.prototype?._rawYaml ?? '';
+    if (!settings.liveValidation || text === baseline) {
+      validationTimeoutRef.current = null;
+      return;
+    }
+
+    const requestId = (validationRequestRef.current[tabId] ?? 0) + 1;
+    validationRequestRef.current[tabId] = requestId;
+    validationTimeoutRef.current = window.setTimeout(async () => {
+      const nextDetail = await window.prototypeStudio.validatePrototypeYaml({ key: prototypeKey, text });
+      if (!nextDetail) return;
+      if (validationRequestRef.current[tabId] !== requestId) return;
+      validatedCacheRef.current[tabId] = text;
+      updatePrototypeDetailById(tabId, nextDetail, { preserveDraft: true, dirty: true });
+      validationTimeoutRef.current = null;
+    }, settings.validationDelay);
   };
 
   const registerCompletion = (monaco: any) => {
@@ -87,50 +178,64 @@ export default function Editor() {
     anyWindow.__prototypeStudioCompletion = monaco.languages.registerCompletionItemProvider('yaml', {
       triggerCharacters: [' ', ':', '-', '"', '/', '.'],
       provideCompletionItems: async (model: any, position: any) => {
-        const word = model.getWordUntilPosition(position);
-        const linePrefix = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
-        const yamlContext = getYamlCompletionContext(model, position);
-        const suggestions = await window.prototypeStudio.autocomplete({
-          query: yamlContext.query ?? word?.word ?? '',
-          limit: 120,
-          context: yamlContext.context,
-          componentType: yamlContext.componentType,
-        });
-        const range = {
-          startLineNumber: position.lineNumber,
-          endLineNumber: position.lineNumber,
-          startColumn: yamlContext.startColumn ?? word?.startColumn ?? position.column,
-          endColumn: word?.endColumn ?? position.column,
-        };
-        return {
-          suggestions: suggestions.map((suggestion) => ({
-            label: suggestion.label,
-            kind: suggestion.kind === 'component' ? monaco.languages.CompletionItemKind.Class : monaco.languages.CompletionItemKind.Field,
-            insertText: yamlContext.context === 'componentEntryStart' && linePrefix.trimEnd().endsWith('-') && !linePrefix.endsWith(' ')
-              ? ` ${suggestion.insertText}`
-              : suggestion.insertText,
-            detail: suggestion.detail,
-            documentation: suggestion.documentation,
-            range,
-            sortText: suggestionSortText(suggestion.label, yamlContext.query ?? word?.word ?? ''),
-            preselect: isBestSuggestion(suggestion.label, yamlContext.query ?? word?.word ?? ''),
-            command: yamlContext.context === 'componentEntryStart'
-              ? { id: 'editor.action.triggerSuggest', title: 'Suggest components' }
-              : undefined,
-          })),
-        };
+        try {
+          const word = model.getWordUntilPosition(position);
+          const linePrefix = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
+          const yamlContext = getYamlCompletionContext(model, position);
+          const suggestions = await window.prototypeStudio.autocomplete({
+            query: yamlContext.query ?? word?.word ?? '',
+            limit: 120,
+            context: yamlContext.context,
+            componentType: yamlContext.componentType,
+          });
+          const range = {
+            startLineNumber: position.lineNumber,
+            endLineNumber: position.lineNumber,
+            startColumn: yamlContext.startColumn ?? word?.startColumn ?? position.column,
+            endColumn: word?.endColumn ?? position.column,
+          };
+          return {
+            suggestions: suggestions.map((suggestion) => ({
+              label: suggestion.label,
+              kind: suggestion.kind === 'component' ? monaco.languages.CompletionItemKind.Class : monaco.languages.CompletionItemKind.Field,
+              insertText: yamlContext.context === 'componentEntryStart' && linePrefix.trimEnd().endsWith('-') && !linePrefix.endsWith(' ')
+                ? ` ${suggestion.insertText}`
+                : suggestion.insertText,
+              detail: suggestion.detail,
+              documentation: suggestion.documentation,
+              range,
+              sortText: suggestionSortText(suggestion.label, yamlContext.query ?? word?.word ?? ''),
+              preselect: isBestSuggestion(suggestion.label, yamlContext.query ?? word?.word ?? ''),
+              command: yamlContext.context === 'componentEntryStart'
+                ? { id: 'editor.action.triggerSuggest', title: 'Suggest components' }
+                : undefined,
+            })),
+          };
+        } catch (error) {
+          if (!isMonacoCanceled(error)) {
+            console.warn('Autocomplete failed', error);
+          }
+          return { suggestions: [] };
+        }
       },
     });
     anyWindow.__prototypeStudioHover = monaco.languages.registerHoverProvider('yaml', {
       provideHover: async (model: any, position: any) => {
-        const target = getYamlHoverTarget(model, position);
-        if (!target) return null;
-        const component = await window.prototypeStudio.componentInfo(target.componentType);
-        if (!component) return null;
-        return {
-          range: target.range,
-          contents: [{ value: componentHoverMarkdown(component) }],
-        };
+        try {
+          const target = getYamlHoverTarget(model, position);
+          if (!target) return null;
+          const component = await window.prototypeStudio.componentInfo(target.componentType);
+          if (!component) return null;
+          return {
+            range: target.range,
+            contents: [{ value: componentHoverMarkdown(component) }],
+          };
+        } catch (error) {
+          if (!isMonacoCanceled(error)) {
+            console.warn('Hover failed', error);
+          }
+          return null;
+        }
       },
     });
   };
@@ -142,7 +247,7 @@ export default function Editor() {
           <h2 className="font-medium text-neutral-200 truncate">{text(proto.id)}</h2>
           <span className="text-xs text-neutral-500 truncate">{proto._filePath}:{proto._line}</span>
           <div className="flex bg-neutral-900 rounded-md p-0.5 border border-neutral-800">
-            {(['form', 'raw', 'resolved'] as const).map(tab => (
+            {(['form', 'raw'] as const).map(tab => (
               <button
                 key={tab}
                 onClick={() => setSelectedEditorTab(tab)}
@@ -193,37 +298,53 @@ export default function Editor() {
 
         {editorTab === 'raw' && (
           <MonacoEditor
+            path={editorModelPath}
             height="100%"
             language="yaml"
             theme="vs-dark"
-            value={yamlContent}
+            defaultValue={yamlContent}
             onMount={(editor) => {
               editorRef.current = editor;
+              syncedModelTabIdRef.current = null;
+              const model = editor.getModel?.();
+              if (model && model.getValue() !== editorText) {
+                model.setValue(editorText);
+              }
+              editor.onMouseDown((event: any) => {
+                const browserEvent = event.event?.browserEvent;
+                const position = event.target?.position;
+                if (!settings.ctrlClickNavigation || !browserEvent || !position || (!browserEvent.ctrlKey && !browserEvent.metaKey)) return;
+                const model = editor.getModel?.();
+                if (!model) return;
+                const target = getClickableRsiTarget(model, position);
+                if (!target) return;
+                browserEvent.preventDefault();
+                browserEvent.stopPropagation();
+                void openRsiByPath(target);
+              });
             }}
             onChange={(value) => {
-              if (value !== undefined) {
-                updateActivePrototypeDraft(value);
-              }
+              if (value === undefined) return;
+              setEditorText(value);
+              if (!activePrototypeTab) return;
+              draftCacheRef.current[activePrototypeTab.id] = value;
+              scheduleDraftSync(activePrototypeTab.id, value);
+              scheduleValidation(activePrototypeTab.id, activePrototypeTab.prototypeKey, value);
             }}
             beforeMount={registerCompletion}
             options={{
-              minimap: { enabled: false },
-              fontSize: 13,
-              wordWrap: 'on',
+              minimap: { enabled: settings.minimap },
+              fontSize: settings.fontSize,
+              wordWrap: settings.wordWrap,
               scrollBeyondLastLine: false,
+              tabSize: settings.tabSize,
+              lineNumbers: settings.lineNumbers,
               quickSuggestions: { other: true, comments: false, strings: true },
               suggest: { showWords: false, localityBonus: true },
             }}
           />
         )}
 
-        {editorTab === 'resolved' && (
-          <div className="p-6">
-            <pre className="text-xs font-mono text-neutral-300 bg-neutral-900 p-4 rounded-md overflow-x-auto">
-              {JSON.stringify(detail?.resolved, null, 2)}
-            </pre>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -250,7 +371,7 @@ function isBestSuggestion(label: string, query: string) {
 }
 
 function getYamlCompletionContext(model: any, position: any): {
-  context: 'any' | 'componentEntryStart' | 'componentType' | 'componentField';
+  context: 'any' | 'componentEntryStart' | 'componentType' | 'componentField' | 'rsiPath';
   componentType?: string;
   query?: string;
   startColumn?: number;
@@ -273,11 +394,32 @@ function getYamlCompletionContext(model: any, position: any): {
   }
 
   const componentType = nearestComponentType(model, position.lineNumber, currentIndent);
+  const spritePathMatch = linePrefix.match(/^(\s*sprite:\s*)([^#]*)$/);
+  if (componentType && spritePathMatch && isRsiPathComponent(componentType)) {
+    return {
+      context: 'rsiPath',
+      componentType,
+      query: spritePathMatch[2].trim(),
+      startColumn: spritePathMatch[1].length + 1,
+    };
+  }
+
   if (componentType) {
     return { context: 'componentField', componentType };
   }
 
   return { context: 'any' };
+}
+
+function isRsiPathComponent(componentType: string) {
+  return new Set([
+    'Sprite',
+    'Clothing',
+    'Icon',
+    'HumanoidAppearance',
+    'Construction',
+    'FootstepModifier',
+  ]).has(componentType);
 }
 
 function nearestComponentType(model: any, lineNumber: number, currentIndent: number) {
@@ -317,6 +459,20 @@ function getYamlHoverTarget(model: any, position: any) {
       endColumn,
     },
   };
+}
+
+function getClickableRsiTarget(model: any, position: any) {
+  const line = model.getLineContent(position.lineNumber);
+  const match = line.match(/^(\s*sprite:\s*)([^#]+?)(\s*(#.*)?)$/);
+  if (!match) return null;
+  const rawValue = match[2].trim();
+  if (!rawValue) return null;
+  const value = rawValue.replace(/^['"]|['"]$/g, '');
+  if (!value) return null;
+  const startColumn = line.indexOf(rawValue, match[1].length) + 1;
+  const endColumn = startColumn + rawValue.length;
+  if (position.column < startColumn || position.column > endColumn) return null;
+  return value;
 }
 
 function componentHoverMarkdown(component: any) {
@@ -376,4 +532,10 @@ function sampleYamlValue(field: any) {
   if (type.includes('list') || type.includes('array') || type.includes('hashset')) return '[]';
   if (type.includes('dictionary') || type.includes('damage')) return '{}';
   return 'TODO';
+}
+
+function isMonacoCanceled(error: unknown) {
+  if (!error) return false;
+  const message = error instanceof Error ? error.message : String(error);
+  return message === 'Canceled' || message.includes('Canceled');
 }

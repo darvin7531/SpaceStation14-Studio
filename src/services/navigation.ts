@@ -10,7 +10,7 @@ export async function openPrototypeByKey(key: string, field?: string | null) {
 export async function openRsiByPath(path: string, stateName?: string | null) {
   const store = useProjectStore.getState();
   const detail = await window.prototypeStudio.getRsiAsset(path);
-  store.openRsiTab(path, detail, { highlightedState: stateName ?? null });
+  store.openRsiTab(detail?.path ?? path, detail, { highlightedState: stateName ?? null });
 }
 
 export async function navigateToIssue(issue: ValidationIssue) {
