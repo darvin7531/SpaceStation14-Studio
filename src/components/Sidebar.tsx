@@ -164,24 +164,27 @@ export default function Sidebar() {
             {t('sidebar.resourcesTab')}
           </button>
         </div>
-        <div className="relative">
-          <Search size={14} className="absolute left-2.5 top-2.5 text-neutral-500" />
-          <input
-            type="text"
-            placeholder={t('sidebar.searchPlaceholder')}
-            disabled={mode !== 'search'}
-            value={searchQuery}
-            onChange={(event) => {
-              setOffset(0);
-              setSearchQuery(event.target.value);
-            }}
-            className="w-full bg-neutral-950 border border-neutral-800 rounded-md py-1.5 pl-8 pr-3 text-sm focus:outline-none focus:border-blue-500 transition-colors disabled:opacity-45"
-          />
-        </div>
-        <button onClick={() => setCreateOpen(true)} className="flex items-center justify-center gap-2 rounded-md border border-neutral-800 bg-neutral-950/60 px-2 py-1.5 text-xs text-neutral-300 hover:bg-neutral-900">
-          <Plus size={13} className="text-blue-400" />
-          {t('sidebar.createPrototype')}
-        </button>
+        {mode === 'search' && (
+          <>
+            <div className="relative">
+              <Search size={14} className="absolute left-2.5 top-2.5 text-neutral-500" />
+              <input
+                type="text"
+                placeholder={t('sidebar.searchPlaceholder')}
+                value={searchQuery}
+                onChange={(event) => {
+                  setOffset(0);
+                  setSearchQuery(event.target.value);
+                }}
+                className="w-full bg-neutral-950 border border-neutral-800 rounded-md py-1.5 pl-8 pr-3 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+              />
+            </div>
+            <button onClick={() => setCreateOpen(true)} className="flex items-center justify-center gap-2 rounded-md border border-neutral-800 bg-neutral-950/60 px-2 py-1.5 text-xs text-neutral-300 hover:bg-neutral-900">
+              <Plus size={13} className="text-blue-400" />
+              {t('sidebar.createPrototype')}
+            </button>
+          </>
+        )}
         {mode === 'resources' && (
           <button onClick={() => setCreateRsiOpen(true)} className="flex items-center justify-center gap-2 rounded-md border border-neutral-800 bg-neutral-950/60 px-2 py-1.5 text-xs text-neutral-300 hover:bg-neutral-900">
             <ImageIcon size={13} className="text-emerald-400" />

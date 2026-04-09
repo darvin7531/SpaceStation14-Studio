@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CSSProperties, PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
+import { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode, memo, useCallback, useEffect, useRef, useState } from 'react';
 import { useProjectStore } from './store/projectStore';
 import { scanProject, selectProject } from './services/scanner';
 import Sidebar from './components/Sidebar';
@@ -12,9 +12,11 @@ import Inspector from './components/Inspector';
 import RsiEditor from './components/RsiEditor';
 import IssueCard from './components/IssueCard';
 import SettingsModal from './components/SettingsModal';
+import CreatePrototypeModal from './components/CreatePrototypeModal';
+import CreateRsiModal from './components/CreateRsiModal';
 import { useI18n } from './i18n';
 import { UpdateState } from './types';
-import { AlertTriangle, CheckCircle2, ChevronUp, FolderOpen, Minus, Settings, Square, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, FolderOpen, ImageIcon, Info, Menu, Minus, Plus, RefreshCw, Settings, Square, X } from 'lucide-react';
 
 export default function App() {
   const { t } = useI18n();
@@ -23,6 +25,8 @@ export default function App() {
     setSearchQuery,
     setSelectedPrototypeId,
     setSelectedPrototype,
+    setSelectedRsiPath,
+    setSelectedRsi,
     setIsScanning,
     setScanProgress,
     isScanning,
@@ -33,6 +37,9 @@ export default function App() {
   } = useProjectStore();
   const [statusOpen, setStatusOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<'general' | 'updates' | 'about'>('general');
+  const [createPrototypeOpen, setCreatePrototypeOpen] = useState(false);
+  const [createRsiOpen, setCreateRsiOpen] = useState(false);
   const [statusLog, setStatusLog] = useState<string[]>([t('app.status.ready')]);
   const [statusHeight, setStatusHeight] = useState(176);
   const [isBooting, setIsBooting] = useState(true);
@@ -44,7 +51,6 @@ export default function App() {
     downloadedVersion: null,
   });
   const footerResizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
-
   useEffect(() => {
     const onPointerMove = (event: PointerEvent) => {
       const state = footerResizeRef.current;
@@ -153,11 +159,8 @@ export default function App() {
     };
   }, [setIsScanning, setProject, setScanProgress, setSearchQuery, setSelectedPrototype, setSelectedPrototypeId]);
 
-  const handleOpenProject = async () => {
+  const openProjectRoot = useCallback(async (projectRoot: string) => {
     try {
-      const projectRoot = await selectProject();
-      if (!projectRoot) return;
-
       setIsScanning(true);
       setScanProgress(`${t('loading.eyebrow.scan')}: ${projectRoot}`);
       setStatusLog((items) => [`${new Date().toLocaleTimeString()}  ${t('app.status.scanStarted', { path: projectRoot })}`, ...items].slice(0, 80));
@@ -172,6 +175,17 @@ export default function App() {
         })}`,
         ...items,
       ].slice(0, 80));
+    } finally {
+      setIsScanning(false);
+      setScanProgress('');
+    }
+  }, [setIsScanning, setProject, setScanProgress, t]);
+
+  const handleOpenProject = useCallback(async () => {
+    try {
+      const projectRoot = await selectProject();
+      if (!projectRoot) return;
+      await openProjectRoot(projectRoot);
     } catch (err) {
       console.error(err);
       setStatusLog((items) => [`${new Date().toLocaleTimeString()}  ${t('app.status.error', { message: err instanceof Error ? err.message : t('sidebar.refreshFailed') })}`, ...items].slice(0, 80));
@@ -180,25 +194,87 @@ export default function App() {
       setIsScanning(false);
       setScanProgress('');
     }
-  };
+  }, [openProjectRoot, setIsScanning, setScanProgress, t]);
 
   const hasProject = counts.prototypes > 0 || counts.rsis > 0 || counts.components > 0;
   const isCheckingUpdates = updateState.status === 'checking' || updateState.status === 'available' || updateState.status === 'downloading';
 
-  const handleCheckUpdates = async () => {
+  const handleCheckUpdates = useCallback(async () => {
     try {
       const next = await window.prototypeStudio.checkForUpdates();
       setUpdateState(next);
     } catch (error) {
       console.error(error);
     }
-  };
+  }, []);
 
-  const handleInstallUpdate = async () => {
+  const handleInstallUpdate = useCallback(async () => {
     try {
       await window.prototypeStudio.installUpdate();
     } catch (error) {
       console.error(error);
+    }
+  }, []);
+
+  const handleRescanProject = useCallback(async () => {
+    if (!useProjectStore.getState().projectRoot) return;
+    try {
+      await openProjectRoot(useProjectStore.getState().projectRoot!);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsScanning(false);
+      setScanProgress('');
+    }
+  }, [openProjectRoot, setIsScanning, setScanProgress]);
+
+  const handleOpenSettings = useCallback(() => {
+    setSettingsTab('general');
+    setSettingsOpen(true);
+  }, []);
+
+  const handleOpenAbout = useCallback(() => {
+    setSettingsTab('about');
+    setSettingsOpen(true);
+  }, []);
+
+  const handleCreatedPrototype = async (key: string) => {
+    const currentProjectRoot = useProjectStore.getState().projectRoot;
+    if (!currentProjectRoot) return;
+    setIsScanning(true);
+    setScanProgress(t('sidebar.refreshCreated', { value: key }));
+    try {
+      const result = await scanProject(currentProjectRoot);
+      setProject(result);
+      setSelectedRsiPath(null);
+      setSelectedRsi(null);
+      setSelectedPrototypeId(key);
+      setSelectedPrototype(await window.prototypeStudio.getPrototype(key));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : t('sidebar.refreshFailed'));
+    } finally {
+      setIsScanning(false);
+      setScanProgress('');
+    }
+  };
+
+  const handleCreatedRsi = async (rsiPath: string) => {
+    const currentProjectRoot = useProjectStore.getState().projectRoot;
+    if (!currentProjectRoot) return;
+    setIsScanning(true);
+    setScanProgress(t('sidebar.refreshCreated', { value: rsiPath }));
+    try {
+      const result = await scanProject(currentProjectRoot);
+      setProject(result);
+      setSelectedPrototypeId(null);
+      setSelectedPrototype(null);
+      setSelectedRsiPath(rsiPath);
+      setSelectedRsi(await window.prototypeStudio.getRsiAsset(rsiPath));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : t('sidebar.refreshFailed'));
+    } finally {
+      setIsScanning(false);
+      setScanProgress('');
     }
   };
 
@@ -224,19 +300,20 @@ export default function App() {
 
       <header className="h-14 border-b border-neutral-800 flex items-center px-4 justify-between bg-neutral-950 shrink-0">
         <div className="flex items-center gap-4">
-          <h1 className="font-semibold text-neutral-100 tracking-tight">{t('app.title')}</h1>
-          <button 
-            onClick={handleOpenProject}
-            disabled={isScanning}
-            className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50"
-          >
-            <FolderOpen size={16} />
-            {isScanning ? t('app.scanning') : t('app.openProject')}
-          </button>
+          <ActionsMenu
+            hasProject={hasProject}
+            onOpenProject={handleOpenProject}
+            onOpenRecentProject={openProjectRoot}
+            onCreatePrototype={() => setCreatePrototypeOpen(true)}
+            onCreateRsi={() => setCreateRsiOpen(true)}
+            onRescanProject={handleRescanProject}
+            onOpenSettings={handleOpenSettings}
+            onOpenAbout={handleOpenAbout}
+          />
         </div>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => setSettingsOpen(true)}
+            onClick={handleOpenSettings}
             className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-neutral-800 bg-neutral-900 text-neutral-200 transition-colors hover:bg-neutral-800"
             title={t('settings.open')}
           >
@@ -345,10 +422,124 @@ export default function App() {
         updateState={updateState}
         onCheckUpdates={handleCheckUpdates}
         onInstallUpdate={handleInstallUpdate}
+        initialTab={settingsTab}
       />
+      <CreatePrototypeModal open={createPrototypeOpen} onClose={() => setCreatePrototypeOpen(false)} onCreated={handleCreatedPrototype} />
+      <CreateRsiModal open={createRsiOpen} onClose={() => setCreateRsiOpen(false)} onCreated={handleCreatedRsi} />
     </div>
   );
 }
+
+function MenuAction({
+  icon,
+  label,
+  description,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  description?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-neutral-900"
+    >
+      <span className="mt-0.5 text-neutral-400">{icon}</span>
+      <span className="min-w-0">
+        <span className="block text-sm text-neutral-100">{label}</span>
+        {description && <span className="block truncate text-xs text-neutral-500">{description}</span>}
+      </span>
+    </button>
+  );
+}
+
+const ActionsMenu = memo(function ActionsMenu({
+  hasProject,
+  onOpenProject,
+  onOpenRecentProject,
+  onCreatePrototype,
+  onCreateRsi,
+  onRescanProject,
+  onOpenSettings,
+  onOpenAbout,
+}: {
+  hasProject: boolean;
+  onOpenProject: () => void | Promise<void>;
+  onOpenRecentProject: (projectRoot: string) => void | Promise<void>;
+  onCreatePrototype: () => void;
+  onCreateRsi: () => void;
+  onRescanProject: () => void | Promise<void>;
+  onOpenSettings: () => void;
+  onOpenAbout: () => void;
+}) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const [recentProjects, setRecentProjects] = useState<string[]>([]);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void window.prototypeStudio.getRecentProjects().then((items) => {
+      if (!cancelled) setRecentProjects(items);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      if (!menuRef.current) return;
+      if (menuRef.current.contains(event.target as Node)) return;
+      setOpen(false);
+    };
+
+    window.addEventListener('pointerdown', onPointerDown);
+    return () => window.removeEventListener('pointerdown', onPointerDown);
+  }, []);
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <button
+        onClick={() => setOpen((value) => !value)}
+        className="inline-flex h-9 items-center gap-2 rounded-md border border-neutral-800 bg-neutral-900 px-3 text-sm text-neutral-200 transition-colors hover:bg-neutral-800"
+        title={t('app.actionsMenu')}
+      >
+        <Menu size={16} />
+        <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-11 z-50 w-72 rounded-xl border border-neutral-800 bg-neutral-950 p-2 shadow-xl">
+          <MenuAction icon={<FolderOpen size={15} />} label={t('app.openProject')} onClick={() => { setOpen(false); void onOpenProject(); }} />
+          {recentProjects.length > 0 && (
+            <MenuAction
+              icon={<FolderOpen size={15} />}
+              label={t('app.recentProject')}
+              description={recentProjects[0]}
+              onClick={() => {
+                setOpen(false);
+                void onOpenRecentProject(recentProjects[0]);
+              }}
+            />
+          )}
+          {hasProject && (
+            <>
+              <div className="my-2 border-t border-neutral-800" />
+              <MenuAction icon={<Plus size={15} />} label={t('app.createPrototype')} onClick={() => { setOpen(false); onCreatePrototype(); }} />
+              <MenuAction icon={<ImageIcon size={15} />} label={t('app.createRsiSprite')} onClick={() => { setOpen(false); onCreateRsi(); }} />
+              <MenuAction icon={<RefreshCw size={15} />} label={t('app.rescanProject')} onClick={() => { setOpen(false); void onRescanProject(); }} />
+            </>
+          )}
+          <div className="my-2 border-t border-neutral-800" />
+          <MenuAction icon={<Settings size={15} />} label={t('settings.open')} onClick={() => { setOpen(false); onOpenSettings(); }} />
+          <MenuAction icon={<Info size={15} />} label={t('app.aboutStudio')} onClick={() => { setOpen(false); onOpenAbout(); }} />
+        </div>
+      )}
+    </div>
+  );
+});
 
 function formatUpdateLabel(state: UpdateState, t: (key: string, params?: Record<string, string | number | null | undefined>) => string) {
   switch (state.status) {

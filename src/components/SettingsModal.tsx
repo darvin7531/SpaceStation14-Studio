@@ -11,12 +11,17 @@ interface Props {
   updateState: UpdateState;
   onCheckUpdates: () => Promise<void> | void;
   onInstallUpdate: () => Promise<void> | void;
+  initialTab?: SettingsTab;
 }
 
-export default function SettingsModal({ open, onClose, updateState, onCheckUpdates, onInstallUpdate }: Props) {
+export default function SettingsModal({ open, onClose, updateState, onCheckUpdates, onInstallUpdate, initialTab = 'general' }: Props) {
   const { language, setLanguage, t } = useI18n();
-  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
+
+  useEffect(() => {
+    if (open) setActiveTab(initialTab);
+  }, [initialTab, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -53,7 +58,6 @@ export default function SettingsModal({ open, onClose, updateState, onCheckUpdat
           <aside className="border-r border-neutral-800 bg-neutral-950/80 p-4">
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <div className="text-xs font-semibold uppercase tracking-wider text-blue-400">{t('settings.open')}</div>
                 <h2 className="text-xl font-semibold text-neutral-100">{t('settings.title')}</h2>
               </div>
               <button onClick={onClose} className="rounded-md p-2 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100">

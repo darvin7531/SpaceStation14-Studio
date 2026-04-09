@@ -258,6 +258,7 @@ declare global {
       onUpdateStatus: (callback: (status: UpdateState) => void) => () => void;
       getAppInfo: () => Promise<AppInfo>;
       openExternal: (url: string) => Promise<boolean>;
+      getRecentProjects: () => Promise<string[]>;
       saveWorkspaceUiState: (patch: { selectedPrototypeId?: string | null; searchQuery?: string; lastProjectRoot?: string }) => Promise<void>;
       minimizeWindow: () => Promise<void>;
       toggleMaximizeWindow: () => Promise<void>;

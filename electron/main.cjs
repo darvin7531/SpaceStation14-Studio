@@ -301,6 +301,11 @@ ipcMain.handle("project:create-from-draft", async (_event, draft = {}) => create
 ipcMain.handle("workspace:save-ui-state", async (_event, patch = {}) => {
   writeWorkspaceState({ ...readWorkspaceState(), ...patch });
 });
+ipcMain.handle("workspace:get-recent-projects", async () => {
+  const workspace = readWorkspaceState();
+  const lastProjectRoot = typeof workspace?.lastProjectRoot === "string" && workspace.lastProjectRoot ? workspace.lastProjectRoot : null;
+  return lastProjectRoot ? [lastProjectRoot] : [];
+});
 ipcMain.handle("update:get-state", async () => updateState);
 ipcMain.handle("update:check", async () => checkForAppUpdates("manual"));
 ipcMain.handle("update:install", async () => {
