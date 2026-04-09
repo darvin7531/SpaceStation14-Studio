@@ -148,6 +148,32 @@ export interface PrototypeDetail {
   kind: PrototypeKindSchema | null;
 }
 
+export interface PrototypeEditorTab {
+  id: string;
+  kind: 'prototype';
+  prototypeKey: string;
+  title: string;
+  subtitle: string;
+  dirty: boolean;
+  detail: PrototypeDetail | null;
+  rawYaml: string;
+  editorTab: 'form' | 'raw' | 'resolved';
+  jumpQuery?: string | null;
+}
+
+export interface RsiEditorTab {
+  id: string;
+  kind: 'rsi';
+  rsiPath: string;
+  title: string;
+  subtitle: string;
+  dirty: boolean;
+  detail: RsiAssetDetail | null;
+  highlightedState?: string | null;
+}
+
+export type EditorResourceTab = PrototypeEditorTab | RsiEditorTab;
+
 export interface CompletionSuggestion {
   label: string;
   kind: 'component' | 'field';

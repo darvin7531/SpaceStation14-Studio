@@ -9,6 +9,7 @@ const appPackage = require("../package.json");
 
 Menu.setApplicationMenu(null);
 let activeIndex = null;
+let mainWindow = null;
 let updateState = {
   status: "idle",
   message: "Ready to check for updates.",
@@ -17,6 +18,11 @@ let updateState = {
   downloadedVersion: null,
 };
 let splashWindow = null;
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -39,6 +45,8 @@ function createWindow() {
     splashWindow = createSplashWindow();
   }
 
+  mainWindow = win;
+
   const finishShow = () => {
     if (!win.isDestroyed()) win.show();
     if (splashWindow && !splashWindow.isDestroyed()) splashWindow.close();
@@ -47,6 +55,7 @@ function createWindow() {
 
   win.once("ready-to-show", finishShow);
   win.on("closed", () => {
+    if (mainWindow === win) mainWindow = null;
     if (splashWindow && !splashWindow.isDestroyed()) splashWindow.close();
     splashWindow = null;
   });
@@ -364,6 +373,13 @@ app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
   }
+});
+
+app.on("second-instance", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (!mainWindow.isVisible()) mainWindow.show();
+  mainWindow.focus();
 });
 
 function summarizeIndex(index) {

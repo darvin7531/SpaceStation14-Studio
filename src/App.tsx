@@ -3,38 +3,43 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode, memo, useCallback, useEffect, useRef, useState } from 'react';
+import { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useProjectStore } from './store/projectStore';
 import { scanProject, selectProject } from './services/scanner';
 import Sidebar from './components/Sidebar';
 import Editor from './components/Editor';
 import Inspector from './components/Inspector';
 import RsiEditor from './components/RsiEditor';
+import TabBar from './components/TabBar';
 import IssueCard from './components/IssueCard';
 import SettingsModal from './components/SettingsModal';
 import CreatePrototypeModal from './components/CreatePrototypeModal';
 import CreateRsiModal from './components/CreateRsiModal';
 import { useI18n } from './i18n';
-import { UpdateState } from './types';
+import { EditorResourceTab, UpdateState } from './types';
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, FolderOpen, ImageIcon, Info, Menu, Minus, Plus, RefreshCw, Settings, Square, X } from 'lucide-react';
 
 export default function App() {
   const { t } = useI18n();
-  const { 
-    setProject,
-    setSearchQuery,
-    setSelectedPrototypeId,
-    setSelectedPrototype,
-    setSelectedRsiPath,
-    setSelectedRsi,
-    setIsScanning,
-    setScanProgress,
-    isScanning,
-    scanProgress,
-    counts,
-    validationIssues,
-    selectedRsi,
-  } = useProjectStore();
+  const setProject = useProjectStore((state) => state.setProject);
+  const setSearchQuery = useProjectStore((state) => state.setSearchQuery);
+  const setIsScanning = useProjectStore((state) => state.setIsScanning);
+  const setScanProgress = useProjectStore((state) => state.setScanProgress);
+  const isScanning = useProjectStore((state) => state.isScanning);
+  const scanProgress = useProjectStore((state) => state.scanProgress);
+  const counts = useProjectStore((state) => state.counts);
+  const validationIssues = useProjectStore((state) => state.validationIssues);
+  const projectRoot = useProjectStore((state) => state.projectRoot);
+  const tabOrder = useProjectStore((state) => state.tabOrder);
+  const tabsById = useProjectStore((state) => state.tabsById);
+  const activeTabId = useProjectStore((state) => state.activeTabId);
+  const openPrototypeTab = useProjectStore((state) => state.openPrototypeTab);
+  const openRsiTab = useProjectStore((state) => state.openRsiTab);
+  const activateTab = useProjectStore((state) => state.activateTab);
+  const closeTab = useProjectStore((state) => state.closeTab);
+  const reorderTab = useProjectStore((state) => state.reorderTab);
+  const updateActivePrototypeSaved = useProjectStore((state) => state.updateActivePrototypeSaved);
+  const updateActiveRsiDetail = useProjectStore((state) => state.updateActiveRsiDetail);
   const [statusOpen, setStatusOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'general' | 'updates' | 'about'>('general');
@@ -43,6 +48,7 @@ export default function App() {
   const [statusLog, setStatusLog] = useState<string[]>([t('app.status.ready')]);
   const [statusHeight, setStatusHeight] = useState(176);
   const [isBooting, setIsBooting] = useState(true);
+  const [pendingCloseTabId, setPendingCloseTabId] = useState<string | null>(null);
   const [updateState, setUpdateState] = useState<UpdateState>({
     status: 'idle',
     message: '',
@@ -51,6 +57,9 @@ export default function App() {
     downloadedVersion: null,
   });
   const footerResizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  const openTabs = useMemo(() => tabOrder.map((id) => tabsById[id]).filter(Boolean), [tabOrder, tabsById]);
+  const activeTab = useMemo(() => activeTabId ? tabsById[activeTabId] ?? null : null, [activeTabId, tabsById]);
+
   useEffect(() => {
     const onPointerMove = (event: PointerEvent) => {
       const state = footerResizeRef.current;
@@ -120,8 +129,7 @@ export default function App() {
         setProject(restored);
         if (restored.searchQuery) setSearchQuery(restored.searchQuery);
         if (restored.selectedPrototypeId) {
-          setSelectedPrototypeId(restored.selectedPrototypeId);
-          setSelectedPrototype(await window.prototypeStudio.getPrototype(restored.selectedPrototypeId));
+          openPrototypeTab(restored.selectedPrototypeId, await window.prototypeStudio.getPrototype(restored.selectedPrototypeId));
         }
 
         setStatusLog((items) => [
@@ -136,8 +144,7 @@ export default function App() {
         setProject(refreshed);
         if (restored.searchQuery) setSearchQuery(restored.searchQuery);
         if (restored.selectedPrototypeId) {
-          setSelectedPrototypeId(restored.selectedPrototypeId);
-          setSelectedPrototype(await window.prototypeStudio.getPrototype(restored.selectedPrototypeId));
+          openPrototypeTab(restored.selectedPrototypeId, await window.prototypeStudio.getPrototype(restored.selectedPrototypeId));
         }
         setStatusLog((items) => [
           `${new Date().toLocaleTimeString()}  ${refreshed.cache?.hit ? t('app.status.workspaceVerified', { count: refreshed.counts.prototypes }) : t('app.status.workspaceRefreshed', { count: refreshed.counts.prototypes })}`,
@@ -157,14 +164,14 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [setIsScanning, setProject, setScanProgress, setSearchQuery, setSelectedPrototype, setSelectedPrototypeId]);
+  }, [openPrototypeTab, setIsScanning, setProject, setScanProgress, setSearchQuery, t]);
 
-  const openProjectRoot = useCallback(async (projectRoot: string) => {
+  const openProjectRoot = useCallback(async (nextProjectRoot: string) => {
     try {
       setIsScanning(true);
-      setScanProgress(`${t('loading.eyebrow.scan')}: ${projectRoot}`);
-      setStatusLog((items) => [`${new Date().toLocaleTimeString()}  ${t('app.status.scanStarted', { path: projectRoot })}`, ...items].slice(0, 80));
-      const result = await scanProject(projectRoot);
+      setScanProgress(`${t('loading.eyebrow.scan')}: ${nextProjectRoot}`);
+      setStatusLog((items) => [`${new Date().toLocaleTimeString()}  ${t('app.status.scanStarted', { path: nextProjectRoot })}`, ...items].slice(0, 80));
+      const result = await scanProject(nextProjectRoot);
       setProject(result);
       setStatusLog((items) => [
         `${new Date().toLocaleTimeString()}  ${t('app.status.scanComplete', {
@@ -183,9 +190,9 @@ export default function App() {
 
   const handleOpenProject = useCallback(async () => {
     try {
-      const projectRoot = await selectProject();
-      if (!projectRoot) return;
-      await openProjectRoot(projectRoot);
+      const nextProjectRoot = await selectProject();
+      if (!nextProjectRoot) return;
+      await openProjectRoot(nextProjectRoot);
     } catch (err) {
       console.error(err);
       setStatusLog((items) => [`${new Date().toLocaleTimeString()}  ${t('app.status.error', { message: err instanceof Error ? err.message : t('sidebar.refreshFailed') })}`, ...items].slice(0, 80));
@@ -246,10 +253,7 @@ export default function App() {
     try {
       const result = await scanProject(currentProjectRoot);
       setProject(result);
-      setSelectedRsiPath(null);
-      setSelectedRsi(null);
-      setSelectedPrototypeId(key);
-      setSelectedPrototype(await window.prototypeStudio.getPrototype(key));
+      openPrototypeTab(key, await window.prototypeStudio.getPrototype(key));
     } catch (err) {
       alert(err instanceof Error ? err.message : t('sidebar.refreshFailed'));
     } finally {
@@ -266,10 +270,7 @@ export default function App() {
     try {
       const result = await scanProject(currentProjectRoot);
       setProject(result);
-      setSelectedPrototypeId(null);
-      setSelectedPrototype(null);
-      setSelectedRsiPath(rsiPath);
-      setSelectedRsi(await window.prototypeStudio.getRsiAsset(rsiPath));
+      openRsiTab(rsiPath, await window.prototypeStudio.getRsiAsset(rsiPath));
     } catch (err) {
       alert(err instanceof Error ? err.message : t('sidebar.refreshFailed'));
     } finally {
@@ -277,6 +278,66 @@ export default function App() {
       setScanProgress('');
     }
   };
+
+  const saveTab = useCallback(async (tab: EditorResourceTab) => {
+    if (!projectRoot) return false;
+    if (tab.kind === 'prototype') {
+      const detail = tab.detail;
+      if (!detail) return false;
+      const saved = await window.prototypeStudio.savePrototype({
+        projectRoot,
+        filePath: detail.prototype._filePath,
+        line: detail.prototype._line,
+        text: tab.rawYaml,
+      });
+      activateTab(tab.id);
+      updateActivePrototypeSaved(await window.prototypeStudio.getPrototype(tab.prototypeKey), saved.text);
+      return true;
+    }
+
+    if (!tab.detail) return false;
+    activateTab(tab.id);
+    const next = await window.prototypeStudio.saveRsiAsset({ path: tab.detail.path, meta: tab.detail.meta });
+    if (next) {
+      updateActiveRsiDetail(next, false);
+      return true;
+    }
+    return false;
+  }, [activateTab, projectRoot, updateActivePrototypeSaved, updateActiveRsiDetail]);
+
+  const requestCloseTab = useCallback((tabId: string) => {
+    const tab = useProjectStore.getState().tabsById[tabId];
+    if (!tab) return;
+    if (!tab.dirty) {
+      closeTab(tabId);
+      return;
+    }
+    activateTab(tabId);
+    setPendingCloseTabId(tabId);
+  }, [activateTab, closeTab]);
+
+  const handleDiscardClose = useCallback(() => {
+    if (!pendingCloseTabId) return;
+    closeTab(pendingCloseTabId);
+    setPendingCloseTabId(null);
+  }, [closeTab, pendingCloseTabId]);
+
+  const handleSaveClose = useCallback(async () => {
+    if (!pendingCloseTabId) return;
+    const tab = pendingCloseTabId ? useProjectStore.getState().tabsById[pendingCloseTabId] : null;
+    if (!tab) {
+      setPendingCloseTabId(null);
+      return;
+    }
+    try {
+      const saved = await saveTab(tab);
+      if (!saved) return;
+      closeTab(pendingCloseTabId);
+      setPendingCloseTabId(null);
+    } catch (error) {
+      console.error(error);
+    }
+  }, [closeTab, pendingCloseTabId, saveTab]);
 
   return (
     <div className="flex flex-col h-screen bg-neutral-900 text-neutral-200 font-sans overflow-hidden">
@@ -298,8 +359,8 @@ export default function App() {
         </div>
       </div>
 
-      <header className="h-14 border-b border-neutral-800 flex items-center px-4 justify-between bg-neutral-950 shrink-0">
-        <div className="flex items-center gap-4">
+      <header className="h-14 border-b border-neutral-800 flex items-center gap-3 px-4 bg-neutral-950 shrink-0">
+        <div className="flex items-center gap-4 shrink-0">
           <ActionsMenu
             hasProject={hasProject}
             onOpenProject={handleOpenProject}
@@ -311,7 +372,17 @@ export default function App() {
             onOpenAbout={handleOpenAbout}
           />
         </div>
-        <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1 h-full">
+          <TabBar
+            tabs={openTabs}
+            activeTabId={activeTabId}
+            onActivate={activateTab}
+            onClose={(tabId) => { void requestCloseTab(tabId); }}
+            onReorder={reorderTab}
+            emptyText={t('tabs.empty')}
+          />
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
           <button
             onClick={handleOpenSettings}
             className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-neutral-800 bg-neutral-900 text-neutral-200 transition-colors hover:bg-neutral-800"
@@ -321,13 +392,13 @@ export default function App() {
           </button>
         </div>
       </header>
+
       {(isScanning || isCheckingUpdates) && <div className={`studio-scan-strip shrink-0 ${updateState.status === 'downloading' ? 'studio-scan-strip--emerald' : ''}`} />}
 
-      {/* Main Content */}
       {hasProject ? (
         <div className="relative flex flex-1 min-h-0 overflow-hidden">
           <Sidebar />
-          {selectedRsi ? <RsiEditor /> : <Editor />}
+          {activeTab?.kind === 'rsi' ? <RsiEditor /> : <Editor />}
           <Inspector />
           {isScanning && (
             <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-neutral-950/28 backdrop-blur-[2px]">
@@ -416,6 +487,7 @@ export default function App() {
           </div>
         )}
       </footer>
+
       <SettingsModal
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
@@ -426,6 +498,25 @@ export default function App() {
       />
       <CreatePrototypeModal open={createPrototypeOpen} onClose={() => setCreatePrototypeOpen(false)} onCreated={handleCreatedPrototype} />
       <CreateRsiModal open={createRsiOpen} onClose={() => setCreateRsiOpen(false)} onCreated={handleCreatedRsi} />
+      {pendingCloseTabId && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/55 p-4">
+          <div className="w-[min(460px,96vw)] rounded-2xl border border-neutral-800 bg-neutral-950 p-5 shadow-2xl">
+            <h3 className="text-lg font-semibold text-neutral-100">{t('tabs.unsavedTitle')}</h3>
+            <p className="mt-2 text-sm text-neutral-400">{t('tabs.unsavedMessage')}</p>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button onClick={() => setPendingCloseTabId(null)} className="rounded-md bg-neutral-800 px-4 py-2 text-sm text-neutral-300 hover:bg-neutral-700">
+                {t('tabs.cancel')}
+              </button>
+              <button onClick={handleDiscardClose} className="rounded-md bg-red-700 px-4 py-2 text-sm text-white hover:bg-red-600">
+                {t('tabs.discard')}
+              </button>
+              <button onClick={() => void handleSaveClose()} className="rounded-md bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-500">
+                {t('tabs.saveAndClose')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

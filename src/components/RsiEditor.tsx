@@ -5,13 +5,26 @@ import { useI18n } from '../i18n';
 
 export default function RsiEditor() {
   const { t } = useI18n();
-  const { selectedRsi, highlightedRsiState, setHighlightedRsiState, setSelectedRsi } = useProjectStore();
+  const highlightedRsiState = useProjectStore((state) => state.highlightedRsiState);
+  const setHighlightedRsiState = useProjectStore((state) => state.setHighlightedRsiState);
+  const updateActiveRsiDetail = useProjectStore((state) => state.updateActiveRsiDetail);
+  const updateActiveRsiMeta = useProjectStore((state) => state.updateActiveRsiMeta);
+  const tabsById = useProjectStore((state) => state.tabsById);
+  const activeTabId = useProjectStore((state) => state.activeTabId);
   const [isSaving, setIsSaving] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
 
-  const detail = selectedRsi;
+  const activeRsiTab = useMemo(
+    () => {
+      const tab = activeTabId ? tabsById[activeTabId] : null;
+      return tab?.kind === 'rsi' ? tab : null;
+    },
+    [activeTabId, tabsById],
+  );
+  const detail = activeRsiTab?.detail ?? null;
   const meta = detail?.meta;
   const states = detail?.states ?? [];
+  const isDirty = activeRsiTab?.kind === 'rsi' ? activeRsiTab.dirty : false;
 
   const primaryPreview = useMemo(() => states.find((state) => state.name === 'icon') ?? states[0] ?? null, [states]);
 
@@ -20,13 +33,14 @@ export default function RsiEditor() {
   }
 
   const updateMeta = (patch: Partial<typeof meta>) => {
-    setSelectedRsi({
-      ...detail,
+    if (!detail) return;
+    updateActiveRsiMeta((current) => ({
+      ...current,
       meta: {
-        ...meta,
+        ...current.meta,
         ...patch,
       },
-    });
+    }));
   };
 
   const updateState = (index: number, patch: Record<string, any>) => {
@@ -46,7 +60,7 @@ export default function RsiEditor() {
     setIsSaving(true);
     try {
       const next = await window.prototypeStudio.saveRsiAsset({ path: detail.path, meta });
-      if (next) setSelectedRsi(next);
+      if (next) updateActiveRsiDetail(next, false);
     } finally {
       setIsSaving(false);
     }
@@ -62,7 +76,7 @@ export default function RsiEditor() {
       dataUrl: await readFileAsDataUrl(file),
     })));
     const next = await window.prototypeStudio.importRsiImages({ path: detail.path, files: payload });
-    if (next) setSelectedRsi(next);
+    if (next) updateActiveRsiDetail(next, false);
   };
 
   return (
@@ -73,8 +87,9 @@ export default function RsiEditor() {
         </div>
         <button
           onClick={() => void handleSave()}
-          disabled={isSaving}
-          className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:bg-neutral-800 disabled:text-neutral-500"
+          disabled={isSaving || !isDirty}
+          className="inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium text-white disabled:bg-neutral-800 disabled:text-neutral-500"
+          style={{ backgroundColor: !isSaving && isDirty ? '#059669' : undefined }}
         >
           <Save size={14} />
           {isSaving ? t('rsi.saving') : t('rsi.save')}

@@ -18,15 +18,13 @@ export default function Sidebar() {
     searchQuery,
     setSearchQuery,
     selectedPrototypeId,
-    setSelectedPrototypeId,
-    setSelectedPrototype,
     selectedRsiPath,
-    setSelectedRsiPath,
-    setSelectedRsi,
     setProject,
     setIsScanning,
     setScanProgress,
     counts,
+    openPrototypeTab,
+    openRsiTab,
   } = useProjectStore();
   const [createOpen, setCreateOpen] = useState(false);
   const [createRsiOpen, setCreateRsiOpen] = useState(false);
@@ -82,23 +80,16 @@ export default function Sidebar() {
   }, [projectRoot, searchQuery]);
 
   const handleSelect = async (key: string) => {
-    setSelectedRsiPath(null);
-    setSelectedRsi(null);
-    setSelectedPrototypeId(key);
     if (projectRoot) {
       void window.prototypeStudio.saveWorkspaceUiState({ selectedPrototypeId: key, lastProjectRoot: projectRoot });
     }
-    setSelectedPrototype(null);
     const detail = await window.prototypeStudio.getPrototype(key);
-    setSelectedPrototype(detail);
+    openPrototypeTab(key, detail);
   };
 
   const handleSelectRsi = async (rsiPath: string) => {
-    setSelectedPrototypeId(null);
-    setSelectedPrototype(null);
-    setSelectedRsiPath(rsiPath);
     const detail = await window.prototypeStudio.getRsiAsset(rsiPath);
-    setSelectedRsi(detail);
+    openRsiTab(rsiPath, detail);
   };
 
   const togglePath = (path: string) => {
@@ -117,8 +108,7 @@ export default function Sidebar() {
     try {
       const result = await scanProject(projectRoot);
       setProject(result);
-      setSelectedPrototypeId(key);
-      setSelectedPrototype(await window.prototypeStudio.getPrototype(key));
+      openPrototypeTab(key, await window.prototypeStudio.getPrototype(key));
       setOffset(0);
     } catch (err) {
       alert(err instanceof Error ? err.message : t('sidebar.refreshFailed'));
@@ -135,10 +125,7 @@ export default function Sidebar() {
     try {
       const result = await scanProject(projectRoot);
       setProject(result);
-      setSelectedPrototypeId(null);
-      setSelectedPrototype(null);
-      setSelectedRsiPath(rsiPath);
-      setSelectedRsi(await window.prototypeStudio.getRsiAsset(rsiPath));
+      openRsiTab(rsiPath, await window.prototypeStudio.getRsiAsset(rsiPath));
     } catch (err) {
       alert(err instanceof Error ? err.message : t('sidebar.refreshFailed'));
     } finally {
@@ -179,17 +166,19 @@ export default function Sidebar() {
                 className="w-full bg-neutral-950 border border-neutral-800 rounded-md py-1.5 pl-8 pr-3 text-sm focus:outline-none focus:border-blue-500 transition-colors"
               />
             </div>
+          </>
+        )}
+        {mode === 'resources' && (
+          <>
             <button onClick={() => setCreateOpen(true)} className="flex items-center justify-center gap-2 rounded-md border border-neutral-800 bg-neutral-950/60 px-2 py-1.5 text-xs text-neutral-300 hover:bg-neutral-900">
               <Plus size={13} className="text-blue-400" />
               {t('sidebar.createPrototype')}
             </button>
+            <button onClick={() => setCreateRsiOpen(true)} className="flex items-center justify-center gap-2 rounded-md border border-neutral-800 bg-neutral-950/60 px-2 py-1.5 text-xs text-neutral-300 hover:bg-neutral-900">
+              <ImageIcon size={13} className="text-emerald-400" />
+              {t('sidebar.createRsi')}
+            </button>
           </>
-        )}
-        {mode === 'resources' && (
-          <button onClick={() => setCreateRsiOpen(true)} className="flex items-center justify-center gap-2 rounded-md border border-neutral-800 bg-neutral-950/60 px-2 py-1.5 text-xs text-neutral-300 hover:bg-neutral-900">
-            <ImageIcon size={13} className="text-emerald-400" />
-            {t('sidebar.createRsi')}
-          </button>
         )}
         {mode === 'search' && <div className="flex items-center justify-between text-[11px] text-neutral-500">
           <span>{isLoading ? t('sidebar.loading') : `${offset + 1}-${Math.min(offset + PAGE_SIZE, total)} / ${total}`}</span>

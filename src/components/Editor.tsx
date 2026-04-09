@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useProjectStore } from '../store/projectStore';
 import MonacoEditor from '@monaco-editor/react';
 import { Save, AlertCircle } from 'lucide-react';
@@ -7,34 +7,40 @@ import { useI18n } from '../i18n';
 
 export default function Editor() {
   const { t } = useI18n();
-  const { projectRoot, selectedPrototypeId, selectedPrototype, selectedEditorTab, editorJumpQuery, setSelectedEditorTab, setEditorJumpQuery, setSelectedPrototype, updateSelectedPrototype } = useProjectStore();
-  const [yamlContent, setYamlContent] = useState('');
-  const [isDirty, setIsDirty] = useState(false);
+  const projectRoot = useProjectStore((state) => state.projectRoot);
+  const editorJumpQuery = useProjectStore((state) => state.editorJumpQuery);
+  const activeTabId = useProjectStore((state) => state.activeTabId);
+  const tabsById = useProjectStore((state) => state.tabsById);
+  const setSelectedEditorTab = useProjectStore((state) => state.setSelectedEditorTab);
+  const setEditorJumpQuery = useProjectStore((state) => state.setEditorJumpQuery);
+  const updateActivePrototypeDetail = useProjectStore((state) => state.updateActivePrototypeDetail);
+  const updateActivePrototypeDraft = useProjectStore((state) => state.updateActivePrototypeDraft);
+  const updateActivePrototypeSaved = useProjectStore((state) => state.updateActivePrototypeSaved);
   const editorRef = useRef<any>(null);
-  const proto = selectedPrototype?.prototype ?? null;
+  const activePrototypeTab = useMemo(
+    () => {
+      const tab = activeTabId ? tabsById[activeTabId] : null;
+      return tab?.kind === 'prototype' ? tab : null;
+    },
+    [activeTabId, tabsById],
+  );
+  const detail = activePrototypeTab?.detail ?? null;
+  const proto = detail?.prototype ?? null;
+  const editorTab = activePrototypeTab?.editorTab ?? 'form';
+  const yamlContent = activePrototypeTab?.rawYaml ?? '';
+  const isDirty = activePrototypeTab?.dirty ?? false;
 
   useEffect(() => {
-    if (proto) setSelectedEditorTab('form');
-  }, [proto?._key, setSelectedEditorTab]);
-
-  useEffect(() => {
-    if (proto && projectRoot) {
-      setYamlContent(proto._rawYaml || '');
-      setIsDirty(false);
-    }
-  }, [proto?._key, projectRoot]);
-
-  useEffect(() => {
-    if (!selectedPrototypeId || !isDirty) return;
+    if (!activePrototypeTab?.prototypeKey || !isDirty) return;
     const handle = window.setTimeout(async () => {
-      const detail = await window.prototypeStudio.validatePrototypeYaml({ key: selectedPrototypeId, text: yamlContent });
-      if (detail) setSelectedPrototype(detail);
+      const nextDetail = await window.prototypeStudio.validatePrototypeYaml({ key: activePrototypeTab.prototypeKey, text: yamlContent });
+      if (nextDetail) updateActivePrototypeDetail(nextDetail, { preserveDraft: true, dirty: true });
     }, 250);
     return () => window.clearTimeout(handle);
-  }, [isDirty, selectedPrototypeId, setSelectedPrototype, yamlContent]);
+  }, [activePrototypeTab?.prototypeKey, isDirty, updateActivePrototypeDetail, yamlContent]);
 
   useEffect(() => {
-    if (!editorRef.current || selectedEditorTab !== 'raw' || !editorJumpQuery) return;
+    if (!editorRef.current || editorTab !== 'raw' || !editorJumpQuery) return;
     const model = editorRef.current.getModel?.();
     if (!model) return;
     const matches = model.findMatches(editorJumpQuery, true, false, false, null, true);
@@ -44,7 +50,7 @@ export default function Editor() {
     editorRef.current.setPosition({ lineNumber: match.range.startLineNumber, column: match.range.startColumn });
     editorRef.current.focus();
     setEditorJumpQuery(null);
-  }, [editorJumpQuery, selectedEditorTab, setEditorJumpQuery, yamlContent]);
+  }, [editorJumpQuery, editorTab, setEditorJumpQuery, yamlContent]);
 
   if (!proto) {
     return <div className="flex-1 flex items-center justify-center text-neutral-500 bg-neutral-950">{t('editor.empty')}</div>;
@@ -66,8 +72,8 @@ export default function Editor() {
         text: yamlContent,
       });
 
-      updateSelectedPrototype({ _rawYaml: saved.text, _document: doc });
-      setIsDirty(false);
+      const refreshed = await window.prototypeStudio.getPrototype(activePrototypeTab!.prototypeKey);
+      updateActivePrototypeSaved(refreshed, saved.text);
     } catch (error) {
       console.error("Failed to save", error);
       alert(error instanceof Error ? error.message : t('editor.saveFailed'));
@@ -141,7 +147,7 @@ export default function Editor() {
                 key={tab}
                 onClick={() => setSelectedEditorTab(tab)}
                 className={`px-3 py-1 text-xs font-medium rounded-sm capitalize transition-colors ${
-                  selectedEditorTab === tab ? 'bg-neutral-800 text-neutral-100 shadow-sm' : 'text-neutral-400 hover:text-neutral-200'
+                  editorTab === tab ? 'bg-neutral-800 text-neutral-100 shadow-sm' : 'text-neutral-400 hover:text-neutral-200'
                 }`}
               >
                 {t(`editor.tab.${tab}`)}
@@ -162,7 +168,7 @@ export default function Editor() {
       </div>
 
       <div className="flex-1 overflow-y-auto relative">
-        {selectedEditorTab === 'form' && (
+        {editorTab === 'form' && (
           <div className="p-6 max-w-3xl mx-auto space-y-6">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
@@ -185,7 +191,7 @@ export default function Editor() {
           </div>
         )}
 
-        {selectedEditorTab === 'raw' && (
+        {editorTab === 'raw' && (
           <MonacoEditor
             height="100%"
             language="yaml"
@@ -196,8 +202,7 @@ export default function Editor() {
             }}
             onChange={(value) => {
               if (value !== undefined) {
-                setYamlContent(value);
-                setIsDirty(true);
+                updateActivePrototypeDraft(value);
               }
             }}
             beforeMount={registerCompletion}
@@ -212,10 +217,10 @@ export default function Editor() {
           />
         )}
 
-        {selectedEditorTab === 'resolved' && (
+        {editorTab === 'resolved' && (
           <div className="p-6">
             <pre className="text-xs font-mono text-neutral-300 bg-neutral-900 p-4 rounded-md overflow-x-auto">
-              {JSON.stringify(selectedPrototype?.resolved, null, 2)}
+              {JSON.stringify(detail?.resolved, null, 2)}
             </pre>
           </div>
         )}

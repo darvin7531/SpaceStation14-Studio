@@ -1,6 +1,10 @@
 # SS14 Studio
 
-Electron + React desktop editor for SS14 prototypes, RSI sprites and project resources.
+SS14 Studio is a desktop tool for working with content in any SS14 source build.
+
+Its goal is to make creating prototypes, RSI sprites, and other project resources faster, clearer, and less error-prone, so content creators can turn ideas into working content with less manual overhead.
+
+The editor is designed as a unified workspace for scanning an SS14 project, understanding its available components and resources, and helping with common content tasks through validation, previews, and guided editing workflows.
 
 ## Run
 
@@ -50,7 +54,7 @@ This repository is licensed under `GNU Affero General Public License v3.0 or lat
 
 The full license text is in [LICENSE](./LICENSE).
 
-Important: AGPL is a strong copyleft license, but it does not require redistribution to be free of charge. If later you want an additional no-sale restriction for bundled assets/resources, that would need a separate custom asset license and would no longer be plain AGPL.
+Important: AGPL is a strong copyleft license. It requires modified networked/distributed versions of the software to remain available under the same license terms, but it does not by itself prohibit commercial distribution.
 
 ## Current Features
 
