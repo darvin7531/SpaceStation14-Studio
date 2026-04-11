@@ -44,10 +44,12 @@ export function useI18n() {
   return value;
 }
 
+const TEMPLATE_RE = /\{\{(\w+)\}\}/g;
+
 function translate(language: LanguageCode, key: string, params?: Record<string, string | number | null | undefined>) {
   const dict = dictionaries[language] ?? dictionaries.en;
   const template = dict[key] ?? dictionaries.en[key] ?? key;
-  return template.replace(/\{\{(\w+)\}\}/g, (_match, token) => {
+  return template.replace(TEMPLATE_RE, (_match, token) => {
     const value = params?.[token];
     return value == null ? '' : String(value);
   });

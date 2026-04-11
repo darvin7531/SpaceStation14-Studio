@@ -200,6 +200,7 @@ const TabItem = memo(function TabItem({
   onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onClose: () => void;
 }) {
+  const dotClass = tab.kind === 'prototype' ? 'bg-blue-400/80' : tab.kind === 'rsi' ? 'bg-emerald-400/80' : 'bg-amber-400/80';
   return (
     <button
       ref={setRef}
@@ -213,7 +214,7 @@ const TabItem = memo(function TabItem({
       } ${dragged ? 'z-20 shadow-lg' : ''}`}
       style={{ transform }}
     >
-      <span className={`h-2 w-2 shrink-0 rounded-full ${tab.kind === 'prototype' ? 'bg-blue-400/80' : 'bg-emerald-400/80'}`} />
+      <span className={`h-2 w-2 shrink-0 rounded-full ${dotClass}`} />
       <span className="min-w-0 flex-1 truncate text-sm">{tab.title}</span>
       {tab.dirty && <span className="shrink-0 text-[10px] text-amber-400">*</span>}
       <span

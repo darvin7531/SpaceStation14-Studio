@@ -14,4 +14,16 @@ export default defineConfig(() => ({
   server: {
     hmr: process.env.DISABLE_HMR !== 'true',
   },
+  build: {
+    target: 'esnext',
+    minify: 'esbuild' as const,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'monaco': ['@monaco-editor/react'],
+          'react-vendor': ['react', 'react-dom'],
+        },
+      },
+    },
+  },
 }));

@@ -4,19 +4,28 @@ const crypto = require("crypto");
 const zlib = require("zlib");
 const YAML = require("yaml");
 
-const TEXT_EXTENSIONS = new Set([".yml", ".yaml", ".cs", ".json"]);
-const CACHE_VERSION = 6;
+const TEXT_EXTENSIONS = new Set([".yml", ".yaml", ".cs", ".json", ".ftl"]);
+const CACHE_VERSION = 10;
+
+const RE_REGISTER_COMPONENT = /\[RegisterComponent\b/;
+const RE_PROTOTYPE_ATTR = /\[(?:Prototype|PrototypeRecord)(?:\(([^\)]*)\))?\]/;
+const RE_YAML_ENTRY_START = /^-\s*type:\s*\S+/;
+const RE_LINE_SPLIT = /\r?\n/;
+const RE_LOCALE_ENTRY = /^[A-Za-z0-9_.-]+\s*=/;
+const RE_LOCALE_KEY = /^([A-Za-z0-9_.-]+)\s*=/;
 
 function scanProject(projectRoot, onProgress = null, options = {}) {
   const root = path.resolve(projectRoot || "");
   const prototypeRoot = path.join(root, "Resources", "Prototypes");
   const textureRoot = path.join(root, "Resources", "Textures");
+  const localeRoot = path.join(root, "Resources", "Locale");
   if (!fs.existsSync(prototypeRoot)) {
     throw new Error("Resources/Prototypes was not found in selected folder.");
   }
 
   const prototypes = {};
   const rsis = {};
+  const locales = {};
   const components = {};
   const prototypeKinds = {};
   onProgress?.({ stage: "cache", message: "Checking project file fingerprint", processed: 0 });
@@ -49,11 +58,16 @@ function scanProject(projectRoot, onProgress = null, options = {}) {
 
     if (path.basename(file) === "meta.json" && path.dirname(file).endsWith(".rsi") && file.startsWith(textureRoot)) {
       scanRsi(root, file, rsis);
+      continue;
+    }
+
+    if (file.endsWith(".ftl") && file.startsWith(localeRoot)) {
+      scanLocale(root, file, locales);
     }
   }
 
   onProgress?.({ stage: "validate", message: "Validating parent and sprite references", processed });
-  const result = { projectRoot: root, prototypes, rsis, components, prototypeKinds, issues: validate(prototypes, rsis) };
+  const result = { projectRoot: root, prototypes, rsis, locales, components, prototypeKinds, issues: validate(prototypes, rsis) };
   if (cachePath) {
     onProgress?.({ stage: "cache", message: "Writing scan cache", processed });
     writeScanCache(cachePath, result, options.cacheDir, cacheKey, files.length);
@@ -89,10 +103,10 @@ function readLatestProjectCache(cacheDir, projectRoot) {
 function scanCSharp(root, file, components, prototypeKinds) {
   const text = readText(file);
   const rel = relative(root, file);
-  const lines = text.split(/\r?\n/);
+  const lines = text.split(RE_LINE_SPLIT);
 
   for (let i = 0; i < lines.length; i++) {
-    if (/\[RegisterComponent\b/.test(lines[i])) {
+    if (RE_REGISTER_COMPONENT.test(lines[i])) {
       const classInfo = nextClass(lines, i);
       if (!classInfo) continue;
       const override = componentOverride(lines, i, classInfo.line - 1);
@@ -100,7 +114,7 @@ function scanCSharp(root, file, components, prototypeKinds) {
       components[name] = { name, className: classInfo.name, path: rel, line: classInfo.line, description: xmlSummaryBefore(lines, i) || xmlSummaryBefore(lines, classInfo.line - 1), fields: dataFieldsNear(lines, classInfo.line - 1) };
     }
 
-    const protoMatch = lines[i].match(/\[(?:Prototype|PrototypeRecord)(?:\(([^\)]*)\))?\]/);
+    const protoMatch = lines[i].match(RE_PROTOTYPE_ATTR);
     if (protoMatch) {
       const classInfo = nextClass(lines, i);
       if (!classInfo) continue;
@@ -123,10 +137,10 @@ function scanYaml(root, file, prototypes) {
     return;
   }
 
-  const lines = text.split(/\r?\n/);
+  const lines = text.split(RE_LINE_SPLIT);
   const starts = [];
   for (let i = 0; i < lines.length; i++) {
-    if (/^-\s*type:\s*\S+/.test(lines[i])) {
+    if (RE_YAML_ENTRY_START.test(lines[i])) {
       starts.push(i + 1);
     }
   }
@@ -158,9 +172,30 @@ function scanRsi(root, metaFile, rsis) {
   }
 }
 
+function scanLocale(root, file, locales) {
+  try {
+    const rel = relative(root, file);
+    const normalized = rel.replace(/\\/g, "/");
+    const parts = normalized.split("/");
+    const locale = parts[2] || "unknown";
+    const text = readText(file);
+    const entryCount = countLocaleEntries(text);
+    const keys = extractLocaleKeys(text);
+    locales[normalized] = {
+      path: normalized,
+      locale,
+      fileName: path.basename(normalized),
+      entryCount,
+      keys,
+    };
+  } catch {
+    // Broken locale file should not block project loading.
+  }
+}
+
 function readPrototypeBlock({ projectRoot, filePath, line }) {
   const file = safeProjectPath(projectRoot, filePath);
-  const lines = readText(file).split(/\r?\n/);
+  const lines = readText(file).split(RE_LINE_SPLIT);
   return { filePath: relative(projectRoot, file), line, text: blockText(lines, line) };
 }
 
@@ -169,9 +204,9 @@ function savePrototypeBlock({ projectRoot, filePath, line, text }) {
     throw new Error("Prototype block must start with '- type:'.");
   }
   const file = safeProjectPath(projectRoot, filePath);
-  const original = readText(file).split(/\r?\n/);
+  const original = readText(file).split(RE_LINE_SPLIT);
   const [start, end] = blockRange(original, line);
-  const replacement = String(text).replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\n$/, "").split("\n");
+  const replacement = String(text).replace(/\r\n?/g, "\n").replace(/\n$/, "").split("\n");
   const updated = [...original.slice(0, start), ...replacement, ...original.slice(end)];
   fs.writeFileSync(file, `${updated.join("\n").replace(/\n+$/, "")}\n`, "utf8");
   return readPrototypeBlock({ projectRoot, filePath, line: start + 1 });
@@ -197,7 +232,7 @@ function createPrototype({ projectRoot, type, id, parent, name, filePath, yaml }
   if (type === "entity") lines.push("  components:", "  - type: Sprite", "    sprite: PLACEHOLDER.rsi");
   const block = yaml ? String(yaml).trimEnd() : lines.slice(1).join("\n");
   fs.appendFileSync(file, `${existing && !existing.endsWith("\n") ? "\n" : ""}${existing ? "\n" : ""}${block}\n`, "utf8");
-  return { filePath: relative(projectRoot, file), line: Math.max(1, existing.split(/\r?\n/).length), text: block };
+  return { filePath: relative(projectRoot, file), line: Math.max(1, existing.split(RE_LINE_SPLIT).length), text: block };
 }
 
 function validate(prototypes, rsis) {
@@ -442,3 +477,17 @@ function escapeRegExp(value) {
 }
 
 module.exports = { scanProject, readLatestProjectCache, readPrototypeBlock, savePrototypeBlock, createPrototype };
+
+function countLocaleEntries(text) {
+  return String(text || "")
+    .split(RE_LINE_SPLIT)
+    .filter((line) => RE_LOCALE_ENTRY.test(line.trim()))
+    .length;
+}
+
+function extractLocaleKeys(text) {
+  return String(text || "")
+    .split(RE_LINE_SPLIT)
+    .map((line) => line.match(RE_LOCALE_KEY)?.[1] ?? null)
+    .filter(Boolean);
+}

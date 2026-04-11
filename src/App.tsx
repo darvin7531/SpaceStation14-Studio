@@ -10,14 +10,16 @@ import Sidebar from './components/Sidebar';
 import Editor from './components/Editor';
 import Inspector from './components/Inspector';
 import RsiEditor from './components/RsiEditor';
+import LocaleEditor from './components/LocaleEditor';
 import TabBar from './components/TabBar';
 import IssueCard from './components/IssueCard';
 import SettingsModal from './components/SettingsModal';
 import CreatePrototypeModal from './components/CreatePrototypeModal';
 import CreateRsiModal from './components/CreateRsiModal';
+import CreateLocaleModal from './components/CreateLocaleModal';
 import { useI18n } from './i18n';
 import { EditorResourceTab, UpdateState } from './types';
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, FolderOpen, ImageIcon, Info, Menu, Minus, Plus, RefreshCw, Settings, Square, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, FolderOpen, ImageIcon, Info, Languages, Menu, Minus, Plus, RefreshCw, Settings, Square, X } from 'lucide-react';
 
 export default function App() {
   const { t } = useI18n();
@@ -35,16 +37,19 @@ export default function App() {
   const activeTabId = useProjectStore((state) => state.activeTabId);
   const openPrototypeTab = useProjectStore((state) => state.openPrototypeTab);
   const openRsiTab = useProjectStore((state) => state.openRsiTab);
+  const openLocaleTab = useProjectStore((state) => state.openLocaleTab);
   const activateTab = useProjectStore((state) => state.activateTab);
   const closeTab = useProjectStore((state) => state.closeTab);
   const reorderTab = useProjectStore((state) => state.reorderTab);
   const updateActivePrototypeSaved = useProjectStore((state) => state.updateActivePrototypeSaved);
   const updateActiveRsiDetail = useProjectStore((state) => state.updateActiveRsiDetail);
+  const updateActiveLocaleSaved = useProjectStore((state) => state.updateActiveLocaleSaved);
   const [statusOpen, setStatusOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'general' | 'editor' | 'updates' | 'about'>('general');
   const [createPrototypeOpen, setCreatePrototypeOpen] = useState(false);
   const [createRsiOpen, setCreateRsiOpen] = useState(false);
+  const [createLocaleOpen, setCreateLocaleOpen] = useState(false);
   const [statusLog, setStatusLog] = useState<string[]>([t('app.status.ready')]);
   const [statusHeight, setStatusHeight] = useState(176);
   const [isBooting, setIsBooting] = useState(true);
@@ -203,7 +208,7 @@ export default function App() {
     }
   }, [openProjectRoot, setIsScanning, setScanProgress, t]);
 
-  const hasProject = counts.prototypes > 0 || counts.rsis > 0 || counts.components > 0;
+  const hasProject = counts.prototypes > 0 || counts.rsis > 0 || counts.locales > 0 || counts.components > 0;
   const isCheckingUpdates = updateState.status === 'checking' || updateState.status === 'available' || updateState.status === 'downloading';
 
   const handleCheckUpdates = useCallback(async () => {
@@ -279,6 +284,23 @@ export default function App() {
     }
   };
 
+  const handleCreatedLocale = async (localePath: string) => {
+    const currentProjectRoot = useProjectStore.getState().projectRoot;
+    if (!currentProjectRoot) return;
+    setIsScanning(true);
+    setScanProgress(t('sidebar.refreshCreated', { value: localePath }));
+    try {
+      const result = await scanProject(currentProjectRoot);
+      setProject(result);
+      openLocaleTab(localePath, await window.prototypeStudio.getLocaleAsset(localePath));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : t('sidebar.refreshFailed'));
+    } finally {
+      setIsScanning(false);
+      setScanProgress('');
+    }
+  };
+
   const saveTab = useCallback(async (tab: EditorResourceTab) => {
     if (!projectRoot) return false;
     if (tab.kind === 'prototype') {
@@ -295,15 +317,29 @@ export default function App() {
       return true;
     }
 
-    if (!tab.detail) return false;
-    activateTab(tab.id);
-    const next = await window.prototypeStudio.saveRsiAsset({ path: tab.detail.path, meta: tab.detail.meta });
-    if (next) {
-      updateActiveRsiDetail(next, false);
-      return true;
+    if (tab.kind === 'rsi') {
+      if (!tab.detail) return false;
+      activateTab(tab.id);
+      const next = await window.prototypeStudio.saveRsiAsset({ path: tab.detail.path, meta: tab.detail.meta });
+      if (next) {
+        updateActiveRsiDetail(next, false);
+        return true;
+      }
+      return false;
     }
+
+    if (tab.kind === 'locale') {
+      activateTab(tab.id);
+      const next = await window.prototypeStudio.saveLocaleAsset({ path: tab.localePath, text: tab.text });
+      if (next) {
+        updateActiveLocaleSaved(next, next.text);
+        return true;
+      }
+      return false;
+    }
+
     return false;
-  }, [activateTab, projectRoot, updateActivePrototypeSaved, updateActiveRsiDetail]);
+  }, [activateTab, projectRoot, updateActiveLocaleSaved, updateActivePrototypeSaved, updateActiveRsiDetail]);
 
   const requestCloseTab = useCallback((tabId: string) => {
     const tab = useProjectStore.getState().tabsById[tabId];
@@ -367,6 +403,7 @@ export default function App() {
             onOpenRecentProject={openProjectRoot}
             onCreatePrototype={() => setCreatePrototypeOpen(true)}
             onCreateRsi={() => setCreateRsiOpen(true)}
+            onCreateLocale={() => setCreateLocaleOpen(true)}
             onRescanProject={handleRescanProject}
             onOpenSettings={handleOpenSettings}
             onOpenAbout={handleOpenAbout}
@@ -398,7 +435,7 @@ export default function App() {
       {hasProject ? (
         <div className="relative flex flex-1 min-h-0 overflow-hidden">
           <Sidebar />
-          {activeTab?.kind === 'rsi' ? <RsiEditor /> : <Editor />}
+          {activeTab?.kind === 'rsi' ? <RsiEditor /> : activeTab?.kind === 'locale' ? <LocaleEditor /> : <Editor />}
           <Inspector />
           {isScanning && (
             <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-neutral-950/28 backdrop-blur-[2px]">
@@ -465,6 +502,7 @@ export default function App() {
             <span>{t('app.count.components', { count: counts.components })}</span>
             <span>{t('app.count.schemas', { count: counts.prototypeKinds })}</span>
             <span>{t('app.count.rsis', { count: counts.rsis })}</span>
+            <span>{t('app.count.locales', { count: counts.locales })}</span>
             <span>{t('app.count.issues', { count: validationIssues.length })}</span>
             <ChevronUp size={14} className={statusOpen ? 'rotate-180' : ''} />
           </span>
@@ -498,6 +536,7 @@ export default function App() {
       />
       <CreatePrototypeModal open={createPrototypeOpen} onClose={() => setCreatePrototypeOpen(false)} onCreated={handleCreatedPrototype} />
       <CreateRsiModal open={createRsiOpen} onClose={() => setCreateRsiOpen(false)} onCreated={handleCreatedRsi} />
+      <CreateLocaleModal open={createLocaleOpen} onClose={() => setCreateLocaleOpen(false)} onCreated={handleCreatedLocale} />
       {pendingCloseTabId && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/55 p-4">
           <div className="w-[min(460px,96vw)] rounded-2xl border border-neutral-800 bg-neutral-950 p-5 shadow-2xl">
@@ -552,6 +591,7 @@ const ActionsMenu = memo(function ActionsMenu({
   onOpenRecentProject,
   onCreatePrototype,
   onCreateRsi,
+  onCreateLocale,
   onRescanProject,
   onOpenSettings,
   onOpenAbout,
@@ -561,6 +601,7 @@ const ActionsMenu = memo(function ActionsMenu({
   onOpenRecentProject: (projectRoot: string) => void | Promise<void>;
   onCreatePrototype: () => void;
   onCreateRsi: () => void;
+  onCreateLocale: () => void;
   onRescanProject: () => void | Promise<void>;
   onOpenSettings: () => void;
   onOpenAbout: () => void;
@@ -620,6 +661,7 @@ const ActionsMenu = memo(function ActionsMenu({
               <div className="my-2 border-t border-neutral-800" />
               <MenuAction icon={<Plus size={15} />} label={t('app.createPrototype')} onClick={() => { setOpen(false); onCreatePrototype(); }} />
               <MenuAction icon={<ImageIcon size={15} />} label={t('app.createRsiSprite')} onClick={() => { setOpen(false); onCreateRsi(); }} />
+              <MenuAction icon={<Languages size={15} />} label={t('app.createLocale')} onClick={() => { setOpen(false); onCreateLocale(); }} />
               <MenuAction icon={<RefreshCw size={15} />} label={t('app.rescanProject')} onClick={() => { setOpen(false); void onRescanProject(); }} />
             </>
           )}
@@ -655,7 +697,7 @@ function formatUpdateLabel(state: UpdateState, t: (key: string, params?: Record<
   }
 }
 
-function LoadingPanel({
+const LoadingPanel = memo(function LoadingPanel({
   eyebrow,
   title,
   message,
@@ -694,4 +736,4 @@ function LoadingPanel({
       </div>
     </div>
   );
-}
+});

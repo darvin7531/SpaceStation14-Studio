@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { EditorResourceTab, ProjectSummary, PrototypeDetail, PrototypeEditorTab, RsiAssetDetail, RsiEditorTab, ValidationIssue } from '../types';
+import { EditorResourceTab, LocaleDetail, LocaleEditorTab, ProjectSummary, PrototypeDetail, PrototypeEditorTab, RsiAssetDetail, RsiEditorTab, ValidationIssue } from '../types';
 
 interface ProjectState {
   projectRoot: string | null;
@@ -9,6 +9,8 @@ interface ProjectState {
   selectedPrototype: PrototypeDetail | null;
   selectedRsiPath: string | null;
   selectedRsi: RsiAssetDetail | null;
+  selectedLocalePath: string | null;
+  selectedLocale: LocaleDetail | null;
   selectedEditorTab: 'form' | 'raw' | 'resolved';
   editorJumpQuery: string | null;
   highlightedRsiState: string | null;
@@ -26,6 +28,8 @@ interface ProjectState {
   setSelectedPrototype: (detail: PrototypeDetail | null) => void;
   setSelectedRsiPath: (path: string | null) => void;
   setSelectedRsi: (detail: RsiAssetDetail | null) => void;
+  setSelectedLocalePath: (path: string | null) => void;
+  setSelectedLocale: (detail: LocaleDetail | null) => void;
   setSelectedEditorTab: (tab: 'form' | 'raw' | 'resolved') => void;
   setEditorJumpQuery: (query: string | null) => void;
   setHighlightedRsiState: (state: string | null) => void;
@@ -36,6 +40,7 @@ interface ProjectState {
   updateSelectedPrototype: (updated: Partial<PrototypeDetail['prototype']>) => void;
   openPrototypeTab: (key: string, detail: PrototypeDetail | null, options?: { editorTab?: 'form' | 'raw' | 'resolved'; jumpQuery?: string | null }) => void;
   openRsiTab: (path: string, detail: RsiAssetDetail | null, options?: { highlightedState?: string | null }) => void;
+  openLocaleTab: (path: string, detail: LocaleDetail | null) => void;
   activateTab: (tabId: string) => void;
   closeTab: (tabId: string) => void;
   reorderTab: (tabId: string, targetIndex: number) => void;
@@ -46,11 +51,14 @@ interface ProjectState {
   updateActivePrototypeSaved: (detail: PrototypeDetail | null, rawYaml: string) => void;
   updateActiveRsiDetail: (detail: RsiAssetDetail | null, dirty?: boolean) => void;
   updateActiveRsiMeta: (updater: (detail: RsiAssetDetail) => RsiAssetDetail) => void;
+  updateActiveLocaleText: (text: string) => void;
+  updateActiveLocaleSaved: (detail: LocaleDetail | null, text: string) => void;
 }
 
 const emptyCounts = {
   prototypes: 0,
   rsis: 0,
+  locales: 0,
   components: 0,
   prototypeKinds: 0,
   issues: 0,
@@ -64,6 +72,10 @@ function rsiTabId(path: string) {
   return `rsi:${path}`;
 }
 
+function localeTabId(path: string) {
+  return `locale:${path}`;
+}
+
 function syncActiveSelection(tab: EditorResourceTab | null) {
   if (!tab) {
     return {
@@ -72,6 +84,8 @@ function syncActiveSelection(tab: EditorResourceTab | null) {
       selectedPrototype: null,
       selectedRsiPath: null,
       selectedRsi: null,
+      selectedLocalePath: null,
+      selectedLocale: null,
       selectedEditorTab: 'form' as const,
       editorJumpQuery: null,
       highlightedRsiState: null,
@@ -85,9 +99,26 @@ function syncActiveSelection(tab: EditorResourceTab | null) {
       selectedPrototype: tab.detail,
       selectedRsiPath: null,
       selectedRsi: null,
+      selectedLocalePath: null,
+      selectedLocale: null,
       selectedEditorTab: tab.editorTab,
       editorJumpQuery: tab.jumpQuery ?? null,
       highlightedRsiState: null,
+    };
+  }
+
+  if (tab.kind === 'rsi') {
+    return {
+      activeTabId: tab.id,
+      selectedPrototypeId: null,
+      selectedPrototype: null,
+      selectedRsiPath: tab.rsiPath,
+      selectedRsi: tab.detail,
+      selectedLocalePath: null,
+      selectedLocale: null,
+      selectedEditorTab: 'form' as const,
+      editorJumpQuery: null,
+      highlightedRsiState: tab.highlightedState ?? null,
     };
   }
 
@@ -95,11 +126,13 @@ function syncActiveSelection(tab: EditorResourceTab | null) {
     activeTabId: tab.id,
     selectedPrototypeId: null,
     selectedPrototype: null,
-    selectedRsiPath: tab.rsiPath,
-    selectedRsi: tab.detail,
-    selectedEditorTab: 'form' as const,
+    selectedRsiPath: null,
+    selectedRsi: null,
+    selectedLocalePath: tab.localePath,
+    selectedLocale: tab.detail,
+    selectedEditorTab: 'raw' as const,
     editorJumpQuery: null,
-    highlightedRsiState: tab.highlightedState ?? null,
+    highlightedRsiState: null,
   };
 }
 
@@ -130,6 +163,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   selectedPrototype: null,
   selectedRsiPath: null,
   selectedRsi: null,
+  selectedLocalePath: null,
+  selectedLocale: null,
   selectedEditorTab: 'form',
   editorJumpQuery: null,
   highlightedRsiState: null,
@@ -151,6 +186,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   setSelectedPrototype: (detail) => set({ selectedPrototype: detail }),
   setSelectedRsiPath: (path) => set({ selectedRsiPath: path }),
   setSelectedRsi: (detail) => set({ selectedRsi: detail }),
+  setSelectedLocalePath: (path) => set({ selectedLocalePath: path }),
+  setSelectedLocale: (detail) => set({ selectedLocale: detail }),
   setSelectedEditorTab: (tab) => set((state) => {
     const active = getTabById(state, state.activeTabId);
     if (!active || active.kind !== 'prototype') return { selectedEditorTab: tab };
@@ -264,6 +301,40 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         dirty: false,
         detail,
         highlightedState: options?.highlightedState ?? null,
+      };
+    }
+
+    return {
+      tabOrder: state.tabOrder.includes(id) ? state.tabOrder : [...state.tabOrder, id],
+      tabsById: { ...state.tabsById, [id]: nextTab },
+      ...syncActiveSelection(nextTab),
+    };
+  }),
+  openLocaleTab: (path, detail) => set((state) => {
+    const id = localeTabId(path);
+    const existing = state.tabsById[id];
+    let nextTab: LocaleEditorTab;
+
+    if (existing && existing.kind === 'locale') {
+      nextTab = existing.dirty || !detail
+        ? existing
+        : {
+            ...existing,
+            detail,
+            title: detail.fileName,
+            subtitle: detail.path,
+            text: detail.text,
+          };
+    } else {
+      nextTab = {
+        id,
+        kind: 'locale',
+        localePath: path,
+        title: detail?.fileName ?? path.split('/').at(-1) ?? path,
+        subtitle: detail?.path ?? path,
+        dirty: false,
+        detail,
+        text: detail?.text ?? '',
       };
     }
 
@@ -398,6 +469,33 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       tabsById: { ...state.tabsById, [active.id]: nextTab },
       selectedRsi: nextTab.detail,
       highlightedRsiState: nextTab.highlightedState ?? null,
+    };
+  }),
+  updateActiveLocaleText: (text) => set((state) => {
+    const active = getTabById(state, state.activeTabId);
+    if (!active || active.kind !== 'locale') return {};
+    const nextTab: LocaleEditorTab = { ...active, text, dirty: true };
+    return {
+      tabsById: { ...state.tabsById, [active.id]: nextTab },
+      selectedLocale: nextTab.detail,
+      selectedLocalePath: nextTab.localePath,
+    };
+  }),
+  updateActiveLocaleSaved: (detail, text) => set((state) => {
+    const active = getTabById(state, state.activeTabId);
+    if (!active || active.kind !== 'locale') return {};
+    const nextTab: LocaleEditorTab = {
+      ...active,
+      detail,
+      text,
+      dirty: false,
+      title: detail?.fileName ?? active.title,
+      subtitle: detail?.path ?? active.subtitle,
+    };
+    return {
+      tabsById: { ...state.tabsById, [active.id]: nextTab },
+      selectedLocale: nextTab.detail,
+      selectedLocalePath: nextTab.localePath,
     };
   }),
 }));

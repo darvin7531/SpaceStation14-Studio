@@ -16,6 +16,8 @@ if (!bootAppSettings.useHardwareAcceleration) {
   app.disableHardwareAcceleration();
 }
 
+const NORMALIZE_BACKSLASH_RE = /\\/g;
+
 Menu.setApplicationMenu(null);
 let activeIndex = null;
 let mainWindow = null;
@@ -312,6 +314,11 @@ ipcMain.handle("asset:get-rsi", async (_event, rsiPath) => getRsiAsset(rsiPath))
 ipcMain.handle("asset:save-rsi", async (_event, request = {}) => saveRsiAsset(request));
 ipcMain.handle("asset:import-rsi-images", async (_event, request = {}) => importRsiImages(request));
 ipcMain.handle("asset:create-rsi", async (_event, draft = {}) => createRsiAsset(draft));
+ipcMain.handle("asset:get-locale", async (_event, localePath) => getLocaleAsset(localePath));
+ipcMain.handle("asset:save-locale", async (_event, request = {}) => saveLocaleAsset(request));
+ipcMain.handle("asset:create-locale", async (_event, draft = {}) => createLocaleAsset(draft));
+ipcMain.handle("project:analyze-prototype-localization", async (_event, request = {}) => analyzePrototypeLocalization(request));
+ipcMain.handle("project:create-prototype-localization", async (_event, request = {}) => createPrototypeLocalization(request));
 ipcMain.handle("project:validate-prototype-yaml", async (_event, request = {}) => validatePrototypeYaml(request));
 ipcMain.handle("project:create-options", async () => createOptions());
 ipcMain.handle("project:validate-draft", async (_event, draft = {}) => validateDraft(draft));
@@ -417,6 +424,7 @@ function summarizeIndex(index) {
     counts: {
       prototypes: Object.keys(index.prototypes).length,
       rsis: Object.keys(index.rsis).length,
+      locales: Object.keys(index.locales ?? {}).length,
       components: Object.keys(index.components).length,
       prototypeKinds: Object.keys(index.prototypeKinds).length,
       issues: index.issues.length,
@@ -572,7 +580,7 @@ function getPrototype(key) {
   const preferredState = spriteComponent?.state || spriteComponent?.layers?.find?.((layer) => layer?.state)?.state;
   const rsi = sprite ? findRsi(sprite, preferredState) : null;
   const kind = activeIndex.prototypeKinds[String(prototype.type)] ?? null;
-  return { prototype, resolved, issues, rsi, kind };
+  return { prototype, resolved, issues, rsi, kind, linkedPrototypes: collectPrototypeLinks(resolved, prototype.type) };
 }
 
 function validatePrototypeYaml({ key, text }) {
@@ -590,7 +598,7 @@ function validatePrototypeYaml({ key, text }) {
 
   if (!parsed || typeof parsed !== "object") {
     issues.push({ level: "error", field: "yaml", message: "Prototype block must be a YAML object", prototypeKey: key });
-    return { prototype: { ...base, _rawYaml: String(text ?? "") }, resolved: base, issues, rsi: null, kind: activeIndex.prototypeKinds[String(base.type)] ?? null };
+    return { prototype: { ...base, _rawYaml: String(text ?? "") }, resolved: base, issues, rsi: null, kind: activeIndex.prototypeKinds[String(base.type)] ?? null, linkedPrototypes: collectPrototypeLinks(base, base.type) };
   }
 
   const draft = { ...base, ...parsed, _key: key, _filePath: base._filePath, _line: base._line, _rawYaml: String(text ?? "") };
@@ -600,7 +608,7 @@ function validatePrototypeYaml({ key, text }) {
   const sprite = spriteComponent?.sprite;
   const preferredState = spriteComponent?.state || spriteComponent?.layers?.find?.((layer) => layer?.state)?.state;
   const rsi = sprite ? findRsi(sprite, preferredState) : null;
-  return { prototype: draft, resolved, issues: dedupeIssues(issues), rsi, kind: activeIndex.prototypeKinds[String(draft.type)] ?? null };
+  return { prototype: draft, resolved, issues: dedupeIssues(issues), rsi, kind: activeIndex.prototypeKinds[String(draft.type)] ?? null, linkedPrototypes: collectPrototypeLinks(resolved, draft.type) };
 }
 
 function collectPrototypeIssues({ key, draft, resolved, includeDuplicateCheck = false }) {
@@ -866,7 +874,7 @@ function sampleYamlValue(field) {
 
 function resourceTree() {
   ensureIndex();
-  const root = { name: "Resources", path: "Resources", kind: "folder", children: [], prototypeCount: 0, rsiCount: 0 };
+  const root = { name: "Resources", path: "Resources", kind: "folder", children: [], prototypeCount: 0, rsiCount: 0, localeCount: 0 };
   for (const prototype of Object.values(activeIndex.prototypes)) {
     if (!String(prototype._filePath).startsWith("Resources/")) continue;
     insertResourcePath(root, prototype._filePath.split("/").slice(1), {
@@ -886,6 +894,16 @@ function resourceTree() {
       stateCount: rsi.meta?.states?.length ?? 0,
     });
   }
+  for (const locale of Object.values(activeIndex.locales ?? {})) {
+    if (!String(locale.path).startsWith("Resources/")) continue;
+    insertResourcePath(root, locale.path.split("/").slice(1), {
+      name: locale.fileName,
+      path: locale.path,
+      kind: "locale",
+      localeCount: 1,
+      entryCount: locale.entryCount ?? 0,
+    });
+  }
   sortTree(root);
   return root;
 }
@@ -893,11 +911,15 @@ function resourceTree() {
 async function pickProjectFolder({ scope = "prototypes", currentPath = "" }) {
   ensureIndex();
   const root = activeIndex.projectRoot;
-  const baseRel = scope === "textures" ? "Resources/Textures" : "Resources/Prototypes";
+  const baseRel = scope === "textures" ? "Resources/Textures" : scope === "locale" ? "Resources/Locale" : "Resources/Prototypes";
   const normalizedCurrent = String(currentPath || "").replace(/\\/g, "/");
   const defaultRel = normalizedCurrent && isUnderProjectFolder(normalizedCurrent, baseRel) ? normalizedCurrent : baseRel;
   const result = await dialog.showOpenDialog({
-    title: scope === "textures" ? "Select folder in Resources/Textures" : "Select folder in Resources/Prototypes",
+    title: scope === "textures"
+      ? "Select folder in Resources/Textures"
+      : scope === "locale"
+        ? "Select folder in Resources/Locale"
+        : "Select folder in Resources/Prototypes",
     defaultPath: safeProjectPath(root, defaultRel),
     properties: ["openDirectory"],
   });
@@ -919,7 +941,7 @@ function getRsiAsset(rsiPath) {
 
 function saveRsiAsset({ path: rsiPath, meta }) {
   ensureIndex();
-  const key = normalizeRsiKey(rsiPath);
+  const key = normalizePath(rsiPath);
   const rsi = activeIndex.rsis[key];
   if (!rsi) return null;
   const nextMeta = sanitizeRsiMeta(meta);
@@ -930,7 +952,7 @@ function saveRsiAsset({ path: rsiPath, meta }) {
 
 function importRsiImages({ path: rsiPath, files = [] }) {
   ensureIndex();
-  const key = normalizeRsiKey(rsiPath);
+  const key = normalizePath(rsiPath);
   const rsi = activeIndex.rsis[key];
   if (!rsi) return null;
   const known = new Set((rsi.meta?.states ?? []).map((state) => state.name));
@@ -974,6 +996,181 @@ function createRsiAsset(draft) {
   return formatRsiAsset(entry);
 }
 
+function getLocaleAsset(localePath) {
+  ensureIndex();
+  const key = normalizePath(localePath);
+  const summary = activeIndex.locales?.[key];
+  if (!summary) return null;
+  const file = safeProjectPath(activeIndex.projectRoot, key);
+  return {
+    ...summary,
+    text: fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "",
+  };
+}
+
+function saveLocaleAsset({ path: localePath, text }) {
+  ensureIndex();
+  const key = normalizePath(localePath);
+  const file = safeProjectPath(activeIndex.projectRoot, key);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const normalizedText = String(text ?? "").replace(/\r\n?/g, "\n");
+  fs.writeFileSync(file, normalizedText.endsWith("\n") ? normalizedText : `${normalizedText}\n`, "utf8");
+  const detail = {
+    path: key,
+    locale: localeFromPath(key),
+    fileName: path.posix.basename(key),
+    entryCount: countLocaleEntries(normalizedText),
+    text: fs.readFileSync(file, "utf8"),
+  };
+  activeIndex.locales[key] = {
+    path: detail.path,
+    locale: detail.locale,
+    fileName: detail.fileName,
+    entryCount: detail.entryCount,
+    keys: extractLocaleKeys(detail.text),
+  };
+  return detail;
+}
+
+function createLocaleAsset(draft) {
+  ensureIndex();
+  const locale = safeLocaleCode(draft.locale);
+  const directory = normalizeLocaleDirectory(draft.directory, locale);
+  const fileName = safeLocaleFileName(draft.fileName);
+  const localePath = `${directory}/${fileName}`;
+  const file = safeProjectPath(activeIndex.projectRoot, localePath);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  if (fs.existsSync(file)) {
+    throw new Error(`Locale file already exists: ${localePath}`);
+  }
+
+  const starterKey = String(draft.starterKey ?? "").trim();
+  const starterValue = String(draft.starterValue ?? "").trim();
+  const lines = [];
+  if (starterKey) {
+    lines.push(`${starterKey} = ${starterValue}`);
+  }
+  const text = lines.length > 0 ? `${lines.join("\n")}\n` : "";
+  fs.writeFileSync(file, text, "utf8");
+  const detail = {
+    path: localePath,
+    locale,
+    fileName,
+    entryCount: countLocaleEntries(text),
+    text,
+  };
+  activeIndex.locales[localePath] = {
+    path: detail.path,
+    locale: detail.locale,
+    fileName: detail.fileName,
+    entryCount: detail.entryCount,
+    keys: extractLocaleKeys(text),
+  };
+  return detail;
+}
+
+function analyzePrototypeLocalization({ key, text = "", requiredLocales = [] }) {
+  ensureIndex();
+  const base = activeIndex.prototypes[key];
+  if (!base) return null;
+
+  const draft = coercePrototypeDraft(base, text, key);
+  if (!draft || String(draft.type) !== "entity" || !draft.id) {
+    return {
+      prototypeKey: key,
+      localizationId: null,
+      diagnostics: [],
+    };
+  }
+
+  const localizationId = String(draft.localizationId || "").trim() || `ent-${draft.id}`;
+  const locales = Array.from(new Set((Array.isArray(requiredLocales) ? requiredLocales : []).map((value) => String(value || "").trim()).filter(Boolean)));
+  const diagnostics = [];
+
+  for (const field of ["name", "description", "suffix"]) {
+    const sourceText = String(field === "name" ? draft.name ?? "" : field === "description" ? draft.description ?? "" : draft.suffix ?? "").trim();
+    if (!sourceText) continue;
+    const missingLocales = [];
+    const targets = [];
+    for (const locale of locales) {
+      const resolution = resolveLocaleTarget({
+        prototypeFilePath: base._filePath,
+        locale,
+        localizationId,
+        prototypeId: String(draft.id),
+      });
+      targets.push(resolution);
+      if (!resolution.exists[field]) missingLocales.push(locale);
+    }
+
+    if (missingLocales.length === 0) continue;
+    diagnostics.push({
+      kind: "missingLocale",
+      field,
+      sourceText,
+      localizationId,
+      missingLocales,
+      targets,
+      message: `${field} is missing in ${missingLocales.join(", ")}`,
+    });
+  }
+
+  return {
+    prototypeKey: key,
+    localizationId,
+    diagnostics,
+  };
+}
+
+function createPrototypeLocalization({ key, text = "", fields = [], locales = [] }) {
+  ensureIndex();
+  const base = activeIndex.prototypes[key];
+  if (!base) throw new Error("Prototype was not found.");
+  const draft = coercePrototypeDraft(base, text, key);
+  if (!draft || String(draft.type) !== "entity" || !draft.id) {
+    throw new Error("Only entity localization is currently supported.");
+  }
+
+  const localizationId = String(draft.localizationId || "").trim() || `ent-${draft.id}`;
+  const normalizedFields = Array.from(new Set((Array.isArray(fields) ? fields : []).map((value) => String(value || "").trim()).filter(Boolean)));
+  const normalizedLocales = Array.from(new Set((Array.isArray(locales) ? locales : []).map((value) => String(value || "").trim()).filter(Boolean)));
+  const updatedPaths = [];
+
+  for (const locale of normalizedLocales) {
+    const resolution = resolveLocaleTarget({
+      prototypeFilePath: base._filePath,
+      locale,
+      localizationId,
+      prototypeId: String(draft.id),
+    });
+    const file = safeProjectPath(activeIndex.projectRoot, resolution.path);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const original = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+    const next = upsertEntityLocalizationBlock(original, localizationId, {
+      name: normalizedFields.includes("name") ? String(draft.name ?? "").trim() : null,
+      description: normalizedFields.includes("description") ? String(draft.description ?? "").trim() : null,
+      suffix: normalizedFields.includes("suffix") ? String(draft.suffix ?? "").trim() : null,
+    });
+    if (next !== original) {
+      fs.writeFileSync(file, next, "utf8");
+    }
+    const persisted = next;
+    activeIndex.locales[resolution.path] = {
+      path: resolution.path,
+      locale,
+      fileName: path.posix.basename(resolution.path),
+      entryCount: countLocaleEntries(persisted),
+      keys: extractLocaleKeys(persisted),
+    };
+    updatedPaths.push(resolution.path);
+  }
+
+  return {
+    localizationId,
+    updatedPaths,
+  };
+}
+
 function insertResourcePath(root, parts, leaf) {
   let current = root;
   const ancestors = [root];
@@ -981,7 +1178,7 @@ function insertResourcePath(root, parts, leaf) {
   for (const part of folderParts) {
     let child = current.children.find((item) => item.kind === "folder" && item.name === part);
     if (!child) {
-      child = { name: part, path: `${current.path}/${part}`, kind: "folder", children: [], prototypeCount: 0, rsiCount: 0 };
+      child = { name: part, path: `${current.path}/${part}`, kind: "folder", children: [], prototypeCount: 0, rsiCount: 0, localeCount: 0 };
       current.children.push(child);
     }
     current = child;
@@ -990,16 +1187,19 @@ function insertResourcePath(root, parts, leaf) {
 
   let file = current.children.find((item) => item.path === leaf.path && (item.kind === "file" || item.kind === "rsi"));
   if (!file && leaf.kind === "prototype") {
-    file = { name: parts.at(-1), path: leaf.path, kind: "file", children: [], prototypeCount: 0, rsiCount: 0 };
+    file = { name: parts.at(-1), path: leaf.path, kind: "file", children: [], prototypeCount: 0, rsiCount: 0, localeCount: 0 };
     current.children.push(file);
   }
 
   if (leaf.kind === "prototype") {
     file.children.push(leaf);
     for (const node of [...ancestors, file]) node.prototypeCount = (node.prototypeCount ?? 0) + 1;
-  } else if (!file) {
+  } else if (leaf.kind === "rsi" && !file) {
     current.children.push(leaf);
     for (const node of ancestors) node.rsiCount = (node.rsiCount ?? 0) + 1;
+  } else if (leaf.kind === "locale") {
+    current.children.push(leaf);
+    for (const node of ancestors) node.localeCount = (node.localeCount ?? 0) + 1;
   }
 }
 
@@ -1015,14 +1215,15 @@ function sortTree(node) {
 
 function createOptions() {
   ensureIndex();
-  const types = new Set([
-    ...Object.keys(activeIndex.prototypeKinds),
-    ...Object.values(activeIndex.prototypes).map((prototype) => String(prototype.type)),
-  ]);
-  const files = Array.from(new Set(Object.values(activeIndex.prototypes).map((prototype) => prototype._filePath))).sort();
+  const types = new Set(Object.keys(activeIndex.prototypeKinds));
+  const fileSet = new Set();
+  for (const prototype of Object.values(activeIndex.prototypes)) {
+    types.add(String(prototype.type));
+    fileSet.add(prototype._filePath);
+  }
   return {
     types: Array.from(types).sort(),
-    files,
+    files: Array.from(fileSet).sort(),
     defaultFile: "Resources/Prototypes/_PrototypeStudio/entity.yml",
   };
 }
@@ -1149,7 +1350,7 @@ function resolvePrototype(key, visited = new Set()) {
   const parents = Array.isArray(prototype.parent) ? prototype.parent : prototype.parent ? [prototype.parent] : [];
   for (const parentId of parents) {
     const parentKey = findPrototypeKey(parentId, prototype.type);
-    const parent = parentKey ? resolvePrototype(parentKey, new Set(visited)) : null;
+    const parent = parentKey ? resolvePrototype(parentKey, visited) : null;
     if (parent) resolved = mergePrototypes(parent, resolved);
   }
   return resolved;
@@ -1169,6 +1370,39 @@ function findPrototypeKey(id, type) {
   const exact = `${type}:${id}`;
   if (activeIndex.prototypes[exact]) return exact;
   return Object.values(activeIndex.prototypes).find((prototype) => String(prototype.id) === String(id))?._key ?? null;
+}
+
+function collectPrototypeLinks(value, defaultType = "entity", pathPrefix = "", acc = [], seen = new Set()) {
+  if (value == null) return acc;
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => collectPrototypeLinks(item, defaultType, pathPrefix ? `${pathPrefix}[${index}]` : `[${index}]`, acc, seen));
+    return acc;
+  }
+  if (typeof value === "object") {
+    for (const [key, nested] of Object.entries(value)) {
+      if (key.startsWith("_")) continue;
+      const nextPath = pathPrefix ? `${pathPrefix}.${key}` : key;
+      collectPrototypeLinks(nested, defaultType, nextPath, acc, seen);
+    }
+    return acc;
+  }
+  if (typeof value !== "string") return acc;
+
+  const candidate = String(value).trim();
+  if (!candidate || candidate.length < 2) return acc;
+  if (candidate.includes("/") || candidate.includes(".rsi") || candidate.includes(" ") || candidate.includes("{") || candidate.includes("}")) return acc;
+  const key = findPrototypeKey(candidate, defaultType) ?? findPrototypeKey(candidate, "entity");
+  if (!key) return acc;
+  if (seen.has(key)) return acc;
+  seen.add(key);
+  const prototype = activeIndex.prototypes[key];
+  acc.push({
+    key,
+    id: String(prototype.id),
+    type: String(prototype.type),
+    field: pathPrefix || "reference",
+  });
+  return acc;
 }
 
 function mergePrototypes(parent, child) {
@@ -1258,12 +1492,12 @@ function sanitizeRsiMeta(meta) {
   };
 }
 
-function normalizeRsiKey(value) {
-  return String(value || "").replace(/\\/g, "/");
+function normalizePath(value) {
+  return String(value || "").replace(NORMALIZE_BACKSLASH_RE, "/");
 }
 
 function resolveRsiKey(value) {
-  const direct = normalizeRsiKey(value);
+  const direct = normalizePath(value);
   if (activeIndex.rsis[direct]) return direct;
   const normalizedSprite = normalizeSpritePath(value);
   if (activeIndex.rsis[normalizedSprite]) return normalizedSprite;
@@ -1274,6 +1508,13 @@ function resolveRsiKey(value) {
 function normalizeTextureDirectory(value) {
   let normalized = String(value || "Resources/Textures/_Studio").replace(/\\/g, "/").replace(/\/+$/, "");
   if (!normalized.startsWith("Resources/Textures")) normalized = `Resources/Textures/${normalized.replace(/^\/+/, "")}`;
+  return normalized;
+}
+
+function normalizeLocaleDirectory(value, locale) {
+  let normalized = String(value || `Resources/Locale/${locale}`).replace(/\\/g, "/").replace(/\/+$/, "");
+  if (!normalized.startsWith("Resources/Locale")) normalized = `Resources/Locale/${normalized.replace(/^\/+/, "")}`;
+  if (normalized === "Resources/Locale") normalized = `Resources/Locale/${locale}`;
   return normalized;
 }
 
@@ -1292,6 +1533,18 @@ function safeStateName(value) {
     .replace(/\.png$/i, "")
     .trim()
     .replace(/[^A-Za-z0-9_\-]/g, "-");
+}
+
+function safeLocaleCode(value) {
+  const normalized = String(value || "").trim().replace(/\\/g, "/");
+  const safe = normalized.replace(/[^A-Za-z0-9_-]/g, "");
+  return safe || "en-US";
+}
+
+function safeLocaleFileName(value) {
+  const normalized = String(value || "new-locale.ftl").trim().replace(/\\/g, "/").split("/").at(-1) || "new-locale.ftl";
+  const safe = normalized.replace(/[^A-Za-z0-9._-]/g, "-");
+  return safe.toLowerCase().endsWith(".ftl") ? safe : `${safe}.ftl`;
 }
 
 function safeProjectPath(projectRoot, relPath) {
@@ -1325,6 +1578,129 @@ function displaySpritePath(sprite) {
   return normalized.startsWith("Resources/Textures/")
     ? normalized.slice("Resources/Textures/".length)
     : normalized;
+}
+
+function localeFromPath(localePath) {
+  const parts = normalizePath(localePath).split("/");
+  return parts[2] || "unknown";
+}
+
+function countLocaleEntries(text) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .filter((line) => /^[A-Za-z0-9_.-]+\s*=/.test(line.trim()))
+    .length;
+}
+
+function extractLocaleKeys(text) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.match(/^([A-Za-z0-9_.-]+)\s*=/)?.[1] ?? null)
+    .filter(Boolean);
+}
+
+function coercePrototypeDraft(base, text, key) {
+  if (!String(text || "").trim()) return base;
+  try {
+    const yaml = YAML.parse(String(text ?? ""), { logLevel: "silent" });
+    const parsed = Array.isArray(yaml) ? yaml[0] : yaml;
+    if (!parsed || typeof parsed !== "object") return base;
+    return { ...base, ...parsed, _key: key, _filePath: base._filePath, _line: base._line, _rawYaml: String(text ?? "") };
+  } catch {
+    return base;
+  }
+}
+
+function resolveLocaleTarget({ prototypeFilePath, locale, localizationId, prototypeId }) {
+  const localeFiles = Object.values(activeIndex.locales ?? {}).filter((item) => item.locale === locale);
+  const exactByKey = localeFiles.find((item) => (item.keys ?? []).includes(localizationId));
+  if (exactByKey) {
+    return {
+      locale,
+      path: exactByKey.path,
+      exists: getEntityLocalePresence(exactByKey.path, localizationId),
+    };
+  }
+
+  const normalizedPrototypePath = String(prototypeFilePath || "").replace(/\\/g, "/");
+  const basename = path.posix.basename(normalizedPrototypePath).replace(/\.(yml|yaml)$/i, ".ftl");
+  const segments = normalizedPrototypePath.split("/");
+  const moduleSegment = segments[2]?.startsWith("_") ? segments[2] : "";
+  const sameBasename = localeFiles
+    .filter((item) => item.fileName === basename && (!moduleSegment || item.path.includes(`/${moduleSegment}/`) || item.path.endsWith(`/${moduleSegment}/${basename}`)))
+    .sort((a, b) => a.path.split("/").length - b.path.split("/").length)[0];
+
+  if (sameBasename) {
+    return {
+      locale,
+      path: sameBasename.path,
+      exists: getEntityLocalePresence(sameBasename.path, localizationId),
+    };
+  }
+
+  const fallbackPath = moduleSegment
+    ? `Resources/Locale/${locale}/${moduleSegment}/${basename}`
+    : `Resources/Locale/${locale}/${basename}`;
+  return {
+    locale,
+    path: fallbackPath,
+    exists: getEntityLocalePresence(fallbackPath, localizationId),
+  };
+}
+
+function getEntityLocalePresence(localePath, localizationId) {
+  const file = safeProjectPath(activeIndex.projectRoot, localePath);
+  if (!fs.existsSync(file)) {
+    return { name: false, description: false, suffix: false };
+  }
+  const text = fs.readFileSync(file, "utf8");
+  const escaped = escapeRegExp(localizationId);
+  const idPattern = new RegExp(`^${escaped}\\s*=`, "m");
+  const block = text.match(new RegExp(`^${escaped}\\s*=.*(?:\\r?\\n(?:[ \\t]+\\..*)?)*`, "m"))?.[0] ?? "";
+  return {
+    name: idPattern.test(text),
+    description: /^\s*\.desc\s*=+/m.test(block),
+    suffix: /^\s*\.suffix\s*=+/m.test(block),
+  };
+}
+
+function upsertEntityLocalizationBlock(original, localizationId, values) {
+  const normalized = String(original || "").replace(/\r\n?/g, "\n");
+  const lines = normalized === "" ? [] : normalized.split("\n");
+  const escaped = escapeRegExp(localizationId);
+  const startIndex = lines.findIndex((line) => new RegExp(`^${escaped}\\s*=`).test(line));
+  const entries = [];
+  if (values.name) entries.push({ field: "name", line: `${localizationId} = ${values.name}` });
+  if (values.description) entries.push({ field: "description", line: `    .desc = ${values.description}` });
+  if (values.suffix) entries.push({ field: "suffix", line: `    .suffix = ${values.suffix}` });
+  if (entries.length === 0) return normalized;
+
+  if (startIndex < 0) {
+    const chunk = entries.map((entry) => entry.line).join("\n");
+    const prefix = normalized.trim() ? `${normalized.replace(/\n+$/, "")}\n\n` : "";
+    return `${prefix}${chunk}\n`;
+  }
+
+  let endIndex = startIndex + 1;
+  while (endIndex < lines.length && (/^\s+\./.test(lines[endIndex]) || /^\s*$/.test(lines[endIndex]) === false && /^\s/.test(lines[endIndex]))) {
+    endIndex += 1;
+  }
+
+  const blockLines = lines.slice(startIndex, endIndex);
+  if (values.name && !new RegExp(`^${escaped}\\s*=`).test(blockLines[0])) {
+    blockLines.unshift(`${localizationId} = ${values.name}`);
+  } else if (values.name) {
+    blockLines[0] = `${localizationId} = ${values.name}`;
+  }
+  if (values.description && !blockLines.some((line) => /^\s*\.desc\s*=/.test(line))) {
+    blockLines.push(`    .desc = ${values.description}`);
+  }
+  if (values.suffix && !blockLines.some((line) => /^\s*\.suffix\s*=/.test(line))) {
+    blockLines.push(`    .suffix = ${values.suffix}`);
+  }
+
+  const updated = [...lines.slice(0, startIndex), ...blockLines, ...lines.slice(endIndex)].join("\n").replace(/\n+$/, "");
+  return `${updated}\n`;
 }
 
 function ensureIndex() {

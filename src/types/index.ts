@@ -81,6 +81,51 @@ export interface CreateRsiDraft {
   copyright: string;
 }
 
+export interface LocaleSummary {
+  path: string;
+  locale: string;
+  fileName: string;
+  entryCount: number;
+}
+
+export interface LocaleDetail extends LocaleSummary {
+  text: string;
+}
+
+export interface CreateLocaleDraft {
+  locale: string;
+  directory: string;
+  fileName: string;
+  starterKey?: string;
+  starterValue?: string;
+}
+
+export interface PrototypeLocalizationTarget {
+  locale: string;
+  path: string;
+  exists: {
+    name: boolean;
+    description: boolean;
+    suffix: boolean;
+  };
+}
+
+export interface PrototypeLocalizationDiagnostic {
+  kind: 'missingLocale';
+  field: 'name' | 'description' | 'suffix';
+  sourceText: string;
+  localizationId: string;
+  missingLocales: string[];
+  targets: PrototypeLocalizationTarget[];
+  message: string;
+}
+
+export interface PrototypeLocalizationAnalysis {
+  prototypeKey: string;
+  localizationId: string | null;
+  diagnostics: PrototypeLocalizationDiagnostic[];
+}
+
 export interface ValidationIssue {
   level: 'error' | 'warning' | 'info';
   message: string;
@@ -114,6 +159,7 @@ export interface ProjectSummary {
   counts: {
     prototypes: number;
     rsis: number;
+    locales: number;
     components: number;
     prototypeKinds: number;
     issues: number;
@@ -146,6 +192,7 @@ export interface PrototypeDetail {
   issues: ValidationIssue[];
   rsi: RsiSummary | null;
   kind: PrototypeKindSchema | null;
+  linkedPrototypes?: Array<{ key: string; id: string; type: string; field: string }>;
 }
 
 export interface PrototypeEditorTab {
@@ -172,7 +219,17 @@ export interface RsiEditorTab {
   highlightedState?: string | null;
 }
 
-export type EditorResourceTab = PrototypeEditorTab | RsiEditorTab;
+export interface LocaleEditorTab {
+  id: string;
+  kind: 'locale';
+  localePath: string;
+  title: string;
+  subtitle: string;
+  dirty: boolean;
+  detail: LocaleDetail | null;
+  text: string;
+}
+export type EditorResourceTab = PrototypeEditorTab | RsiEditorTab | LocaleEditorTab;
 
 export interface CompletionSuggestion {
   label: string;
@@ -216,13 +273,15 @@ export interface DraftValidation {
 export interface ResourceTreeNode {
   name: string;
   path: string;
-  kind: 'folder' | 'file' | 'prototype' | 'rsi';
+  kind: 'folder' | 'file' | 'prototype' | 'rsi' | 'locale';
   children?: ResourceTreeNode[];
   prototypeKey?: string;
   prototypeType?: string | number;
   prototypeCount?: number;
   rsiCount?: number;
+  localeCount?: number;
   stateCount?: number;
+  entryCount?: number;
 }
 
 export interface ScanProgress {
@@ -270,11 +329,16 @@ declare global {
       autocomplete: (request: { query?: string; limit?: number; context?: 'any' | 'componentEntryStart' | 'componentType' | 'componentField' | 'rsiPath'; componentType?: string }) => Promise<CompletionSuggestion[]>;
       componentInfo: (name: string) => Promise<ComponentSchema | null>;
       resourceTree: () => Promise<ResourceTreeNode>;
-      pickProjectFolder: (request: { scope: 'prototypes' | 'textures'; currentPath?: string }) => Promise<string | null>;
+      pickProjectFolder: (request: { scope: 'prototypes' | 'textures' | 'locale'; currentPath?: string }) => Promise<string | null>;
       getRsiAsset: (path: string) => Promise<RsiAssetDetail | null>;
       saveRsiAsset: (request: { path: string; meta: RSIMeta }) => Promise<RsiAssetDetail | null>;
       importRsiImages: (request: { path: string; files: Array<{ name: string; dataUrl: string }> }) => Promise<RsiAssetDetail | null>;
       createRsiAsset: (draft: CreateRsiDraft) => Promise<RsiAssetDetail | null>;
+      getLocaleAsset: (path: string) => Promise<LocaleDetail | null>;
+      saveLocaleAsset: (request: { path: string; text: string }) => Promise<LocaleDetail | null>;
+      createLocaleAsset: (draft: CreateLocaleDraft) => Promise<LocaleDetail | null>;
+      analyzePrototypeLocalization: (request: { key: string; text?: string; requiredLocales?: string[] }) => Promise<PrototypeLocalizationAnalysis | null>;
+      createPrototypeLocalization: (request: { key: string; text?: string; fields: Array<'name' | 'description' | 'suffix'>; locales: string[] }) => Promise<{ localizationId: string; updatedPaths: string[] }>;
       validatePrototypeYaml: (request: { key: string; text: string }) => Promise<PrototypeDetail | null>;
       createOptions: () => Promise<CreatePrototypeOptions>;
       validateDraft: (draft: PrototypeDraft) => Promise<DraftValidation>;

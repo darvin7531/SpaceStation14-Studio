@@ -1,16 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useProjectStore } from '../store/projectStore';
 import MonacoEditor from '@monaco-editor/react';
-import { Save, AlertCircle } from 'lucide-react';
+import { Save, AlertCircle, Languages } from 'lucide-react';
 import { parseDocument } from 'yaml';
 import { useI18n } from '../i18n';
 import { useEditorSettings } from '../editorSettings';
+import { useLocalizationSettings } from '../localizationSettings';
 import { openRsiByPath } from '../services/navigation';
+import { PrototypeLocalizationDiagnostic } from '../types';
 
 export default function Editor() {
   const { t } = useI18n();
   const { settings } = useEditorSettings();
+  const { settings: localizationSettings } = useLocalizationSettings();
   const projectRoot = useProjectStore((state) => state.projectRoot);
+  const openLocaleTab = useProjectStore((state) => state.openLocaleTab);
   const editorJumpQuery = useProjectStore((state) => state.editorJumpQuery);
   const activeTabId = useProjectStore((state) => state.activeTabId);
   const tabsById = useProjectStore((state) => state.tabsById);
@@ -25,8 +29,11 @@ export default function Editor() {
   const validationRequestRef = useRef<Record<string, number>>({});
   const previousTabIdRef = useRef<string | null>(null);
   const syncedModelTabIdRef = useRef<string | null>(null);
+  const decorationIdsRef = useRef<string[]>([]);
   const draftSyncTimeoutRef = useRef<number | null>(null);
   const validationTimeoutRef = useRef<number | null>(null);
+  const localizationTimeoutRef = useRef<number | null>(null);
+  const localizationDiagnosticsRef = useRef<Array<PrototypeLocalizationDiagnostic & { range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number } }>>([]);
   const activePrototypeTab = useMemo(
     () => {
       const tab = activeTabId ? tabsById[activeTabId] : null;
@@ -39,7 +46,14 @@ export default function Editor() {
   const editorTab = activePrototypeTab?.editorTab === 'resolved' ? 'form' : (activePrototypeTab?.editorTab ?? 'form');
   const editorModelPath = activePrototypeTab ? `inmemory://prototype/${activePrototypeTab.id}.yml` : 'inmemory://prototype/empty.yml';
   const [editorText, setEditorText] = useState(activePrototypeTab?.rawYaml ?? '');
+  const [localizationDiagnostics, setLocalizationDiagnostics] = useState<PrototypeLocalizationDiagnostic[]>([]);
+  const [localeFixOpen, setLocaleFixOpen] = useState(false);
+  const [selectedLocaleDiagnostic, setSelectedLocaleDiagnostic] = useState<PrototypeLocalizationDiagnostic | null>(null);
+  const [isApplyingLocaleFix, setIsApplyingLocaleFix] = useState(false);
   const yamlContent = editorText;
+  const localizationSourceText = settings.liveValidation
+    ? editorText
+    : (detail?.prototype?._rawYaml ?? activePrototypeTab?.rawYaml ?? '');
   const isDirty = activePrototypeTab?.dirty ?? false;
 
   useEffect(() => {
@@ -53,6 +67,10 @@ export default function Editor() {
         window.clearTimeout(validationTimeoutRef.current);
         validationTimeoutRef.current = null;
       }
+      if (localizationTimeoutRef.current != null) {
+        window.clearTimeout(localizationTimeoutRef.current);
+        localizationTimeoutRef.current = null;
+      }
       const cached = draftCacheRef.current[previousTabId];
       if (cached != null) {
         updatePrototypeDraftById(previousTabId, cached);
@@ -65,6 +83,7 @@ export default function Editor() {
 
     if (!activePrototypeTab) {
       setEditorText('');
+      setLocalizationDiagnostics([]);
       return;
     }
 
@@ -79,6 +98,7 @@ export default function Editor() {
     return () => {
       if (draftSyncTimeoutRef.current != null) window.clearTimeout(draftSyncTimeoutRef.current);
       if (validationTimeoutRef.current != null) window.clearTimeout(validationTimeoutRef.current);
+      if (localizationTimeoutRef.current != null) window.clearTimeout(localizationTimeoutRef.current);
     };
   }, []);
 
@@ -113,6 +133,58 @@ export default function Editor() {
     scheduleValidation(activePrototypeTab.id, activePrototypeTab.prototypeKey, editorText);
   }, [activePrototypeTab?.id, activePrototypeTab?.prototypeKey, detail?.prototype?._rawYaml, editorText, settings.liveValidation, settings.validationDelay]);
 
+  useEffect(() => {
+    if (!activePrototypeTab) return;
+    if (localizationTimeoutRef.current != null) window.clearTimeout(localizationTimeoutRef.current);
+    localizationTimeoutRef.current = window.setTimeout(async () => {
+      const analysis = await window.prototypeStudio.analyzePrototypeLocalization({
+        key: activePrototypeTab.prototypeKey,
+        text: localizationSourceText,
+        requiredLocales: localizationSettings.requiredLocales,
+      });
+      setLocalizationDiagnostics(analysis?.diagnostics ?? []);
+      localizationTimeoutRef.current = null;
+    }, 220);
+  }, [
+    activePrototypeTab?.id,
+    activePrototypeTab?.prototypeKey,
+    activePrototypeTab?.rawYaml,
+    detail?.prototype?._rawYaml,
+    localizationSettings.requiredLocales,
+    localizationSourceText,
+  ]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    const monaco = (window as any).monaco;
+    if (!editor || !monaco || editorTab !== 'raw') return;
+    const model = editor.getModel?.();
+    if (!model) return;
+    const mapped = localizationDiagnostics
+      .map((diagnostic) => {
+        const range = findPrototypeFieldRange(model, diagnostic.field);
+        if (!range) return null;
+        return { ...diagnostic, range };
+      })
+      .filter(Boolean) as Array<PrototypeLocalizationDiagnostic & { range: any }>;
+    localizationDiagnosticsRef.current = mapped;
+    decorationIdsRef.current = editor.deltaDecorations(
+      decorationIdsRef.current,
+      mapped.map((diagnostic) => ({
+        range: new monaco.Range(
+          diagnostic.range.startLineNumber,
+          diagnostic.range.startColumn,
+          diagnostic.range.endLineNumber,
+          diagnostic.range.endColumn,
+        ),
+        options: {
+          inlineClassName: 'studio-loc-missing',
+          hoverMessage: [{ value: localizationHoverMarkdown(diagnostic, t) }],
+        },
+      })),
+    );
+  }, [editorTab, localizationDiagnostics, t, yamlContent]);
+
   if (!proto) {
     return <div className="flex-1 flex items-center justify-center text-neutral-500 bg-neutral-950">{t('editor.empty')}</div>;
   }
@@ -137,6 +209,12 @@ export default function Editor() {
       validationRequestRef.current[activePrototypeTab!.id] = 0;
       validatedCacheRef.current[activePrototypeTab!.id] = saved.text;
       updateActivePrototypeSaved(refreshed, saved.text);
+      const analysis = await window.prototypeStudio.analyzePrototypeLocalization({
+        key: activePrototypeTab!.prototypeKey,
+        text: saved.text,
+        requiredLocales: localizationSettings.requiredLocales,
+      });
+      setLocalizationDiagnostics(analysis?.diagnostics ?? []);
     } catch (error) {
       console.error("Failed to save", error);
       alert(error instanceof Error ? error.message : t('editor.saveFailed'));
@@ -172,6 +250,7 @@ export default function Editor() {
   };
 
   const registerCompletion = (monaco: any) => {
+    (window as any).monaco = monaco;
     const anyWindow = window as any;
     anyWindow.__prototypeStudioCompletion?.dispose?.();
     anyWindow.__prototypeStudioHover?.dispose?.();
@@ -241,6 +320,7 @@ export default function Editor() {
   };
 
   return (
+    <>
     <div className="flex-1 flex flex-col min-w-0 bg-neutral-950">
       <div className="h-12 border-b border-neutral-800 flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center gap-4 min-w-0">
@@ -316,6 +396,14 @@ export default function Editor() {
                 if (!settings.ctrlClickNavigation || !browserEvent || !position || (!browserEvent.ctrlKey && !browserEvent.metaKey)) return;
                 const model = editor.getModel?.();
                 if (!model) return;
+                const localizationTarget = localizationDiagnosticsRef.current.find((item) => inRange(position, item.range));
+                if (localizationTarget) {
+                  browserEvent.preventDefault();
+                  browserEvent.stopPropagation();
+                  setSelectedLocaleDiagnostic(localizationTarget);
+                  setLocaleFixOpen(true);
+                  return;
+                }
                 const target = getClickableRsiTarget(model, position);
                 if (!target) return;
                 browserEvent.preventDefault();
@@ -347,6 +435,76 @@ export default function Editor() {
 
       </div>
     </div>
+    {localeFixOpen && selectedLocaleDiagnostic && activePrototypeTab && (
+      <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/55 p-4">
+        <div className="w-[min(720px,96vw)] rounded-2xl border border-neutral-800 bg-neutral-950 p-5 shadow-2xl">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-amber-400">{t('locale.quickFix.badge')}</div>
+              <h3 className="mt-1 text-lg font-semibold text-neutral-100">{t('locale.quickFix.title')}</h3>
+            </div>
+            <button onClick={() => setLocaleFixOpen(false)} className="rounded-md p-2 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100">x</button>
+          </div>
+          <div className="mt-4 space-y-4 text-sm">
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-3">
+              <div className="text-neutral-500">{t('locale.quickFix.localizationId')}</div>
+              <div className="mt-1 font-mono text-neutral-200">{selectedLocaleDiagnostic.localizationId}</div>
+            </div>
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-3">
+              <div className="text-neutral-500">{t(`editor.field.${selectedLocaleDiagnostic.field}`)}</div>
+              <div className="mt-1 whitespace-pre-wrap text-neutral-200">{selectedLocaleDiagnostic.sourceText}</div>
+            </div>
+            <div className="space-y-2">
+              {selectedLocaleDiagnostic.targets.map((target) => (
+                <div key={`${target.locale}:${target.path}`} className="rounded-lg border border-neutral-800 bg-neutral-900 p-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="font-medium text-neutral-200">{target.locale}</div>
+                    <div className="text-xs text-neutral-500">{target.path}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="mt-5 flex items-center justify-end gap-2">
+            <button onClick={() => setLocaleFixOpen(false)} className="rounded-md bg-neutral-800 px-4 py-2 text-sm text-neutral-300 hover:bg-neutral-700">
+              {t('common.cancel')}
+            </button>
+            <button
+              disabled={isApplyingLocaleFix}
+              onClick={async () => {
+                setIsApplyingLocaleFix(true);
+                try {
+                  const result = await window.prototypeStudio.createPrototypeLocalization({
+                    key: activePrototypeTab.prototypeKey,
+                    text: editorText,
+                    fields: [selectedLocaleDiagnostic.field],
+                    locales: selectedLocaleDiagnostic.missingLocales,
+                  });
+                  if (result.updatedPaths[0]) {
+                    const localeDetail = await window.prototypeStudio.getLocaleAsset(result.updatedPaths[0]);
+                    if (localeDetail) openLocaleTab(localeDetail.path, localeDetail);
+                  }
+                  const analysis = await window.prototypeStudio.analyzePrototypeLocalization({
+                    key: activePrototypeTab.prototypeKey,
+                    text: editorText,
+                    requiredLocales: localizationSettings.requiredLocales,
+                  });
+                  setLocalizationDiagnostics(analysis?.diagnostics ?? []);
+                  setLocaleFixOpen(false);
+                } finally {
+                  setIsApplyingLocaleFix(false);
+                }
+              }}
+              className="inline-flex items-center gap-2 rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500 disabled:bg-neutral-800 disabled:text-neutral-500"
+            >
+              <Languages size={15} />
+              {isApplyingLocaleFix ? t('wizard.creating') : t('locale.quickFix.create')}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 
@@ -411,15 +569,17 @@ function getYamlCompletionContext(model: any, position: any): {
   return { context: 'any' };
 }
 
+const RSI_PATH_COMPONENTS = new Set([
+  'Sprite',
+  'Clothing',
+  'Icon',
+  'HumanoidAppearance',
+  'Construction',
+  'FootstepModifier',
+]);
+
 function isRsiPathComponent(componentType: string) {
-  return new Set([
-    'Sprite',
-    'Clothing',
-    'Icon',
-    'HumanoidAppearance',
-    'Construction',
-    'FootstepModifier',
-  ]).has(componentType);
+  return RSI_PATH_COMPONENTS.has(componentType);
 }
 
 function nearestComponentType(model: any, lineNumber: number, currentIndent: number) {
@@ -538,4 +698,37 @@ function isMonacoCanceled(error: unknown) {
   if (!error) return false;
   const message = error instanceof Error ? error.message : String(error);
   return message === 'Canceled' || message.includes('Canceled');
+}
+
+function findPrototypeFieldRange(model: any, field: 'name' | 'description' | 'suffix') {
+  const pattern = new RegExp(`^(\\s*${field}:\\s*)(.+?)\\s*$`);
+  for (let line = 1; line <= model.getLineCount(); line += 1) {
+    const content = model.getLineContent(line);
+    const match = content.match(pattern);
+    if (!match) continue;
+    return {
+      startLineNumber: line,
+      endLineNumber: line,
+      startColumn: match[1].length + 1,
+      endColumn: match[1].length + match[2].length + 1,
+    };
+  }
+  return null;
+}
+
+function localizationHoverMarkdown(diagnostic: PrototypeLocalizationDiagnostic, t: (key: string, params?: Record<string, string | number | null | undefined>) => string) {
+  return [
+    `**${t('locale.hover.title')}**`,
+    '',
+    diagnostic.message,
+    '',
+    `${t('locale.hover.localizationId')}: \`${diagnostic.localizationId}\``,
+    `${t('locale.hover.missingLocales')}: ${diagnostic.missingLocales.join(', ')}`,
+    '',
+    t('locale.hover.ctrlClick'),
+  ].join('\n');
+}
+
+function inRange(position: { lineNumber: number; column: number }, range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }) {
+  return position.lineNumber === range.startLineNumber && position.column >= range.startColumn && position.column <= range.endColumn;
 }

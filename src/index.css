@@ -278,6 +278,13 @@
     animation-delay: 0.24s;
   }
 
+  .studio-loc-missing {
+    text-decoration: underline wavy rgba(248, 113, 113, 0.95);
+    text-underline-offset: 3px;
+    background: rgba(127, 29, 29, 0.12);
+    border-radius: 3px;
+  }
+
   @media (max-width: 720px) {
     .studio-loading-core {
       grid-template-columns: 1fr;

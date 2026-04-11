@@ -1,30 +1,76 @@
-import { useProjectStore } from '../store/projectStore';
-import { useEffect, useMemo, useState } from 'react';
-import { Layers, Image as ImageIcon, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
+import { ReactNode, memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { ArrowUpRight, Languages, Layers, Image as ImageIcon, RotateCcw, ZoomIn, ZoomOut, Box, ChevronRight } from 'lucide-react';
 import IssueCard from './IssueCard';
 import { useI18n } from '../i18n';
+import { useProjectStore } from '../store/projectStore';
+import { useEditorSettings } from '../editorSettings';
+import { useLocalizationSettings } from '../localizationSettings';
+import { openLocaleByPath, openPrototypeByKey } from '../services/navigation';
+import { PrototypeLocalizationAnalysis } from '../types';
 
 export default function Inspector() {
   const { t } = useI18n();
+  const { settings } = useEditorSettings();
+  const { settings: localizationSettings } = useLocalizationSettings();
   const activeTabId = useProjectStore((state) => state.activeTabId);
   const tabsById = useProjectStore((state) => state.tabsById);
   const activeTab = useMemo(() => activeTabId ? tabsById[activeTabId] ?? null : null, [activeTabId, tabsById]);
   const detail = activeTab?.kind === 'prototype' ? activeTab.detail : null;
   const selectedRsi = activeTab?.kind === 'rsi' ? activeTab.detail : null;
+  const selectedLocale = activeTab?.kind === 'locale' ? activeTab.detail : null;
+  const rawYaml = activeTab?.kind === 'prototype' ? activeTab.rawYaml : '';
+  const localizationSourceText = settings.liveValidation
+    ? rawYaml
+    : (detail?.prototype?._rawYaml ?? rawYaml);
   const proto = detail?.prototype ?? null;
   const resolvedProto = detail?.resolved;
   const protoIssues = detail?.issues ?? [];
+  const linkedPrototypes = detail?.linkedPrototypes ?? [];
   const spriteComponent = resolvedProto?.components?.find?.((component: any) => component?.type === 'Sprite');
   const rsi = detail?.rsi;
   const [zoom, setZoom] = useState(4);
+  const [localizationAnalysis, setLocalizationAnalysis] = useState<PrototypeLocalizationAnalysis | null>(null);
+  const [sectionOpen, setSectionOpen] = useState({
+    validation: true,
+    linked: false,
+    sprite: true,
+    layers: false,
+    inheritance: false,
+  });
+
+  const toggleValidation = useCallback(() => setSectionOpen((c) => ({ ...c, validation: !c.validation })), []);
+  const toggleLinked = useCallback(() => setSectionOpen((c) => ({ ...c, linked: !c.linked })), []);
+  const toggleSprite = useCallback(() => setSectionOpen((c) => ({ ...c, sprite: !c.sprite })), []);
+  const toggleLayers = useCallback(() => setSectionOpen((c) => ({ ...c, layers: !c.layers })), []);
+  const toggleInheritance = useCallback(() => setSectionOpen((c) => ({ ...c, inheritance: !c.inheritance })), []);
 
   useEffect(() => {
     setZoom(4);
   }, [proto?._key, rsi?.previewState, rsi?.path]);
 
+  useEffect(() => {
+    if (!activeTab || activeTab.kind !== 'prototype') {
+      setLocalizationAnalysis(null);
+      return;
+    }
+    let cancelled = false;
+    const handle = window.setTimeout(async () => {
+      const next = await window.prototypeStudio.analyzePrototypeLocalization({
+        key: activeTab.prototypeKey,
+        text: localizationSourceText,
+        requiredLocales: localizationSettings.requiredLocales,
+      });
+      if (!cancelled) setLocalizationAnalysis(next);
+    }, 180);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [activeTab, localizationSettings.requiredLocales, localizationSourceText]);
+
   if (selectedRsi && !proto) {
     return (
-      <div className="w-80 border-l border-neutral-800 bg-neutral-900/50 flex flex-col shrink-0 overflow-y-auto custom-scrollbar">
+      <aside className="w-80 border-l border-neutral-800 bg-neutral-900/50 flex flex-col shrink-0 overflow-y-auto custom-scrollbar">
         <div className="p-4 border-b border-neutral-800">
           <h3 className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-3">{t('inspector.rsiValidation')}</h3>
           {selectedRsi.issues.length === 0 ? (
@@ -42,61 +88,121 @@ export default function Inspector() {
             </div>
           )}
         </div>
-        <div className="p-4 space-y-3 text-sm text-neutral-300">
-          <div className="flex justify-between gap-3">
-            <span className="text-neutral-500">{t('inspector.path')}</span>
-            <span className="truncate text-right" title={selectedRsi.path}>{selectedRsi.path}</span>
-          </div>
-          <div className="flex justify-between gap-3">
-            <span className="text-neutral-500">{t('inspector.size')}</span>
-            <span>{selectedRsi.meta.size.x} x {selectedRsi.meta.size.y}</span>
-          </div>
-          <div className="flex justify-between gap-3">
-            <span className="text-neutral-500">{t('inspector.states')}</span>
-            <span>{selectedRsi.states.length}</span>
-          </div>
-          <div className="flex justify-between gap-3">
-            <span className="text-neutral-500">{t('common.license')}</span>
-            <span className="truncate text-right">{selectedRsi.meta.license}</span>
+      </aside>
+    );
+  }
+
+  if (selectedLocale && !proto) {
+    return (
+      <aside className="w-80 border-l border-neutral-800 bg-neutral-900/50 flex flex-col shrink-0 overflow-y-auto custom-scrollbar">
+        <div className="p-4 border-b border-neutral-800">
+          <h3 className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <Languages size={14} />
+            {t('locale.inspector')}
+          </h3>
+          <div className="space-y-3 text-sm text-neutral-300">
+            <KeyValue label={t('inspector.path')} value={selectedLocale.path} title={selectedLocale.path} />
+            <KeyValue label={t('locale.locale')} value={selectedLocale.locale} />
+            <KeyValue label={t('locale.entries')} value={String(selectedLocale.entryCount)} />
+            <KeyValue label={t('locale.characters')} value={String(selectedLocale.text.length)} />
           </div>
         </div>
-      </div>
+      </aside>
     );
   }
 
   if (!proto) {
     return (
-      <div className="w-80 border-l border-neutral-800 bg-neutral-900/50 flex flex-col shrink-0">
+      <aside className="w-80 border-l border-neutral-800 bg-neutral-900/50 flex flex-col shrink-0">
         <div className="flex-1 flex items-center justify-center text-neutral-500 text-sm">{t('inspector.noPrototypeSelected')}</div>
-      </div>
+      </aside>
     );
   }
 
+  const compactIssues = protoIssues.slice(0, 4);
+  const locDiagnostics = localizationAnalysis?.diagnostics ?? [];
+  const combinedIssueCount = compactIssues.length + locDiagnostics.length;
+
   return (
-    <div className="w-80 border-l border-neutral-800 bg-neutral-900/50 flex flex-col shrink-0 overflow-y-auto custom-scrollbar">
-      <div className="p-4 border-b border-neutral-800">
-        <h3 className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-3">{t('inspector.validation')}</h3>
-        {protoIssues.length === 0 ? (
+    <aside className="w-80 border-l border-neutral-800 bg-neutral-900/50 flex flex-col shrink-0 overflow-y-auto custom-scrollbar">
+      <Section
+        title={t('inspector.validation')}
+        open={sectionOpen.validation}
+        onToggle={toggleValidation}
+      >
+        {combinedIssueCount === 0 ? (
           <div className="flex items-center gap-2 text-sm text-green-500">
             <div className="w-2 h-2 rounded-full bg-green-500" />
             {t('inspector.noIssues')}
           </div>
         ) : (
           <div className="space-y-2">
-            {protoIssues.map((issue, index) => (
+            {compactIssues.map((issue, index) => (
               <div key={index}>
                 <IssueCard issue={issue} compact />
               </div>
             ))}
+            {locDiagnostics.map((diagnostic) => (
+              <div key={`${diagnostic.field}:${diagnostic.localizationId}`} className="rounded-md border border-neutral-800 bg-neutral-950 p-3">
+                <div className="text-xs text-yellow-400">{t('inspector.localization')} / {t(`editor.field.${diagnostic.field}`)} / {diagnostic.missingLocales.join(', ')}</div>
+                <div className="mt-1 text-sm text-neutral-300">{diagnostic.message}</div>
+                <div className="mt-2 space-y-2">
+                  {diagnostic.targets.map((target) => (
+                    <div key={`${target.locale}:${target.path}`} className="rounded border border-neutral-800 bg-neutral-900 px-2 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-xs text-neutral-400">{target.locale}</div>
+                          <div className="truncate text-[11px] text-neutral-500" title={target.path}>{target.path}</div>
+                        </div>
+                        <button
+                          onClick={() => void openLocaleByPath(target.path)}
+                          className="shrink-0 rounded bg-neutral-800 px-2 py-1 text-[11px] text-neutral-300 hover:bg-neutral-700"
+                        >
+                          {t('inspector.openLocale')}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         )}
-      </div>
+      </Section>
 
-      <div className="p-4 border-b border-neutral-800">
-        <h3 className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-          <ImageIcon size={14} />
-          {t('inspector.spritePreview')}
-        </h3>
+      <Section
+        title={t('inspector.linkedPrototypes')}
+        icon={<Box size={14} />}
+        open={sectionOpen.linked}
+        onToggle={toggleLinked}
+      >
+        {linkedPrototypes.length === 0 ? (
+          <div className="text-sm text-neutral-500 italic">{t('inspector.noLinkedPrototypes')}</div>
+        ) : (
+          <div className="space-y-2">
+            {linkedPrototypes.slice(0, 24).map((link) => (
+              <button
+                key={`${link.key}:${link.field}`}
+                onClick={() => void openPrototypeByKey(link.key)}
+                className="flex w-full items-start justify-between gap-3 rounded-md border border-neutral-800 bg-neutral-950 px-3 py-2 text-left hover:bg-neutral-900"
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-sm text-neutral-200">{link.id}</div>
+                  <div className="truncate text-[11px] text-neutral-500">{link.type} / {link.field}</div>
+                </div>
+                <ArrowUpRight size={14} className="shrink-0 text-neutral-500" />
+              </button>
+            ))}
+          </div>
+        )}
+      </Section>
+
+      <Section
+        title={t('inspector.spritePreview')}
+        icon={<ImageIcon size={14} />}
+        open={sectionOpen.sprite}
+        onToggle={toggleSprite}
+      >
         {spriteComponent ? (
           <div className="space-y-4">
             <div
@@ -143,33 +249,25 @@ export default function Inspector() {
               </div>
             )}
             <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-neutral-500">{t('inspector.sprite')}</span>
-                <span className="text-neutral-300 truncate ml-2" title={spriteComponent.sprite}>{spriteComponent.sprite}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-500">{t('inspector.state')}</span>
-                <span className="text-neutral-300">{rsi?.previewState ?? spriteComponent.state ?? '-'}</span>
-              </div>
+              <KeyValue label={t('inspector.sprite')} value={String(spriteComponent.sprite ?? '-')} title={String(spriteComponent.sprite ?? '-')} />
+              <KeyValue label={t('inspector.state')} value={String(rsi?.previewState ?? spriteComponent.state ?? '-')} />
               {rsi && (
-                <div className="flex justify-between">
-                  <span className="text-neutral-500">{t('inspector.rsi')}</span>
-                  <span className="text-neutral-300 truncate ml-2" title={rsi.path}>{rsi.path} / {rsi.stateCount} states</span>
-                </div>
+                <KeyValue label={t('inspector.rsi')} value={`${rsi.path} / ${rsi.stateCount} states`} title={rsi.path} />
               )}
             </div>
           </div>
         ) : (
           <div className="text-sm text-neutral-500 italic">{t('inspector.noSpriteComponent')}</div>
         )}
-      </div>
+      </Section>
 
       {spriteComponent?.layers && (
-        <div className="p-4">
-          <h3 className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-            <Layers size={14} />
-            {t('inspector.layers')}
-          </h3>
+        <Section
+          title={t('inspector.layers')}
+          icon={<Layers size={14} />}
+          open={sectionOpen.layers}
+          onToggle={toggleLayers}
+        >
           <div className="space-y-2">
             {spriteComponent.layers.map((layer: any, index: number) => (
               <div key={index} className="bg-neutral-950 border border-neutral-800 rounded-md p-2 text-xs">
@@ -183,18 +281,21 @@ export default function Inspector() {
               </div>
             ))}
           </div>
-        </div>
+        </Section>
       )}
 
-      <div className="p-4 border-t border-neutral-800 mt-auto">
-        <h3 className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-3">{t('inspector.inheritance')}</h3>
+      <Section
+        title={t('inspector.inheritance')}
+        open={sectionOpen.inheritance}
+        onToggle={toggleInheritance}
+      >
         <div className="text-sm text-neutral-300">
           {proto.parent ? (
             <div className="flex flex-col gap-1">
               <span className="text-blue-400">{text(proto.id)}</span>
               {(Array.isArray(proto.parent) ? proto.parent : [proto.parent]).map((parent, index) => (
                 <div key={index} className="flex items-center gap-2 text-neutral-400 ml-4">
-                  <span className="text-neutral-600">↳</span>
+                  <span className="text-neutral-600">в†і</span>
                   <span>{text(parent)}</span>
                 </div>
               ))}
@@ -203,10 +304,47 @@ export default function Inspector() {
             <span className="text-neutral-500 italic">{t('inspector.noParent')}</span>
           )}
         </div>
-      </div>
-    </div>
+      </Section>
+    </aside>
   );
 }
+
+const Section = memo(function Section({
+  title,
+  icon,
+  children,
+  open = true,
+  onToggle,
+}: {
+  title: string;
+  icon?: ReactNode;
+  children: ReactNode;
+  open?: boolean;
+  onToggle?: () => void;
+}) {
+  return (
+    <section className="p-4 border-b border-neutral-800">
+      <button
+        onClick={onToggle}
+        className="mb-3 flex w-full items-center gap-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-400 hover:text-neutral-200"
+      >
+        <ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} />
+        {icon}
+        <span>{title}</span>
+      </button>
+      {open && children}
+    </section>
+  );
+});
+
+const KeyValue = memo(function KeyValue({ label, value, title }: { label: string; value: string; title?: string }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <span className="text-neutral-500">{label}</span>
+      <span className="truncate text-right text-neutral-300" title={title ?? value}>{value}</span>
+    </div>
+  );
+});
 
 function text(value: unknown) {
   return value == null ? '' : String(value);

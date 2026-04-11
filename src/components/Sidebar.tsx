@@ -1,11 +1,12 @@
 import { useProjectStore } from '../store/projectStore';
-import { Search, Box, Plus, Folder, FileText, ImageIcon, ChevronRight } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Search, Box, Plus, Folder, FileText, ImageIcon, ChevronRight, Languages } from 'lucide-react';
+import { memo, useEffect, useState } from 'react';
 import { scanProject } from '../services/scanner';
 import { PrototypeListItem, ResourceTreeNode } from '../types';
 import { cn } from '../lib/utils';
 import CreatePrototypeModal from './CreatePrototypeModal';
 import CreateRsiModal from './CreateRsiModal';
+import CreateLocaleModal from './CreateLocaleModal';
 import { useI18n } from '../i18n';
 
 const PAGE_SIZE = 250;
@@ -13,21 +14,22 @@ type SidebarMode = 'search' | 'resources';
 
 export default function Sidebar() {
   const { t } = useI18n();
-  const {
-    projectRoot,
-    searchQuery,
-    setSearchQuery,
-    selectedPrototypeId,
-    selectedRsiPath,
-    setProject,
-    setIsScanning,
-    setScanProgress,
-    counts,
-    openPrototypeTab,
-    openRsiTab,
-  } = useProjectStore();
+  const projectRoot = useProjectStore((s) => s.projectRoot);
+  const searchQuery = useProjectStore((s) => s.searchQuery);
+  const setSearchQuery = useProjectStore((s) => s.setSearchQuery);
+  const selectedPrototypeId = useProjectStore((s) => s.selectedPrototypeId);
+  const selectedRsiPath = useProjectStore((s) => s.selectedRsiPath);
+  const selectedLocalePath = useProjectStore((s) => s.selectedLocalePath);
+  const setProject = useProjectStore((s) => s.setProject);
+  const setIsScanning = useProjectStore((s) => s.setIsScanning);
+  const setScanProgress = useProjectStore((s) => s.setScanProgress);
+  const counts = useProjectStore((s) => s.counts);
+  const openPrototypeTab = useProjectStore((s) => s.openPrototypeTab);
+  const openRsiTab = useProjectStore((s) => s.openRsiTab);
+  const openLocaleTab = useProjectStore((s) => s.openLocaleTab);
   const [createOpen, setCreateOpen] = useState(false);
   const [createRsiOpen, setCreateRsiOpen] = useState(false);
+  const [createLocaleOpen, setCreateLocaleOpen] = useState(false);
   const [items, setItems] = useState<PrototypeListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -92,6 +94,11 @@ export default function Sidebar() {
     openRsiTab(rsiPath, detail);
   };
 
+  const handleSelectLocale = async (localePath: string) => {
+    const detail = await window.prototypeStudio.getLocaleAsset(localePath);
+    openLocaleTab(localePath, detail);
+  };
+
   const togglePath = (path: string) => {
     setOpenPaths((current) => {
       const next = new Set(current);
@@ -126,6 +133,22 @@ export default function Sidebar() {
       const result = await scanProject(projectRoot);
       setProject(result);
       openRsiTab(rsiPath, await window.prototypeStudio.getRsiAsset(rsiPath));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : t('sidebar.refreshFailed'));
+    } finally {
+      setIsScanning(false);
+      setScanProgress('');
+    }
+  };
+
+  const handleCreatedLocale = async (localePath: string) => {
+    if (!projectRoot) return;
+    setIsScanning(true);
+    setScanProgress(t('sidebar.refreshCreated', { value: localePath }));
+    try {
+      const result = await scanProject(projectRoot);
+      setProject(result);
+      openLocaleTab(localePath, await window.prototypeStudio.getLocaleAsset(localePath));
     } catch (err) {
       alert(err instanceof Error ? err.message : t('sidebar.refreshFailed'));
     } finally {
@@ -178,6 +201,10 @@ export default function Sidebar() {
               <ImageIcon size={13} className="text-emerald-400" />
               {t('sidebar.createRsi')}
             </button>
+            <button onClick={() => setCreateLocaleOpen(true)} className="flex items-center justify-center gap-2 rounded-md border border-neutral-800 bg-neutral-950/60 px-2 py-1.5 text-xs text-neutral-300 hover:bg-neutral-900">
+              <Languages size={13} className="text-amber-400" />
+              {t('sidebar.createLocale')}
+            </button>
           </>
         )}
         {mode === 'search' && <div className="flex items-center justify-between text-[11px] text-neutral-500">
@@ -213,46 +240,53 @@ export default function Sidebar() {
 
         {mode === 'resources' && (
           resourceTree
-            ? <ResourceNode node={resourceTree} depth={0} openPaths={openPaths} selectedPrototypeId={selectedPrototypeId} selectedRsiPath={selectedRsiPath} onToggle={togglePath} onSelect={handleSelect} onSelectRsi={handleSelectRsi} />
+            ? <ResourceNode node={resourceTree} depth={0} openPaths={openPaths} selectedPrototypeId={selectedPrototypeId} selectedRsiPath={selectedRsiPath} selectedLocalePath={selectedLocalePath} onToggle={togglePath} onSelect={handleSelect} onSelectRsi={handleSelectRsi} onSelectLocale={handleSelectLocale} />
             : <div className="text-center text-neutral-500 text-sm py-4">{t('sidebar.loadingResources')}</div>
         )}
       </div>
       <CreatePrototypeModal open={createOpen} onClose={() => setCreateOpen(false)} onCreated={handleCreated} />
       <CreateRsiModal open={createRsiOpen} onClose={() => setCreateRsiOpen(false)} onCreated={handleCreatedRsi} />
+      <CreateLocaleModal open={createLocaleOpen} onClose={() => setCreateLocaleOpen(false)} onCreated={handleCreatedLocale} />
     </div>
   );
 }
 
-function ResourceNode({
+const ResourceNode = memo(function ResourceNode({
   node,
   depth,
   openPaths,
   selectedPrototypeId,
   selectedRsiPath,
+  selectedLocalePath,
   onToggle,
   onSelect,
   onSelectRsi,
+  onSelectLocale,
 }: {
   node: ResourceTreeNode;
   depth: number;
   openPaths: Set<string>;
   selectedPrototypeId: string | null;
   selectedRsiPath: string | null;
+  selectedLocalePath: string | null;
   onToggle: (path: string) => void;
   onSelect: (key: string) => void;
   onSelectRsi: (path: string) => void;
+  onSelectLocale: (path: string) => void;
 }) {
   const { t } = useI18n();
   const children = node.children ?? [];
   const expandable = children.length > 0;
   const open = openPaths.has(node.path);
-  const selected = node.prototypeKey === selectedPrototypeId || (node.kind === 'rsi' && node.path === selectedRsiPath);
+  const selected = node.prototypeKey === selectedPrototypeId || (node.kind === 'rsi' && node.path === selectedRsiPath) || (node.kind === 'locale' && node.path === selectedLocalePath);
   const left = depth * 12;
 
   const icon = node.kind === 'folder'
     ? <Folder size={14} className={open ? "text-amber-400" : "text-amber-500/80"} />
     : node.kind === 'rsi'
       ? <ImageIcon size={14} className="text-emerald-400" />
+      : node.kind === 'locale'
+        ? <Languages size={14} className="text-amber-400" />
       : node.kind === 'file'
         ? <FileText size={14} className="text-neutral-400" />
         : <Box size={14} className="text-blue-500" />;
@@ -263,15 +297,18 @@ function ResourceNode({
 
   const meta = node.kind === 'rsi'
     ? t('sidebar.resource.states', { count: node.stateCount ?? 0 })
+    : node.kind === 'locale'
+      ? t('sidebar.resource.localeEntries', { count: node.entryCount ?? 0 })
     : node.kind === 'folder' || node.kind === 'file'
-      ? node.rsiCount
-        ? t('sidebar.resource.meta', { prototypes: node.prototypeCount ?? 0, rsis: node.rsiCount })
+      ? node.rsiCount || node.localeCount
+        ? t('sidebar.resource.metaFull', { prototypes: node.prototypeCount ?? 0, rsis: node.rsiCount ?? 0, locales: node.localeCount ?? 0 })
         : t('sidebar.resource.metaProtoOnly', { prototypes: node.prototypeCount ?? 0 })
       : '';
 
   const handleClick = () => {
     if (node.kind === 'prototype' && node.prototypeKey) void onSelect(node.prototypeKey);
     else if (node.kind === 'rsi') void onSelectRsi(node.path);
+    else if (node.kind === 'locale') void onSelectLocale(node.path);
     else if (expandable) onToggle(node.path);
   };
 
@@ -301,9 +338,11 @@ function ResourceNode({
                 openPaths={openPaths}
                 selectedPrototypeId={selectedPrototypeId}
                 selectedRsiPath={selectedRsiPath}
+                selectedLocalePath={selectedLocalePath}
                 onToggle={onToggle}
                 onSelect={onSelect}
                 onSelectRsi={onSelectRsi}
+                onSelectLocale={onSelectLocale}
               />
             </div>
           ))}
@@ -311,7 +350,7 @@ function ResourceNode({
       )}
     </div>
   );
-}
+});
 
 function text(value: unknown) {
   return value == null ? '' : String(value);

@@ -1,4 +1,4 @@
-import { useMemo, useState, type DragEvent } from 'react';
+import { useCallback, useMemo, useState, type DragEvent } from 'react';
 import { useProjectStore } from '../store/projectStore';
 import { ImagePlus, Save, Plus, Trash2, Upload } from 'lucide-react';
 import { useI18n } from '../i18n';
@@ -32,7 +32,7 @@ export default function RsiEditor() {
     return <div className="flex-1 flex items-center justify-center text-neutral-500 bg-neutral-950">{t('rsi.empty')}</div>;
   }
 
-  const updateMeta = (patch: Partial<typeof meta>) => {
+  const updateMeta = useCallback((patch: Partial<typeof meta>) => {
     if (!detail) return;
     updateActiveRsiMeta((current) => ({
       ...current,
@@ -41,20 +41,20 @@ export default function RsiEditor() {
         ...patch,
       },
     }));
-  };
+  }, [detail, updateActiveRsiMeta]);
 
-  const updateState = (index: number, patch: Record<string, any>) => {
-    const next = meta.states.map((state, stateIndex) => stateIndex === index ? { ...state, ...patch } : state);
+  const updateState = useCallback((index: number, patch: Record<string, any>) => {
+    const next = meta!.states.map((state, stateIndex) => stateIndex === index ? { ...state, ...patch } : state);
     updateMeta({ states: next });
-  };
+  }, [meta, updateMeta]);
 
-  const addState = () => {
-    updateMeta({ states: [...meta.states, { name: `state-${meta.states.length + 1}` }] });
-  };
+  const addState = useCallback(() => {
+    updateMeta({ states: [...meta!.states, { name: `state-${meta!.states.length + 1}` }] });
+  }, [meta, updateMeta]);
 
-  const removeState = (index: number) => {
-    updateMeta({ states: meta.states.filter((_, stateIndex) => stateIndex !== index) });
-  };
+  const removeState = useCallback((index: number) => {
+    updateMeta({ states: meta!.states.filter((_, stateIndex) => stateIndex !== index) });
+  }, [meta, updateMeta]);
 
   const handleSave = async () => {
     setIsSaving(true);

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AppInfo, AppSettings, UpdateState } from '../types';
 import { useI18n } from '../i18n';
 import { useEditorSettings } from '../editorSettings';
+import { useLocalizationSettings } from '../localizationSettings';
 import { FileCode2, Globe2, Info, RefreshCw, Download, X } from 'lucide-react';
 
 type SettingsTab = 'general' | 'editor' | 'updates' | 'about';
@@ -18,6 +19,7 @@ interface Props {
 export default function SettingsModal({ open, onClose, updateState, onCheckUpdates, onInstallUpdate, initialTab = 'general' }: Props) {
   const { language, setLanguage, t } = useI18n();
   const { settings, updateSettings } = useEditorSettings();
+  const { settings: localizationSettings, updateSettings: updateLocalizationSettings } = useLocalizationSettings();
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
@@ -152,6 +154,19 @@ export default function SettingsModal({ open, onClose, updateState, onCheckUpdat
                         </button>
                       </div>
                     )}
+
+                    <label className="mt-4 wizard-label">
+                      {t('settings.localization.requiredLocales')}
+                      <input
+                        value={localizationSettings.requiredLocales.join(', ')}
+                        onChange={(event) => updateLocalizationSettings({
+                          requiredLocales: event.target.value.split(',').map((item) => item.trim()).filter(Boolean),
+                        })}
+                        className="wizard-input"
+                        placeholder="ru-RU, en-US"
+                      />
+                      <span className="wizard-help">{t('settings.localization.requiredLocalesHelp')}</span>
+                    </label>
                   </div>
                 </div>
               )}

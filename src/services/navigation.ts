@@ -13,6 +13,12 @@ export async function openRsiByPath(path: string, stateName?: string | null) {
   store.openRsiTab(detail?.path ?? path, detail, { highlightedState: stateName ?? null });
 }
 
+export async function openLocaleByPath(path: string) {
+  const store = useProjectStore.getState();
+  const detail = await window.prototypeStudio.getLocaleAsset(path);
+  store.openLocaleTab(detail?.path ?? path, detail);
+}
+
 export async function navigateToIssue(issue: ValidationIssue) {
   if (issue.prototypeKey) {
     await openPrototypeByKey(issue.prototypeKey, issue.field);
