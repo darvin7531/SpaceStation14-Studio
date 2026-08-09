@@ -247,6 +247,7 @@ export interface CreatePrototypeOptions {
 
 export interface PrototypeDraft {
   mode: 'append' | 'new';
+  destination: 'project' | 'external';
   type: string;
   id: string;
   name?: string;
@@ -330,22 +331,27 @@ declare global {
       componentInfo: (name: string) => Promise<ComponentSchema | null>;
       resourceTree: () => Promise<ResourceTreeNode>;
       pickProjectFolder: (request: { scope: 'prototypes' | 'textures' | 'locale'; currentPath?: string }) => Promise<string | null>;
+      pickExternalPrototypeFile: (request: { currentPath?: string }) => Promise<string | null>;
       getRsiAsset: (path: string) => Promise<RsiAssetDetail | null>;
       saveRsiAsset: (request: { path: string; meta: RSIMeta }) => Promise<RsiAssetDetail | null>;
       importRsiImages: (request: { path: string; files: Array<{ name: string; dataUrl: string }> }) => Promise<RsiAssetDetail | null>;
       createRsiAsset: (draft: CreateRsiDraft) => Promise<RsiAssetDetail | null>;
+      pickExternalRsiFolder: (request: { currentPath?: string }) => Promise<string | null>;
+      createExternalRsi: (request: { path: string; draft: CreateRsiDraft }) => Promise<{ dirPath: string; meta: RSIMeta }>;
       getLocaleAsset: (path: string) => Promise<LocaleDetail | null>;
       saveLocaleAsset: (request: { path: string; text: string }) => Promise<LocaleDetail | null>;
       createLocaleAsset: (draft: CreateLocaleDraft) => Promise<LocaleDetail | null>;
+      pickExternalLocaleFile: (request: { currentPath?: string }) => Promise<string | null>;
+      createExternalLocale: (request: { path: string; draft: CreateLocaleDraft }) => Promise<{ filePath: string; locale: string; text: string }>;
       analyzePrototypeLocalization: (request: { key: string; text?: string; requiredLocales?: string[] }) => Promise<PrototypeLocalizationAnalysis | null>;
       createPrototypeLocalization: (request: { key: string; text?: string; fields: Array<'name' | 'description' | 'suffix'>; locales: string[] }) => Promise<{ localizationId: string; updatedPaths: string[] }>;
       validatePrototypeYaml: (request: { key: string; text: string }) => Promise<PrototypeDetail | null>;
       createOptions: () => Promise<CreatePrototypeOptions>;
       validateDraft: (draft: PrototypeDraft) => Promise<DraftValidation>;
-      createFromDraft: (draft: PrototypeDraft) => Promise<{ key: string; filePath: string; yaml: string }>;
+      createFromDraft: (draft: PrototypeDraft) => Promise<{ key: string; filePath: string; yaml: string; inProject: boolean }>;
       onScanProgress: (callback: (progress: ScanProgress) => void) => () => void;
       readPrototype: (request: { projectRoot: string; filePath: string; line: number }) => Promise<{ filePath: string; line: number; text: string }>;
-      savePrototype: (request: { projectRoot: string; filePath: string; line: number; text: string }) => Promise<{ filePath: string; line: number; text: string }>;
+      savePrototype: (request: { projectRoot: string; filePath: string; line: number; text: string }) => Promise<{ filePath: string; line: number; text: string; key: string }>;
       createPrototype: (request: { projectRoot: string; type: string; id: string; parent?: string; name?: string; filePath?: string }) => Promise<{ filePath: string; line: number; text: string }>;
       getUpdateState: () => Promise<UpdateState>;
       checkForUpdates: () => Promise<UpdateState>;

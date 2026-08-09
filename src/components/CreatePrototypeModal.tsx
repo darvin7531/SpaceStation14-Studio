@@ -11,6 +11,7 @@ interface Props {
 
 const defaultDraft: PrototypeDraft = {
   mode: 'append',
+  destination: 'project',
   type: 'entity',
   id: '',
   name: '',
@@ -79,6 +80,11 @@ export default function CreatePrototypeModal({ open, onClose, onCreated }: Props
   const update = (patch: Partial<PrototypeDraft>) => setDraft((current) => ({ ...current, ...patch }));
 
   async function handleBrowseFolder() {
+    if (draft.destination === 'external') {
+      const selected = await window.prototypeStudio.pickExternalPrototypeFile({ currentPath: draft.filePath });
+      if (selected) update({ filePath: selected, mode: 'new' });
+      return;
+    }
     const currentDir = directoryOfPath(draft.filePath);
     const selected = await window.prototypeStudio.pickProjectFolder({ scope: 'prototypes', currentPath: currentDir });
     if (!selected) return;
@@ -94,9 +100,11 @@ export default function CreatePrototypeModal({ open, onClose, onCreated }: Props
     setIsCreating(true);
     try {
       const created = await window.prototypeStudio.createFromDraft(draft);
-      await onCreated(created.key);
+      if (created.inProject) await onCreated(created.key);
       onClose();
       setDraft(defaultDraft);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Не удалось создать прототип. Проверьте путь, права доступа и поля черновика.');
     } finally {
       setIsCreating(false);
     }
@@ -153,19 +161,37 @@ export default function CreatePrototypeModal({ open, onClose, onCreated }: Props
             <summary><FolderInput size={15} /> {t('wizard.fileTarget')}</summary>
             <div className="grid gap-3 pt-3">
               <div className="grid grid-cols-2 gap-2">
-                <button className={draft.mode === 'append' ? 'wizard-toggle active' : 'wizard-toggle'} onClick={() => update({ mode: 'append' })}>{t('wizard.appendExisting')}</button>
-                <button className={draft.mode === 'new' ? 'wizard-toggle active' : 'wizard-toggle'} onClick={() => update({ mode: 'new' })}>{t('wizard.createNewFile')}</button>
+                <button
+                  type="button"
+                  className={draft.destination === 'project' ? 'wizard-toggle active' : 'wizard-toggle'}
+                  onClick={() => update({ destination: 'project', filePath: draft.filePath.startsWith('Resources/Prototypes/') ? draft.filePath : defaultDraft.filePath })}
+                >
+                  {t('wizard.destinationProject')}
+                </button>
+                <button
+                  type="button"
+                  className={draft.destination === 'external' ? 'wizard-toggle active' : 'wizard-toggle'}
+                  onClick={() => update({ destination: 'external', mode: 'new', filePath: '' })}
+                >
+                  {t('wizard.destinationExternal')}
+                </button>
               </div>
+              {draft.destination === 'project' && (
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" className={draft.mode === 'append' ? 'wizard-toggle active' : 'wizard-toggle'} onClick={() => update({ mode: 'append' })}>{t('wizard.appendExisting')}</button>
+                  <button type="button" className={draft.mode === 'new' ? 'wizard-toggle active' : 'wizard-toggle'} onClick={() => update({ mode: 'new' })}>{t('wizard.createNewFile')}</button>
+                </div>
+              )}
               <label className="wizard-label">{t('wizard.filePath')}
                 <div className="grid grid-cols-[1fr_auto] gap-2">
-                  <input list="prototype-files" value={draft.filePath} onChange={(event) => update({ filePath: event.target.value })} className="wizard-input" />
+                  <input list={draft.destination === 'project' ? 'prototype-files' : undefined} value={draft.filePath} onChange={(event) => update({ filePath: event.target.value })} className="wizard-input" />
                   <button type="button" onClick={() => void handleBrowseFolder()} className="inline-flex items-center gap-2 rounded-md border border-neutral-800 bg-neutral-900 px-3 text-xs text-neutral-300 hover:bg-neutral-800">
                     <FolderOpen size={14} />
                     {t('wizard.browse')}
                   </button>
                 </div>
-                <datalist id="prototype-files">{options?.files.slice(0, 2000).map((file) => <option key={file} value={file} />)}</datalist>
-                <span className="wizard-help">{t('wizard.filePathHelp')}</span>
+                {draft.destination === 'project' && <datalist id="prototype-files">{options?.files.slice(0, 2000).map((file) => <option key={file} value={file} />)}</datalist>}
+                <span className="wizard-help">{draft.destination === 'external' ? t('wizard.externalFilePathHelp') : t('wizard.filePathHelp')}</span>
               </label>
             </div>
           </details>

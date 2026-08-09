@@ -7,7 +7,7 @@ export default function RsiEditor() {
   const { t } = useI18n();
   const highlightedRsiState = useProjectStore((state) => state.highlightedRsiState);
   const setHighlightedRsiState = useProjectStore((state) => state.setHighlightedRsiState);
-  const updateActiveRsiDetail = useProjectStore((state) => state.updateActiveRsiDetail);
+  const updateRsiDetailById = useProjectStore((state) => state.updateRsiDetailById);
   const updateActiveRsiMeta = useProjectStore((state) => state.updateActiveRsiMeta);
   const tabsById = useProjectStore((state) => state.tabsById);
   const activeTabId = useProjectStore((state) => state.activeTabId);
@@ -27,10 +27,6 @@ export default function RsiEditor() {
   const isDirty = activeRsiTab?.kind === 'rsi' ? activeRsiTab.dirty : false;
 
   const primaryPreview = useMemo(() => states.find((state) => state.name === 'icon') ?? states[0] ?? null, [states]);
-
-  if (!detail || !meta) {
-    return <div className="flex-1 flex items-center justify-center text-neutral-500 bg-neutral-950">{t('rsi.empty')}</div>;
-  }
 
   const updateMeta = useCallback((patch: Partial<typeof meta>) => {
     if (!detail) return;
@@ -57,10 +53,16 @@ export default function RsiEditor() {
   }, [meta, updateMeta]);
 
   const handleSave = async () => {
+    if (!activeRsiTab || !detail || !meta) return;
+    const savingTabId = activeRsiTab.id;
+    const savingPath = detail.path;
+    const savingMeta = meta;
     setIsSaving(true);
     try {
-      const next = await window.prototypeStudio.saveRsiAsset({ path: detail.path, meta });
-      if (next) updateActiveRsiDetail(next, false);
+      const next = await window.prototypeStudio.saveRsiAsset({ path: savingPath, meta: savingMeta });
+      if (next) updateRsiDetailById(savingTabId, next, false);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Не удалось сохранить RSI. Проверьте права доступа и содержимое meta.json.');
     } finally {
       setIsSaving(false);
     }
@@ -71,13 +73,29 @@ export default function RsiEditor() {
     setIsDragOver(false);
     const files = Array.from(event.dataTransfer.files as FileList).filter((file: File) => file.type === 'image/png' || file.name.toLowerCase().endsWith('.png'));
     if (files.length === 0) return;
-    const payload = await Promise.all(files.map(async (file) => ({
-      name: file.name,
-      dataUrl: await readFileAsDataUrl(file),
-    })));
-    const next = await window.prototypeStudio.importRsiImages({ path: detail.path, files: payload });
-    if (next) updateActiveRsiDetail(next, false);
+    const oversized = files.find((file) => file.size > 8 * 1024 * 1024);
+    if (oversized) {
+      alert(`'${oversized.name}' больше 8 MB. Импорт RSI ограничен 8 MB на PNG.`);
+      return;
+    }
+    if (!activeRsiTab || !detail) return;
+    const importingTabId = activeRsiTab.id;
+    const importingPath = detail.path;
+    try {
+      const payload = await Promise.all(files.map(async (file) => ({
+        name: file.name,
+        dataUrl: await readFileAsDataUrl(file),
+      })));
+      const next = await window.prototypeStudio.importRsiImages({ path: importingPath, files: payload });
+      if (next) updateRsiDetailById(importingTabId, next, false);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Не удалось импортировать PNG. Проверьте файлы и права доступа к папке RSI.');
+    }
   };
+
+  if (!detail || !meta) {
+    return <div className="flex-1 flex items-center justify-center text-neutral-500 bg-neutral-950">{t('rsi.empty')}</div>;
+  }
 
   return (
     <div className="flex-1 min-w-0 bg-neutral-950 flex flex-col">
@@ -128,7 +146,7 @@ export default function RsiEditor() {
             </div>
             <div className="space-y-3">
               {meta.states.map((state, index) => (
-                <div key={`${state.name}:${index}`} className="rounded-lg border border-neutral-800 bg-neutral-950/60 p-3">
+                <div key={index} className="rounded-lg border border-neutral-800 bg-neutral-950/60 p-3">
                   <div className="grid gap-3">
                     <div className="flex items-center justify-between gap-2">
                       <label className="wizard-label flex-1">{t('rsi.stateName')}
@@ -169,9 +187,9 @@ export default function RsiEditor() {
           </div>
 
           <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
-            {states.map((state) => (
+            {states.map((state, index) => (
               <div
-                key={state.name}
+                key={index}
                 onClick={() => setHighlightedRsiState(state.name)}
                 className={`rounded-xl border bg-neutral-900/60 p-3 ${highlightedRsiState === state.name ? 'border-emerald-400 ring-1 ring-emerald-400/60' : 'border-neutral-800'}`}
               >

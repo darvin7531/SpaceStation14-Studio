@@ -49,10 +49,13 @@ interface ProjectState {
   updateActivePrototypeDetail: (detail: PrototypeDetail | null, options?: { preserveDraft?: boolean; dirty?: boolean }) => void;
   updatePrototypeDetailById: (tabId: string, detail: PrototypeDetail | null, options?: { preserveDraft?: boolean; dirty?: boolean }) => void;
   updateActivePrototypeSaved: (detail: PrototypeDetail | null, rawYaml: string) => void;
+  updatePrototypeSavedById: (tabId: string, detail: PrototypeDetail | null, rawYaml: string, prototypeKey?: string) => void;
   updateActiveRsiDetail: (detail: RsiAssetDetail | null, dirty?: boolean) => void;
+  updateRsiDetailById: (tabId: string, detail: RsiAssetDetail | null, dirty?: boolean) => void;
   updateActiveRsiMeta: (updater: (detail: RsiAssetDetail) => RsiAssetDetail) => void;
   updateActiveLocaleText: (text: string) => void;
   updateActiveLocaleSaved: (detail: LocaleDetail | null, text: string) => void;
+  updateLocaleSavedById: (tabId: string, detail: LocaleDetail | null, text: string) => void;
 }
 
 const emptyCounts = {
@@ -176,10 +179,24 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   tabsById: {},
   activeTabId: null,
 
-  setProject: (result) => set({
-    projectRoot: result.projectRoot,
-    counts: result.counts,
-    validationIssues: result.issues,
+  setProject: (result) => set((state) => {
+    const projectChanged = state.projectRoot !== null && state.projectRoot !== result.projectRoot;
+    return projectChanged
+      ? {
+          projectRoot: result.projectRoot,
+          counts: result.counts,
+          validationIssues: result.issues,
+          ...syncActiveSelection(null),
+          tabOrder: [],
+          tabsById: {},
+          searchQuery: '',
+          filterType: 'all',
+        }
+      : {
+          projectRoot: result.projectRoot,
+          counts: result.counts,
+          validationIssues: result.issues,
+        };
   }),
   setValidationIssues: (issues) => set({ validationIssues: issues }),
   setSelectedPrototypeId: (id) => set({ selectedPrototypeId: id }),
@@ -427,18 +444,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   updateActivePrototypeSaved: (detail, rawYaml) => set((state) => {
     const active = getTabById(state, state.activeTabId);
     if (!active || active.kind !== 'prototype') return {};
-    const nextTab: PrototypeEditorTab = {
-      ...active,
-      detail,
-      rawYaml,
-      dirty: false,
-      title: String(detail?.prototype.id ?? active.title),
-      subtitle: detail?.prototype._filePath ?? active.subtitle,
-    };
-    return {
-      tabsById: { ...state.tabsById, [active.id]: nextTab },
-      selectedPrototype: nextTab.detail,
-    };
+    const nextTab: PrototypeEditorTab = { ...active, detail, rawYaml, dirty: false, title: String(detail?.prototype.id ?? active.title), subtitle: detail?.prototype._filePath ?? active.subtitle };
+    return { tabsById: { ...state.tabsById, [active.id]: nextTab }, selectedPrototype: nextTab.detail };
+  }),
+  updatePrototypeSavedById: (tabId, detail, rawYaml, prototypeKey) => set((state) => {
+    const tab = state.tabsById[tabId];
+    if (!tab || tab.kind !== 'prototype') return {};
+    const nextTab: PrototypeEditorTab = { ...tab, prototypeKey: prototypeKey ?? tab.prototypeKey, detail, rawYaml, dirty: false, title: String(detail?.prototype.id ?? tab.title), subtitle: detail?.prototype._filePath ?? tab.subtitle };
+    return { tabsById: { ...state.tabsById, [tabId]: nextTab }, ...(state.activeTabId === tabId ? { selectedPrototype: nextTab.detail, selectedPrototypeId: nextTab.prototypeKey } : {}) };
   }),
   updateActiveRsiDetail: (detail, dirty = false) => set((state) => {
     const active = getTabById(state, state.activeTabId);
@@ -455,6 +468,15 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       selectedRsi: nextTab.detail,
       selectedRsiPath: nextTab.rsiPath,
       highlightedRsiState: nextTab.highlightedState ?? null,
+    };
+  }),
+  updateRsiDetailById: (tabId, detail, dirty = false) => set((state) => {
+    const tab = state.tabsById[tabId];
+    if (!tab || tab.kind !== 'rsi') return {};
+    const nextTab: RsiEditorTab = { ...tab, detail, dirty, title: detail?.path.split('/').at(-1) ?? tab.title, subtitle: detail?.path ?? tab.subtitle };
+    return {
+      tabsById: { ...state.tabsById, [tabId]: nextTab },
+      ...(state.activeTabId === tabId ? { selectedRsi: nextTab.detail, selectedRsiPath: nextTab.rsiPath, highlightedRsiState: nextTab.highlightedState ?? null } : {}),
     };
   }),
   updateActiveRsiMeta: (updater) => set((state) => {
@@ -496,6 +518,15 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       tabsById: { ...state.tabsById, [active.id]: nextTab },
       selectedLocale: nextTab.detail,
       selectedLocalePath: nextTab.localePath,
+    };
+  }),
+  updateLocaleSavedById: (tabId, detail, text) => set((state) => {
+    const tab = state.tabsById[tabId];
+    if (!tab || tab.kind !== 'locale') return {};
+    const nextTab: LocaleEditorTab = { ...tab, detail, text, dirty: false, title: detail?.fileName ?? tab.title, subtitle: detail?.path ?? tab.subtitle };
+    return {
+      tabsById: { ...state.tabsById, [tabId]: nextTab },
+      ...(state.activeTabId === tabId ? { selectedLocale: nextTab.detail, selectedLocalePath: nextTab.localePath } : {}),
     };
   }),
 }));

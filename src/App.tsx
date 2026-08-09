@@ -41,9 +41,9 @@ export default function App() {
   const activateTab = useProjectStore((state) => state.activateTab);
   const closeTab = useProjectStore((state) => state.closeTab);
   const reorderTab = useProjectStore((state) => state.reorderTab);
-  const updateActivePrototypeSaved = useProjectStore((state) => state.updateActivePrototypeSaved);
-  const updateActiveRsiDetail = useProjectStore((state) => state.updateActiveRsiDetail);
-  const updateActiveLocaleSaved = useProjectStore((state) => state.updateActiveLocaleSaved);
+  const updatePrototypeSavedById = useProjectStore((state) => state.updatePrototypeSavedById);
+  const updateRsiDetailById = useProjectStore((state) => state.updateRsiDetailById);
+  const updateLocaleSavedById = useProjectStore((state) => state.updateLocaleSavedById);
   const [statusOpen, setStatusOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'general' | 'editor' | 'updates' | 'about'>('general');
@@ -172,6 +172,11 @@ export default function App() {
   }, [openPrototypeTab, setIsScanning, setProject, setScanProgress, setSearchQuery, t]);
 
   const openProjectRoot = useCallback(async (nextProjectRoot: string) => {
+    const current = useProjectStore.getState();
+    if (current.projectRoot && current.projectRoot !== nextProjectRoot && Object.values(current.tabsById).some((tab) => tab.dirty)) {
+      const confirmed = window.confirm('В открытых вкладках есть несохранённые изменения. При смене проекта они будут закрыты без сохранения. Продолжить?');
+      if (!confirmed) return;
+    }
     try {
       setIsScanning(true);
       setScanProgress(`${t('loading.eyebrow.scan')}: ${nextProjectRoot}`);
@@ -187,6 +192,9 @@ export default function App() {
         })}`,
         ...items,
       ].slice(0, 80));
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Scan superseded.') return;
+      throw error;
     } finally {
       setIsScanning(false);
       setScanProgress('');
@@ -208,7 +216,7 @@ export default function App() {
     }
   }, [openProjectRoot, setIsScanning, setScanProgress, t]);
 
-  const hasProject = counts.prototypes > 0 || counts.rsis > 0 || counts.locales > 0 || counts.components > 0;
+  const hasProject = projectRoot !== null;
   const isCheckingUpdates = updateState.status === 'checking' || updateState.status === 'available' || updateState.status === 'downloading';
 
   const handleCheckUpdates = useCallback(async () => {
@@ -313,7 +321,7 @@ export default function App() {
         text: tab.rawYaml,
       });
       activateTab(tab.id);
-      updateActivePrototypeSaved(await window.prototypeStudio.getPrototype(tab.prototypeKey), saved.text);
+      updatePrototypeSavedById(tab.id, await window.prototypeStudio.getPrototype(tab.prototypeKey), saved.text);
       return true;
     }
 
@@ -322,7 +330,7 @@ export default function App() {
       activateTab(tab.id);
       const next = await window.prototypeStudio.saveRsiAsset({ path: tab.detail.path, meta: tab.detail.meta });
       if (next) {
-        updateActiveRsiDetail(next, false);
+        updateRsiDetailById(tab.id, next, false);
         return true;
       }
       return false;
@@ -332,14 +340,14 @@ export default function App() {
       activateTab(tab.id);
       const next = await window.prototypeStudio.saveLocaleAsset({ path: tab.localePath, text: tab.text });
       if (next) {
-        updateActiveLocaleSaved(next, next.text);
+        updateLocaleSavedById(tab.id, next, next.text);
         return true;
       }
       return false;
     }
 
     return false;
-  }, [activateTab, projectRoot, updateActiveLocaleSaved, updateActivePrototypeSaved, updateActiveRsiDetail]);
+  }, [activateTab, projectRoot, updateLocaleSavedById, updatePrototypeSavedById, updateRsiDetailById]);
 
   const requestCloseTab = useCallback((tabId: string) => {
     const tab = useProjectStore.getState().tabsById[tabId];
@@ -656,15 +664,11 @@ const ActionsMenu = memo(function ActionsMenu({
               }}
             />
           )}
-          {hasProject && (
-            <>
-              <div className="my-2 border-t border-neutral-800" />
-              <MenuAction icon={<Plus size={15} />} label={t('app.createPrototype')} onClick={() => { setOpen(false); onCreatePrototype(); }} />
-              <MenuAction icon={<ImageIcon size={15} />} label={t('app.createRsiSprite')} onClick={() => { setOpen(false); onCreateRsi(); }} />
-              <MenuAction icon={<Languages size={15} />} label={t('app.createLocale')} onClick={() => { setOpen(false); onCreateLocale(); }} />
-              <MenuAction icon={<RefreshCw size={15} />} label={t('app.rescanProject')} onClick={() => { setOpen(false); void onRescanProject(); }} />
-            </>
-          )}
+          <div className="my-2 border-t border-neutral-800" />
+          <MenuAction icon={<Plus size={15} />} label={t('app.createPrototype')} onClick={() => { setOpen(false); onCreatePrototype(); }} />
+          <MenuAction icon={<ImageIcon size={15} />} label={t('app.createRsiSprite')} onClick={() => { setOpen(false); onCreateRsi(); }} />
+          <MenuAction icon={<Languages size={15} />} label={t('app.createLocale')} onClick={() => { setOpen(false); onCreateLocale(); }} />
+          {hasProject && <MenuAction icon={<RefreshCw size={15} />} label={t('app.rescanProject')} onClick={() => { setOpen(false); void onRescanProject(); }} />}
           <div className="my-2 border-t border-neutral-800" />
           <MenuAction icon={<Settings size={15} />} label={t('settings.open')} onClick={() => { setOpen(false); onOpenSettings(); }} />
           <MenuAction icon={<Info size={15} />} label={t('app.aboutStudio')} onClick={() => { setOpen(false); onOpenAbout(); }} />

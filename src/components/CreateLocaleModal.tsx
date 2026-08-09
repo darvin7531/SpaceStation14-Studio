@@ -20,6 +20,8 @@ const defaultDraft: CreateLocaleDraft = {
 export default function CreateLocaleModal({ open, onClose, onCreated }: Props) {
   const { t } = useI18n();
   const [draft, setDraft] = useState<CreateLocaleDraft>(defaultDraft);
+  const [destination, setDestination] = useState<'project' | 'external'>('project');
+  const [externalPath, setExternalPath] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
   useEffect(() => {
@@ -42,6 +44,11 @@ export default function CreateLocaleModal({ open, onClose, onCreated }: Props) {
   });
 
   const handleBrowseFolder = async () => {
+    if (destination === 'external') {
+      const selected = await window.prototypeStudio.pickExternalLocaleFile({ currentPath: externalPath });
+      if (selected) setExternalPath(selected);
+      return;
+    }
     const selected = await window.prototypeStudio.pickProjectFolder({ scope: 'locale', currentPath: draft.directory });
     if (selected) update({ directory: selected });
   };
@@ -49,9 +56,13 @@ export default function CreateLocaleModal({ open, onClose, onCreated }: Props) {
   const handleCreate = async () => {
     setIsCreating(true);
     try {
-      const detail = await window.prototypeStudio.createLocaleAsset(draft);
-      if (!detail) return;
-      await onCreated(detail.path);
+      if (destination === 'external') {
+        await window.prototypeStudio.createExternalLocale({ path: externalPath, draft });
+      } else {
+        const detail = await window.prototypeStudio.createLocaleAsset(draft);
+        if (!detail) return;
+        await onCreated(detail.path);
+      }
       setDraft(defaultDraft);
       onClose();
     } finally {
@@ -73,6 +84,10 @@ export default function CreateLocaleModal({ open, onClose, onCreated }: Props) {
         </div>
 
         <div className="grid gap-4 p-5">
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setDestination('project')} className={`rounded-md px-3 py-2 text-sm ${destination === 'project' ? 'bg-amber-600 text-white' : 'bg-neutral-800 text-neutral-300'}`}>{t('wizard.destinationProject')}</button>
+            <button type="button" onClick={() => setDestination('external')} className={`rounded-md px-3 py-2 text-sm ${destination === 'external' ? 'bg-amber-600 text-white' : 'bg-neutral-800 text-neutral-300'}`}>{t('wizard.destinationExternal')}</button>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <label className="wizard-label">{t('locale.locale')}
               <input value={draft.locale} onChange={(event) => update({ locale: event.target.value })} className="wizard-input" />
@@ -83,7 +98,7 @@ export default function CreateLocaleModal({ open, onClose, onCreated }: Props) {
           </div>
           <label className="wizard-label">{t('locale.directory')}
             <div className="grid grid-cols-[1fr_auto] gap-2">
-              <input value={draft.directory} onChange={(event) => update({ directory: event.target.value })} className="wizard-input" />
+              <input value={destination === 'external' ? externalPath : draft.directory} onChange={(event) => destination === 'external' ? setExternalPath(event.target.value) : update({ directory: event.target.value })} className="wizard-input" />
               <button type="button" onClick={() => void handleBrowseFolder()} className="inline-flex items-center gap-2 rounded-md border border-neutral-800 bg-neutral-900 px-3 text-xs text-neutral-300 hover:bg-neutral-800">
                 <FolderOpen size={14} />
                 {t('wizard.browse')}

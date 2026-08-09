@@ -4,7 +4,8 @@ const path = require("path");
 const { Worker } = require("worker_threads");
 const YAML = require("yaml");
 const { autoUpdater } = require("electron-updater");
-const { readLatestProjectCache, readPrototypeBlock, savePrototypeBlock, createPrototype } = require("./scanner.cjs");
+const { MAX_RSI_PNG_BYTES, inspectPng, assertRsiSheetDimensions } = require("./png.cjs");
+const { scanProject, readLatestProjectCache, readPrototypeBlock, savePrototypeBlock, createPrototype, createExternalPrototype, createExternalRsi, createExternalLocale } = require("./scanner.cjs");
 const appPackage = require("../package.json");
 
 const DEFAULT_APP_SETTINGS = {
@@ -20,6 +21,8 @@ const NORMALIZE_BACKSLASH_RE = /\\/g;
 
 Menu.setApplicationMenu(null);
 let activeIndex = null;
+let activeScanWorker = null;
+let activeScanGeneration = 0;
 let mainWindow = null;
 let updateState = {
   status: "idle",
@@ -258,7 +261,7 @@ ipcMain.handle("project:restore-last", async () => {
   const restored = readLatestProjectCache(scanCacheDir(), workspace.lastProjectRoot);
   if (!restored) return null;
 
-  activeIndex = restored;
+  setActiveIndex(restored);
   return {
     ...summarizeIndex(activeIndex),
     selectedPrototypeId: workspace.selectedPrototypeId ?? null,
@@ -267,42 +270,60 @@ ipcMain.handle("project:restore-last", async () => {
 });
 
 ipcMain.handle("project:scan", async (event, projectRoot) => {
+  const generation = ++activeScanGeneration;
+  if (activeScanWorker) {
+    void activeScanWorker.terminate();
+    activeScanWorker = null;
+  }
+
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      if (activeScanWorker === worker) activeScanWorker = null;
+      callback(value);
+    };
     const worker = new Worker(path.join(__dirname, "scanner-worker.cjs"), {
-      workerData: {
-        projectRoot,
-        cacheDir: scanCacheDir(),
-      },
+      workerData: { projectRoot, cacheDir: scanCacheDir() },
     });
+    activeScanWorker = worker;
 
     worker.on("message", (message) => {
+      if (generation !== activeScanGeneration) {
+        finish(reject, new Error("Scan superseded."));
+        return;
+      }
       if (message.type === "progress") {
         event.sender.send("scan:progress", message.progress);
         return;
       }
-
       if (message.type === "done") {
-        activeIndex = message.result;
+        setActiveIndex(message.result);
         writeWorkspaceState({ lastProjectRoot: activeIndex.projectRoot });
-        resolve(summarizeIndex(activeIndex));
+        finish(resolve, summarizeIndex(activeIndex));
         return;
       }
-
-      if (message.type === "error") {
-        reject(new Error(message.error));
-      }
+      if (message.type === "error") finish(reject, new Error(message.error));
     });
-
-    worker.on("error", reject);
+    worker.on("error", (error) => finish(reject, error));
     worker.on("exit", (code) => {
-      if (code !== 0) {
-        reject(new Error(`Scanner worker exited with code ${code}`));
-      }
+      if (settled) return;
+      if (generation !== activeScanGeneration) finish(reject, new Error("Scan superseded."));
+      else if (code !== 0) finish(reject, new Error(`Scanner worker exited with code ${code}`));
     });
   });
 });
 ipcMain.handle("prototype:read", async (_event, request) => readPrototypeBlock(request));
-ipcMain.handle("prototype:save", async (_event, request) => savePrototypeBlock(request));
+ipcMain.handle("prototype:save", async (_event, request) => {
+  const saved = savePrototypeBlock(request);
+  const entry = YAML.parse(saved.text)?.[0];
+  const key = `${entry?.type ?? ""}:${entry?.id ?? ""}`;
+  if (activeIndex && path.resolve(request.projectRoot) === path.resolve(activeIndex.projectRoot)) {
+    setActiveIndex(scanProject(activeIndex.projectRoot));
+  }
+  return { ...saved, key };
+});
 ipcMain.handle("prototype:create", async (_event, request) => createPrototype(request));
 ipcMain.handle("project:list-prototypes", async (_event, request = {}) => listPrototypes(request));
 ipcMain.handle("project:get-prototype", async (_event, key) => getPrototype(key));
@@ -310,13 +331,18 @@ ipcMain.handle("project:autocomplete", async (_event, request = {}) => autocompl
 ipcMain.handle("project:component-info", async (_event, name) => componentInfo(name));
 ipcMain.handle("project:resource-tree", async () => resourceTree());
 ipcMain.handle("project:pick-folder", async (_event, request = {}) => pickProjectFolder(request));
+ipcMain.handle("project:pick-external-prototype-file", async (_event, request = {}) => pickExternalPrototypeFile(request));
 ipcMain.handle("asset:get-rsi", async (_event, rsiPath) => getRsiAsset(rsiPath));
 ipcMain.handle("asset:save-rsi", async (_event, request = {}) => saveRsiAsset(request));
 ipcMain.handle("asset:import-rsi-images", async (_event, request = {}) => importRsiImages(request));
 ipcMain.handle("asset:create-rsi", async (_event, draft = {}) => createRsiAsset(draft));
+ipcMain.handle("asset:pick-external-rsi-folder", async (_event, request = {}) => pickExternalRsiFolder(request));
+ipcMain.handle("asset:create-external-rsi", async (_event, request = {}) => createExternalRsi(request.path, request.draft));
 ipcMain.handle("asset:get-locale", async (_event, localePath) => getLocaleAsset(localePath));
 ipcMain.handle("asset:save-locale", async (_event, request = {}) => saveLocaleAsset(request));
 ipcMain.handle("asset:create-locale", async (_event, draft = {}) => createLocaleAsset(draft));
+ipcMain.handle("asset:pick-external-locale-file", async (_event, request = {}) => pickExternalLocaleFile(request));
+ipcMain.handle("asset:create-external-locale", async (_event, request = {}) => createExternalLocale(request.path, request.draft));
 ipcMain.handle("project:analyze-prototype-localization", async (_event, request = {}) => analyzePrototypeLocalization(request));
 ipcMain.handle("project:create-prototype-localization", async (_event, request = {}) => createPrototypeLocalization(request));
 ipcMain.handle("project:validate-prototype-yaml", async (_event, request = {}) => validatePrototypeYaml(request));
@@ -417,6 +443,14 @@ app.on("second-instance", () => {
   if (!mainWindow.isVisible()) mainWindow.show();
   mainWindow.focus();
 });
+
+function setActiveIndex(index) {
+  activeIndex = index;
+  activeIndex.prototypeList = Object.values(activeIndex.prototypes)
+    .map(lightPrototype)
+    .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  activeIndex.resourceTreeCache = null;
+}
 
 function summarizeIndex(index) {
   return {
@@ -550,18 +584,12 @@ function broadcastUpdateState() {
 function listPrototypes({ query = "", offset = 0, limit = 250 }) {
   ensureIndex();
   const normalized = String(query).trim().toLowerCase();
-  const items = Object.values(activeIndex.prototypes)
+  const items = (activeIndex.prototypeList ?? Object.values(activeIndex.prototypes).map(lightPrototype))
     .filter((prototype) => {
       if (!normalized) return true;
-      return [
-        prototype.id,
-        prototype.type,
-        prototype.name,
-        prototype._filePath,
-      ].some((value) => String(value ?? "").toLowerCase().includes(normalized));
-    })
-    .sort((a, b) => String(a.id).localeCompare(String(b.id)))
-    .map(lightPrototype);
+      return [prototype.id, prototype.type, prototype.name, prototype._filePath]
+        .some((value) => String(value ?? "").toLowerCase().includes(normalized));
+    });
 
   return {
     total: items.length,
@@ -874,6 +902,7 @@ function sampleYamlValue(field) {
 
 function resourceTree() {
   ensureIndex();
+  if (activeIndex.resourceTreeCache) return activeIndex.resourceTreeCache;
   const root = { name: "Resources", path: "Resources", kind: "folder", children: [], prototypeCount: 0, rsiCount: 0, localeCount: 0 };
   for (const prototype of Object.values(activeIndex.prototypes)) {
     if (!String(prototype._filePath).startsWith("Resources/")) continue;
@@ -905,6 +934,7 @@ function resourceTree() {
     });
   }
   sortTree(root);
+  activeIndex.resourceTreeCache = root;
   return root;
 }
 
@@ -931,6 +961,28 @@ async function pickProjectFolder({ scope = "prototypes", currentPath = "" }) {
   return relative;
 }
 
+async function pickExternalPrototypeFile({ currentPath = "" }) {
+  const defaultPath = currentPath && path.isAbsolute(currentPath) ? currentPath : path.join(app.getPath("documents"), "prototype.yml");
+  const result = await dialog.showSaveDialog({
+    title: "Save prototype outside project",
+    defaultPath,
+    filters: [{ name: "YAML", extensions: ["yml", "yaml"] }],
+  });
+  return result.canceled || !result.filePath ? null : result.filePath;
+}
+
+async function pickExternalRsiFolder({ currentPath = "" }) {
+  const defaultPath = currentPath && path.isAbsolute(currentPath) ? currentPath : path.join(app.getPath("documents"), "new-rsi.rsi");
+  const result = await dialog.showSaveDialog({ title: "Create RSI outside project", defaultPath });
+  return result.canceled || !result.filePath ? null : result.filePath.endsWith(".rsi") ? result.filePath : `${result.filePath}.rsi`;
+}
+
+async function pickExternalLocaleFile({ currentPath = "" }) {
+  const defaultPath = currentPath && path.isAbsolute(currentPath) ? currentPath : path.join(app.getPath("documents"), "locale.ftl");
+  const result = await dialog.showSaveDialog({ title: "Create locale outside project", defaultPath, filters: [{ name: "Fluent", extensions: ["ftl"] }] });
+  return result.canceled || !result.filePath ? null : result.filePath;
+}
+
 function getRsiAsset(rsiPath) {
   ensureIndex();
   const key = resolveRsiKey(rsiPath);
@@ -945,6 +997,7 @@ function saveRsiAsset({ path: rsiPath, meta }) {
   const rsi = activeIndex.rsis[key];
   if (!rsi) return null;
   const nextMeta = sanitizeRsiMeta(meta);
+  renameRsiStatePngs(rsi.dirPath, rsi.meta.states ?? [], nextMeta.states ?? []);
   fs.writeFileSync(path.join(rsi.dirPath, "meta.json"), `${JSON.stringify(nextMeta, null, 2)}\n`, "utf8");
   rsi.meta = nextMeta;
   return formatRsiAsset(rsi);
@@ -955,13 +1008,19 @@ function importRsiImages({ path: rsiPath, files = [] }) {
   const key = normalizePath(rsiPath);
   const rsi = activeIndex.rsis[key];
   if (!rsi) return null;
-  const known = new Set((rsi.meta?.states ?? []).map((state) => state.name));
-  for (const file of files) {
+  const incoming = files.map((file) => {
     const stateName = safeStateName(file.name);
-    const dataUrl = String(file.dataUrl ?? "");
-    const match = dataUrl.match(/^data:image\/png;base64,(.+)$/);
-    if (!match) continue;
-    fs.writeFileSync(path.join(rsi.dirPath, `${stateName}.png`), Buffer.from(match[1], "base64"));
+    if (!stateName) throw new Error("PNG state name is required.");
+    const match = String(file.dataUrl ?? "").match(/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/);
+    if (!match) throw new Error(`'${file.name}' is not a PNG data URL.`);
+    const buffer = Buffer.from(match[1], "base64");
+    if (buffer.length > MAX_RSI_PNG_BYTES) throw new Error(`'${file.name}' exceeds the ${MAX_RSI_PNG_BYTES / 1024 / 1024} MB PNG limit.`);
+    assertRsiSheetDimensions(inspectPng(buffer), rsi.meta.size);
+    return { stateName, buffer };
+  });
+  const known = new Set((rsi.meta?.states ?? []).map((state) => state.name));
+  for (const { stateName, buffer } of incoming) {
+    fs.writeFileSync(path.join(rsi.dirPath, `${stateName}.png`), buffer);
     if (!known.has(stateName)) {
       rsi.meta.states.push({ name: stateName });
       known.add(stateName);
@@ -978,7 +1037,9 @@ function createRsiAsset(draft) {
   const relDir = normalizeTextureDirectory(draft.directory);
   const name = safeRsiFolderName(draft.name);
   const rsiPath = `${relDir}/${name}.rsi`;
+  requireProjectScope(rsiPath, "Resources/Textures");
   const fullDir = safeProjectPath(root, rsiPath);
+  if (fs.existsSync(fullDir)) throw new Error(`RSI already exists: ${rsiPath}`);
   fs.mkdirSync(fullDir, { recursive: true });
   const meta = sanitizeRsiMeta({
     version: 1,
@@ -999,6 +1060,7 @@ function createRsiAsset(draft) {
 function getLocaleAsset(localePath) {
   ensureIndex();
   const key = normalizePath(localePath);
+  requireProjectScope(key, "Resources/Locale");
   const summary = activeIndex.locales?.[key];
   if (!summary) return null;
   const file = safeProjectPath(activeIndex.projectRoot, key);
@@ -1011,6 +1073,7 @@ function getLocaleAsset(localePath) {
 function saveLocaleAsset({ path: localePath, text }) {
   ensureIndex();
   const key = normalizePath(localePath);
+  requireProjectScope(key, "Resources/Locale");
   const file = safeProjectPath(activeIndex.projectRoot, key);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const normalizedText = String(text ?? "").replace(/\r\n?/g, "\n");
@@ -1038,6 +1101,7 @@ function createLocaleAsset(draft) {
   const directory = normalizeLocaleDirectory(draft.directory, locale);
   const fileName = safeLocaleFileName(draft.fileName);
   const localePath = `${directory}/${fileName}`;
+  requireProjectScope(localePath, "Resources/Locale");
   const file = safeProjectPath(activeIndex.projectRoot, localePath);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   if (fs.existsSync(file)) {
@@ -1214,7 +1278,9 @@ function sortTree(node) {
 }
 
 function createOptions() {
-  ensureIndex();
+  if (!activeIndex) {
+    return { types: ["entity"], files: [], defaultFile: "Resources/Prototypes/_PrototypeStudio/entity.yml" };
+  }
   const types = new Set(Object.keys(activeIndex.prototypeKinds));
   const fileSet = new Set();
   for (const prototype of Object.values(activeIndex.prototypes)) {
@@ -1229,28 +1295,31 @@ function createOptions() {
 }
 
 function validateDraft(draft) {
-  ensureIndex();
   const normalized = normalizeDraft(draft);
+  if (normalized.destination === "project") ensureIndex();
   const issues = [];
   if (!normalized.type) issues.push({ level: "error", field: "type", message: "type is required" });
   if (!normalized.id) issues.push({ level: "error", field: "id", message: "id is required" });
-  if (normalized.id && activeIndex.prototypes[`${normalized.type}:${normalized.id}`]) {
+  if (normalized.destination === "project" && normalized.id && activeIndex.prototypes[`${normalized.type}:${normalized.id}`]) {
     issues.push({ level: "error", field: "id", message: `prototype ${normalized.type}:${normalized.id} already exists` });
   }
-  if (!normalized.filePath.startsWith("Resources/Prototypes/")) {
+  if (normalized.destination === "project" && !normalized.filePath.startsWith("Resources/Prototypes/")) {
     issues.push({ level: "error", field: "filePath", message: "file must be inside Resources/Prototypes" });
+  }
+  if (normalized.destination === "external" && !path.isAbsolute(normalized.filePath)) {
+    issues.push({ level: "error", field: "filePath", message: "choose an absolute path outside the project" });
   }
   if (!normalized.filePath.endsWith(".yml") && !normalized.filePath.endsWith(".yaml")) {
     issues.push({ level: "error", field: "filePath", message: "file must be .yml or .yaml" });
   }
-  if (normalized.mode === "append" && !createOptions().files.includes(normalized.filePath)) {
+  if (normalized.destination === "project" && normalized.mode === "append" && !createOptions().files.includes(normalized.filePath)) {
     issues.push({ level: "warning", field: "filePath", message: "selected file is not in the current index; it will be created if missing" });
   }
-  if (normalized.parent && !findPrototypeKey(normalized.parent, normalized.type)) {
-    issues.push({ level: "warning", field: "parent", message: `parent '${normalized.parent}' was not found` });
+  if (normalized.destination === "project" && normalized.parent && !findPrototypeKey(normalized.parent, normalized.type)) {
+    issues.push({ level: "warning", field: "parent", message: `parent '${normalized.parent}' was not found in the loaded project cache` });
   }
-  if (normalized.sprite && !findRsi(normalized.sprite, normalized.spriteState)) {
-    issues.push({ level: "warning", field: "sprite", message: `sprite '${normalized.sprite}' was not found` });
+  if (normalized.destination === "project" && normalized.sprite && !findRsi(normalized.sprite, normalized.spriteState)) {
+    issues.push({ level: "warning", field: "sprite", message: `sprite '${normalized.sprite}' was not found in the loaded project cache` });
   }
 
   return {
@@ -1267,6 +1336,11 @@ function createFromDraft(draft) {
     throw new Error(validation.issues.find((issue) => issue.level === "error")?.message ?? "draft is invalid");
   }
   const normalized = normalizeDraft(draft);
+  const key = `${normalized.type}:${normalized.id}`;
+  if (normalized.destination === "external") {
+    const saved = createExternalPrototype({ filePath: normalized.filePath, yaml: validation.yaml, mode: normalized.mode });
+    return { key, filePath: saved.filePath, yaml: validation.yaml, inProject: false };
+  }
   createPrototype({
     projectRoot: activeIndex.projectRoot,
     type: normalized.type,
@@ -1274,7 +1348,7 @@ function createFromDraft(draft) {
     filePath: normalized.filePath,
     yaml: validation.yaml,
   });
-  return { key: `${normalized.type}:${normalized.id}`, filePath: normalized.filePath, yaml: validation.yaml };
+  return { key, filePath: normalized.filePath, yaml: validation.yaml, inProject: true };
 }
 
 function normalizeDraft(draft) {
@@ -1282,6 +1356,7 @@ function normalizeDraft(draft) {
   const filePath = String(draft.filePath || `Resources/Prototypes/_PrototypeStudio/${type || "entity"}.yml`).replace(/\\/g, "/").trim();
   return {
     mode: draft.mode === "new" ? "new" : "append",
+    destination: draft.destination === "external" ? "external" : "project",
     type,
     id: String(draft.id ?? "").trim(),
     name: String(draft.name ?? "").trim(),
@@ -1446,7 +1521,7 @@ function formatRsiAsset(rsi) {
     previewDataUrl: readRsiStateDataUrl(rsi.dirPath, state.name),
   }));
   const knownFiles = new Set(states.map((state) => `${state.name}.png`.toLowerCase()));
-  const issues = [];
+  const issues = [...(rsi._issues ?? [])];
   for (const state of states) {
     if (!state.previewDataUrl) {
       issues.push({ level: "warning", field: "state", message: `PNG for state '${state.name}' is missing`, rsiPath: rsi.path, stateName: state.name });
@@ -1467,9 +1542,38 @@ function formatRsiAsset(rsi) {
   };
 }
 
+function renameRsiStatePngs(dirPath, previousStates, nextStates) {
+  const plan = previousStates
+    .map((state, index) => ({ from: state?.name, to: nextStates[index]?.name }))
+    .filter(({ from, to }) => from && to && from !== to && fs.existsSync(path.join(dirPath, `${from}.png`)));
+  const sources = new Set(plan.map(({ from }) => `${from}.png`.toLowerCase()));
+  for (const { to } of plan) {
+    const target = `${to}.png`;
+    if (fs.existsSync(path.join(dirPath, target)) && !sources.has(target.toLowerCase())) {
+      throw new Error(`Cannot rename RSI state: '${target}' already exists.`);
+    }
+  }
+  const temporary = plan.map((entry, index) => ({ ...entry, temp: path.join(dirPath, `.studio-rename-${process.pid}-${Date.now()}-${index}.png`) }));
+  for (const entry of temporary) fs.renameSync(path.join(dirPath, `${entry.from}.png`), entry.temp);
+  try {
+    for (const entry of temporary) fs.renameSync(entry.temp, path.join(dirPath, `${entry.to}.png`));
+  } catch (error) {
+    for (const entry of temporary) {
+      if (fs.existsSync(entry.temp)) fs.renameSync(entry.temp, path.join(dirPath, `${entry.from}.png`));
+    }
+    throw error;
+  }
+}
+
+function requirePositiveInteger(value, field) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 1) throw new Error(`RSI ${field} must be a positive integer.`);
+  return number;
+}
+
 function sanitizeRsiMeta(meta) {
-  const sizeX = Math.max(1, Number(meta?.size?.x || 32));
-  const sizeY = Math.max(1, Number(meta?.size?.y || 32));
+  const sizeX = requirePositiveInteger(meta?.size?.x, "size.x");
+  const sizeY = requirePositiveInteger(meta?.size?.y, "size.y");
   const states = [];
   const seen = new Set();
   for (const state of meta?.states ?? []) {
@@ -1477,7 +1581,11 @@ function sanitizeRsiMeta(meta) {
     if (!name || seen.has(name)) continue;
     seen.add(name);
     const next = { name };
-    if (state?.directions && Number(state.directions) > 1) next.directions = Number(state.directions);
+    if (state?.directions != null) {
+      const directions = Number(state.directions);
+      if (![1, 4, 8].includes(directions)) throw new Error(`State '${name}' directions must be 1, 4, or 8.`);
+      if (directions > 1) next.directions = directions;
+    }
     if (state?.delays) next.delays = state.delays;
     if (state?.flags) next.flags = state.flags;
     states.push(next);
@@ -1550,8 +1658,17 @@ function safeLocaleFileName(value) {
 function safeProjectPath(projectRoot, relPath) {
   const root = path.resolve(projectRoot);
   const full = path.resolve(root, relPath);
-  if (!full.startsWith(root)) throw new Error("Path escapes project root.");
+  const traversal = path.relative(root, full);
+  if (traversal === ".." || traversal.startsWith(`..${path.sep}`) || path.isAbsolute(traversal)) {
+    throw new Error("Path escapes project root.");
+  }
   return full;
+}
+
+function requireProjectScope(relPath, baseRel) {
+  if (!isUnderProjectFolder(relPath, baseRel)) {
+    throw new Error(`Path must stay inside ${baseRel}.`);
+  }
 }
 
 function readRsiStateDataUrl(dirPath, state) {

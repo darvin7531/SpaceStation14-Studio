@@ -5,7 +5,7 @@ const zlib = require("zlib");
 const YAML = require("yaml");
 
 const TEXT_EXTENSIONS = new Set([".yml", ".yaml", ".cs", ".json", ".ftl"]);
-const CACHE_VERSION = 10;
+const CACHE_VERSION = 11;
 
 const RE_REGISTER_COMPONENT = /\[RegisterComponent\b/;
 const RE_PROTOTYPE_ATTR = /\[(?:Prototype|PrototypeRecord)(?:\(([^\)]*)\))?\]/;
@@ -29,7 +29,7 @@ function scanProject(projectRoot, onProgress = null, options = {}) {
   const components = {};
   const prototypeKinds = {};
   onProgress?.({ stage: "cache", message: "Checking project file fingerprint", processed: 0 });
-  const files = collectProjectFiles(root, onProgress);
+  const files = collectProjectFiles(root, onProgress, { prototypeRoot, textureRoot, localeRoot });
   const cacheKey = projectCacheKey(root, files);
   const cachePath = options.cacheDir ? path.join(options.cacheDir, `${cacheKey}.json.gz`) : null;
   const cached = cachePath ? readScanCache(cachePath, root) : null;
@@ -126,50 +126,70 @@ function scanCSharp(root, file, components, prototypeKinds) {
 
 function scanYaml(root, file, prototypes) {
   const text = readText(file);
-  let parsed;
+  let document;
   try {
-    parsed = YAML.parse(text, { logLevel: "silent" });
+    document = YAML.parseDocument(text, { logLevel: "silent" });
   } catch {
-    parsed = null;
-  }
-
-  if (!Array.isArray(parsed)) {
     return;
   }
+  if (document.errors.length > 0 || !Array.isArray(document.contents?.items)) return;
+
+  const parsed = document.toJS({ maxAliasCount: -1 });
+  if (!Array.isArray(parsed)) return;
 
   const lines = text.split(RE_LINE_SPLIT);
-  const starts = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (RE_YAML_ENTRY_START.test(lines[i])) {
-      starts.push(i + 1);
-    }
-  }
-
+  const starts = document.contents.items.map((node) => lineNumberAtOffset(text, node.range?.[0] ?? 0));
   for (let i = 0; i < parsed.length; i++) {
     const item = parsed[i];
-    if (!item || typeof item !== "object" || item.type == null || item.id == null) {
-      continue;
-    }
+    if (!item || typeof item !== "object" || item.type == null || item.id == null) continue;
     const key = `${String(item.type)}:${String(item.id)}`;
+    const line = starts[i] ?? 1;
+    const nextLine = starts[i + 1] ?? lines.length + 1;
     prototypes[key] = {
       ...item,
       _key: key,
       _filePath: relative(root, file),
-      _line: starts[i] || 1,
-      _rawYaml: blockText(lines, starts[i] || 1),
+      _line: line,
+      _rawYaml: lines.slice(line - 1, nextLine - 1).join("\n").trimEnd(),
     };
   }
 }
 
+function lineNumberAtOffset(text, offset) {
+  return text.slice(0, Math.max(0, offset)).split(RE_LINE_SPLIT).length;
+}
+
 function scanRsi(root, metaFile, rsis) {
   try {
-    const meta = JSON.parse(readText(metaFile));
+    const rawMeta = JSON.parse(readText(metaFile));
+    const { meta, issues } = normalizeRsiMeta(rawMeta);
     const dir = path.dirname(metaFile);
     const rel = relative(root, dir);
-    rsis[rel] = { path: rel, meta, images: {}, dirPath: dir };
+    rsis[rel] = { path: rel, meta, images: {}, dirPath: dir, _issues: issues };
   } catch {
     // Broken RSI should not block the editor from opening the project.
   }
+}
+
+function normalizeRsiMeta(rawMeta) {
+  const issues = [];
+  const source = rawMeta && typeof rawMeta === "object" ? rawMeta : {};
+  if (!Array.isArray(source.states)) issues.push({ level: "error", field: "meta.states", message: "meta.json field 'states' must be an array" });
+  const states = Array.isArray(source.states)
+    ? source.states.filter((state) => state && typeof state === "object" && typeof state.name === "string" && state.name.trim())
+    : [];
+  if (Array.isArray(source.states) && states.length !== source.states.length) {
+    issues.push({ level: "warning", field: "meta.states", message: "Invalid RSI state entries were ignored" });
+  }
+  const x = Number(source.size?.x);
+  const y = Number(source.size?.y);
+  if (!Number.isFinite(x) || x < 1 || !Number.isFinite(y) || y < 1) {
+    issues.push({ level: "error", field: "meta.size", message: "meta.json size.x and size.y must be positive numbers" });
+  }
+  return {
+    meta: { ...source, size: { x: Number.isFinite(x) && x > 0 ? x : 32, y: Number.isFinite(y) && y > 0 ? y : 32 }, states },
+    issues,
+  };
 }
 
 function scanLocale(root, file, locales) {
@@ -200,13 +220,16 @@ function readPrototypeBlock({ projectRoot, filePath, line }) {
 }
 
 function savePrototypeBlock({ projectRoot, filePath, line, text }) {
-  if (!String(text || "").trimStart().startsWith("- type:")) {
-    throw new Error("Prototype block must start with '- type:'.");
+  const replacementText = String(text || "").trim();
+  const document = YAML.parseDocument(replacementText, { logLevel: "silent" });
+  const entries = document.toJS({ maxAliasCount: -1 });
+  if (document.errors.length > 0 || !Array.isArray(entries) || entries.length !== 1 || !entries[0]?.type || !entries[0]?.id) {
+    throw new Error("Prototype block must contain one valid YAML entry with both 'type' and 'id'.");
   }
   const file = safeProjectPath(projectRoot, filePath);
   const original = readText(file).split(RE_LINE_SPLIT);
   const [start, end] = blockRange(original, line);
-  const replacement = String(text).replace(/\r\n?/g, "\n").replace(/\n$/, "").split("\n");
+  const replacement = replacementText.split(RE_LINE_SPLIT);
   const updated = [...original.slice(0, start), ...replacement, ...original.slice(end)];
   fs.writeFileSync(file, `${updated.join("\n").replace(/\n+$/, "")}\n`, "utf8");
   return readPrototypeBlock({ projectRoot, filePath, line: start + 1 });
@@ -221,18 +244,42 @@ function createPrototype({ projectRoot, type, id, parent, name, filePath, yaml }
     throw new Error("filePath must be inside Resources/Prototypes.");
   }
   const file = safeProjectPath(projectRoot, rel);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const existing = fs.existsSync(file) ? readText(file) : "";
-  if (new RegExp(`^\\s*id:\\s*${escapeRegExp(id)}\\s*$`, "m").test(existing)) {
-    throw new Error(`Prototype id '${id}' already exists in this file.`);
+  const block = yaml ? String(yaml).trimEnd() : createPrototypeYaml(type, id, parent, name);
+  const result = appendPrototypeBlock(file, block, id);
+  return { filePath: relative(projectRoot, file), ...result };
+}
+
+function createExternalPrototype({ filePath, yaml, mode = "append" }) {
+  const file = path.resolve(String(filePath || ""));
+  if (!file || ![".yml", ".yaml"].includes(path.extname(file).toLowerCase())) {
+    throw new Error("External prototype file must end with .yml or .yaml.");
   }
-  const lines = ["", `- type: ${type}`, `  id: ${id}`];
+  const block = String(yaml || "").trimEnd();
+  if (!block.startsWith("- type:")) {
+    throw new Error("Prototype block must start with '- type:'.");
+  }
+  if (mode === "new" && fs.existsSync(file)) {
+    throw new Error(`External file already exists: ${file}`);
+  }
+  return { filePath: file, ...appendPrototypeBlock(file, block) };
+}
+
+function createPrototypeYaml(type, id, parent, name) {
+  const lines = [`- type: ${type}`, `  id: ${id}`];
   if (parent) lines.push(`  parent: ${parent}`);
   if (name) lines.push(`  name: ${name}`);
   if (type === "entity") lines.push("  components:", "  - type: Sprite", "    sprite: PLACEHOLDER.rsi");
-  const block = yaml ? String(yaml).trimEnd() : lines.slice(1).join("\n");
+  return lines.join("\n");
+}
+
+function appendPrototypeBlock(file, block, id = null) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const existing = fs.existsSync(file) ? readText(file) : "";
+  if (id && new RegExp(`^\\s*id:\\s*${escapeRegExp(id)}\\s*$`, "m").test(existing)) {
+    throw new Error(`Prototype id '${id}' already exists in this file.`);
+  }
   fs.appendFileSync(file, `${existing && !existing.endsWith("\n") ? "\n" : ""}${existing ? "\n" : ""}${block}\n`, "utf8");
-  return { filePath: relative(projectRoot, file), line: Math.max(1, existing.split(RE_LINE_SPLIT).length), text: block };
+  return { line: Math.max(1, existing.split(RE_LINE_SPLIT).length), text: block };
 }
 
 function validate(prototypes, rsis) {
@@ -259,24 +306,27 @@ function validate(prototypes, rsis) {
   return issues.slice(0, 500);
 }
 
-function collectProjectFiles(root, onProgress = null) {
+function collectProjectFiles(root, onProgress = null, scopes) {
   const files = [];
   let processed = 0;
-  for (const file of walk(root)) {
+  for (const file of indexedProjectWalk(root, scopes)) {
+    if (!isIndexedProjectFile(file, scopes)) continue;
     processed += 1;
     if (processed % 1000 === 0) {
-      onProgress?.({ stage: "cache", message: `Fingerprinting ${processed} files`, processed });
+      onProgress?.({ stage: "cache", message: `Fingerprinting ${processed} indexed files`, processed });
     }
-
     const stat = fs.statSync(file);
-    files.push({
-      path: file,
-      rel: relative(root, file),
-      size: stat.size,
-      mtimeMs: Math.trunc(stat.mtimeMs),
-    });
+    files.push({ path: file, rel: relative(root, file), size: stat.size, mtimeMs: Math.trunc(stat.mtimeMs) });
   }
   return files;
+}
+
+function isIndexedProjectFile(file, { prototypeRoot, textureRoot, localeRoot }) {
+  const extension = path.extname(file).toLowerCase();
+  if (extension === ".cs") return true;
+  if ((extension === ".yml" || extension === ".yaml") && file.startsWith(prototypeRoot)) return true;
+  if (extension === ".ftl" && file.startsWith(localeRoot)) return true;
+  return path.basename(file) === "meta.json" && path.dirname(file).endsWith(".rsi") && file.startsWith(textureRoot);
 }
 
 function projectCacheKey(root, files) {
@@ -336,14 +386,22 @@ function latestManifestPath(cacheDir, root) {
   return path.join(cacheDir, `latest-${hash}.json`);
 }
 
-function* walk(root) {
+function* indexedProjectWalk(root, scopes) {
+  // Resource trees are walked directly; the general source walk skips Resources entirely.
+  for (const resourceRoot of [scopes.prototypeRoot, scopes.textureRoot, scopes.localeRoot]) {
+    if (fs.existsSync(resourceRoot)) yield* walk(resourceRoot);
+  }
+  yield* walk(root, new Set(["Resources", ".git", "bin", "obj", "node_modules", "dist", "build", "release", "artifacts", "packages", ".cache", "cache", "vendor"]));
+}
+
+function* walk(root, skippedDirectories = new Set([".git", "bin", "obj", "node_modules"])) {
   const stack = [root];
   while (stack.length) {
     const current = stack.pop();
     for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
       const full = path.join(current, entry.name);
       if (entry.isDirectory()) {
-        if (entry.name === ".git" || entry.name === "bin" || entry.name === "obj" || entry.name === "node_modules") {
+        if (skippedDirectories.has(entry.name)) {
           continue;
         }
         stack.push(full);
@@ -440,9 +498,9 @@ function blockText(lines, line) {
 
 function blockRange(lines, line) {
   let start = Math.min(Math.max(0, Number(line || 1) - 1), Math.max(0, lines.length - 1));
-  while (start > 0 && !lines[start].startsWith("- type:")) start--;
+  while (start > 0 && !/^\-\s+/.test(lines[start])) start--;
   let end = start + 1;
-  while (end < lines.length && !lines[end].startsWith("- type:")) end++;
+  while (end < lines.length && !/^\-\s+/.test(lines[end])) end++;
   return [start, end];
 }
 
@@ -458,7 +516,8 @@ function normalizeSpritePath(sprite) {
 function safeProjectPath(projectRoot, relPath) {
   const root = path.resolve(projectRoot);
   const full = path.resolve(root, relPath);
-  if (!full.startsWith(root)) {
+  const traversal = path.relative(root, full);
+  if (traversal === ".." || traversal.startsWith(`..${path.sep}`) || path.isAbsolute(traversal)) {
     throw new Error("Path escapes project root.");
   }
   return full;
@@ -469,14 +528,45 @@ function relative(root, file) {
 }
 
 function readText(file) {
-  return fs.readFileSync(file, "utf8");
+  return fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "");
 }
 
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-module.exports = { scanProject, readLatestProjectCache, readPrototypeBlock, savePrototypeBlock, createPrototype };
+function createExternalRsi(dirPath, draft = {}) {
+  const fullDir = path.resolve(String(dirPath || ""));
+  if (!fullDir || !fullDir.toLowerCase().endsWith(".rsi")) throw new Error("External RSI target must be an .rsi folder.");
+  if (fs.existsSync(fullDir)) throw new Error(`RSI already exists: ${fullDir}`);
+  const sizeX = Number(draft.sizeX ?? 32);
+  const sizeY = Number(draft.sizeY ?? 32);
+  if (!Number.isSafeInteger(sizeX) || sizeX < 1 || !Number.isSafeInteger(sizeY) || sizeY < 1) throw new Error("RSI size must use positive integers.");
+  const meta = {
+    version: 1,
+    license: String(draft.license || "CC-BY-SA-3.0"),
+    copyright: String(draft.copyright || ""),
+    size: { x: sizeX, y: sizeY },
+    states: [{ name: "icon" }],
+  };
+  fs.mkdirSync(fullDir, { recursive: true });
+  fs.writeFileSync(path.join(fullDir, "meta.json"), `${JSON.stringify(meta, null, 2)}\n`, "utf8");
+  return { dirPath: fullDir, meta };
+}
+
+function createExternalLocale(filePath, draft = {}) {
+  const fullPath = path.resolve(String(filePath || ""));
+  if (!fullPath.toLowerCase().endsWith(".ftl")) throw new Error("External locale target must be an .ftl file.");
+  if (fs.existsSync(fullPath)) throw new Error(`Locale file already exists: ${fullPath}`);
+  const starterKey = String(draft.starterKey ?? "").trim();
+  const starterValue = String(draft.starterValue ?? "").trim();
+  const text = starterKey ? `${starterKey} = ${starterValue}\n` : "";
+  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+  fs.writeFileSync(fullPath, text, "utf8");
+  return { filePath: fullPath, locale: String(draft.locale || ""), text };
+}
+
+module.exports = { scanProject, readLatestProjectCache, readPrototypeBlock, savePrototypeBlock, createPrototype, createExternalPrototype, createExternalRsi, createExternalLocale };
 
 function countLocaleEntries(text) {
   return String(text || "")

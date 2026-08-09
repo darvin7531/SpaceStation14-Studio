@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useProjectStore } from '../store/projectStore';
 import MonacoEditor from '@monaco-editor/react';
-import { Save, AlertCircle, Languages } from 'lucide-react';
-import { parseDocument } from 'yaml';
+import { Save, AlertCircle, AlertTriangle, Languages } from 'lucide-react';
+import { parseYamlDiagnostics } from '../lib/yamlDiagnostics';
 import { useI18n } from '../i18n';
 import { useEditorSettings } from '../editorSettings';
 import { useLocalizationSettings } from '../localizationSettings';
@@ -22,7 +22,7 @@ export default function Editor() {
   const setEditorJumpQuery = useProjectStore((state) => state.setEditorJumpQuery);
   const updatePrototypeDraftById = useProjectStore((state) => state.updatePrototypeDraftById);
   const updatePrototypeDetailById = useProjectStore((state) => state.updatePrototypeDetailById);
-  const updateActivePrototypeSaved = useProjectStore((state) => state.updateActivePrototypeSaved);
+  const updatePrototypeSavedById = useProjectStore((state) => state.updatePrototypeSavedById);
   const editorRef = useRef<any>(null);
   const draftCacheRef = useRef<Record<string, string>>({});
   const validatedCacheRef = useRef<Record<string, string>>({});
@@ -33,6 +33,7 @@ export default function Editor() {
   const draftSyncTimeoutRef = useRef<number | null>(null);
   const validationTimeoutRef = useRef<number | null>(null);
   const localizationTimeoutRef = useRef<number | null>(null);
+  const localizationRequestRef = useRef(0);
   const localizationDiagnosticsRef = useRef<Array<PrototypeLocalizationDiagnostic & { range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number } }>>([]);
   const activePrototypeTab = useMemo(
     () => {
@@ -51,6 +52,8 @@ export default function Editor() {
   const [selectedLocaleDiagnostic, setSelectedLocaleDiagnostic] = useState<PrototypeLocalizationDiagnostic | null>(null);
   const [isApplyingLocaleFix, setIsApplyingLocaleFix] = useState(false);
   const yamlContent = editorText;
+  const yamlDiagnostics = useMemo(() => parseYamlDiagnostics(yamlContent), [yamlContent]);
+  const hasYamlSyntaxErrors = yamlDiagnostics.length > 0;
   const localizationSourceText = settings.liveValidation
     ? editorText
     : (detail?.prototype?._rawYaml ?? activePrototypeTab?.rawYaml ?? '');
@@ -72,10 +75,10 @@ export default function Editor() {
         localizationTimeoutRef.current = null;
       }
       const cached = draftCacheRef.current[previousTabId];
-      if (cached != null) {
-        updatePrototypeDraftById(previousTabId, cached);
-      }
-      validationRequestRef.current[previousTabId] = 0;
+      if (cached != null) updatePrototypeDraftById(previousTabId, cached);
+      delete draftCacheRef.current[previousTabId];
+      delete validatedCacheRef.current[previousTabId];
+      delete validationRequestRef.current[previousTabId];
       syncedModelTabIdRef.current = null;
     }
 
@@ -87,7 +90,7 @@ export default function Editor() {
       return;
     }
 
-    const nextText = draftCacheRef.current[activePrototypeTab.id] ?? activePrototypeTab.rawYaml ?? '';
+    const nextText = activePrototypeTab.rawYaml ?? '';
     if (validatedCacheRef.current[activePrototypeTab.id] == null) {
       validatedCacheRef.current[activePrototypeTab.id] = detail?.prototype?._rawYaml ?? activePrototypeTab.rawYaml ?? '';
     }
@@ -120,7 +123,7 @@ export default function Editor() {
     if (syncedModelTabIdRef.current === activePrototypeTab.id) return;
     const model = editorRef.current.getModel?.();
     if (!model) return;
-    const nextText = draftCacheRef.current[activePrototypeTab.id] ?? activePrototypeTab.rawYaml ?? '';
+    const nextText = activePrototypeTab.rawYaml ?? '';
     if (model.getValue() !== nextText) {
       model.setValue(nextText);
     }
@@ -134,16 +137,29 @@ export default function Editor() {
   }, [activePrototypeTab?.id, activePrototypeTab?.prototypeKey, detail?.prototype?._rawYaml, editorText, settings.liveValidation, settings.validationDelay]);
 
   useEffect(() => {
-    if (!activePrototypeTab) return;
+    if (!activePrototypeTab) {
+      localizationRequestRef.current += 1;
+      setLocalizationDiagnostics([]);
+      return;
+    }
     if (localizationTimeoutRef.current != null) window.clearTimeout(localizationTimeoutRef.current);
+    const tabId = activePrototypeTab.id;
+    const requestId = ++localizationRequestRef.current;
     localizationTimeoutRef.current = window.setTimeout(async () => {
-      const analysis = await window.prototypeStudio.analyzePrototypeLocalization({
-        key: activePrototypeTab.prototypeKey,
-        text: localizationSourceText,
-        requiredLocales: localizationSettings.requiredLocales,
-      });
-      setLocalizationDiagnostics(analysis?.diagnostics ?? []);
-      localizationTimeoutRef.current = null;
+      try {
+        const analysis = await window.prototypeStudio.analyzePrototypeLocalization({
+          key: activePrototypeTab.prototypeKey,
+          text: localizationSourceText,
+          requiredLocales: localizationSettings.requiredLocales,
+        });
+        if (localizationRequestRef.current === requestId && useProjectStore.getState().activeTabId === tabId) {
+          setLocalizationDiagnostics(analysis?.diagnostics ?? []);
+        }
+      } catch (error) {
+        if (localizationRequestRef.current === requestId) console.warn('Localization analysis failed', error);
+      } finally {
+        if (localizationRequestRef.current === requestId) localizationTimeoutRef.current = null;
+      }
     }, 220);
   }, [
     activePrototypeTab?.id,
@@ -190,11 +206,15 @@ export default function Editor() {
   }
 
   const handleSave = async () => {
-    if (!projectRoot) return;
+    if (!projectRoot || !activePrototypeTab) return;
+    const savingTabId = activePrototypeTab.id;
+    const savingText = yamlContent;
     try {
-      const doc = parseDocument(yamlContent);
-      if (doc.errors.length > 0) {
-        alert(t('editor.invalidYaml'));
+      if (hasYamlSyntaxErrors) {
+        const details = yamlDiagnostics
+          .map((diagnostic) => `Строка ${diagnostic.line}, столбец ${diagnostic.column}: ${diagnostic.message}\nЧто сделать: ${diagnostic.hint}`)
+          .join('\n\n');
+        alert(`Сохранение отменено: YAML содержит синтаксические ошибки.\n\n${details}`);
         return;
       }
 
@@ -202,19 +222,21 @@ export default function Editor() {
         projectRoot,
         filePath: proto._filePath,
         line: proto._line,
-        text: yamlContent,
+        text: savingText,
       });
 
-      const refreshed = await window.prototypeStudio.getPrototype(activePrototypeTab!.prototypeKey);
-      validationRequestRef.current[activePrototypeTab!.id] = 0;
-      validatedCacheRef.current[activePrototypeTab!.id] = saved.text;
-      updateActivePrototypeSaved(refreshed, saved.text);
+      const refreshed = await window.prototypeStudio.getPrototype(saved.key);
+      validationRequestRef.current[savingTabId] = 0;
+      validatedCacheRef.current[savingTabId] = saved.text;
+      updatePrototypeSavedById(savingTabId, refreshed, saved.text, saved.key);
       const analysis = await window.prototypeStudio.analyzePrototypeLocalization({
-        key: activePrototypeTab!.prototypeKey,
+        key: saved.key,
         text: saved.text,
         requiredLocales: localizationSettings.requiredLocales,
       });
-      setLocalizationDiagnostics(analysis?.diagnostics ?? []);
+      if (useProjectStore.getState().activeTabId === savingTabId) {
+        setLocalizationDiagnostics(analysis?.diagnostics ?? []);
+      }
     } catch (error) {
       console.error("Failed to save", error);
       alert(error instanceof Error ? error.message : t('editor.saveFailed'));
@@ -342,7 +364,8 @@ export default function Editor() {
         </div>
         <button
           onClick={handleSave}
-          disabled={!isDirty}
+          disabled={!isDirty || hasYamlSyntaxErrors}
+          title={hasYamlSyntaxErrors ? 'Исправьте синтаксические ошибки YAML перед сохранением.' : undefined}
           className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
             isDirty ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-neutral-800 text-neutral-500 cursor-not-allowed'
           }`}
@@ -377,6 +400,23 @@ export default function Editor() {
         )}
 
         {editorTab === 'raw' && (
+          <>
+            {hasYamlSyntaxErrors && (
+              <div className="absolute left-4 right-4 top-4 z-10 max-h-44 overflow-auto rounded-lg border border-red-500/50 bg-red-950/95 p-3 shadow-xl custom-scrollbar">
+                <div className="flex items-center gap-2 text-sm font-semibold text-red-200">
+                  <AlertTriangle size={16} />
+                  YAML содержит {yamlDiagnostics.length} синтаксическ{yamlDiagnostics.length === 1 ? 'ую ошибку' : 'ие ошибки'} — сохранение заблокировано.
+                </div>
+                <div className="mt-2 space-y-2">
+                  {yamlDiagnostics.map((diagnostic, index) => (
+                    <div key={`${diagnostic.line}:${diagnostic.column}:${index}`} className="rounded border border-red-900 bg-black/20 p-2 text-xs text-red-100">
+                      <div><strong>Строка {diagnostic.line}, столбец {diagnostic.column}:</strong> {diagnostic.message}</div>
+                      <div className="mt-1 text-red-200/90"><strong>Как исправить:</strong> {diagnostic.hint}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           <MonacoEditor
             path={editorModelPath}
             height="100%"
@@ -417,7 +457,6 @@ export default function Editor() {
               if (!activePrototypeTab) return;
               draftCacheRef.current[activePrototypeTab.id] = value;
               scheduleDraftSync(activePrototypeTab.id, value);
-              scheduleValidation(activePrototypeTab.id, activePrototypeTab.prototypeKey, value);
             }}
             beforeMount={registerCompletion}
             options={{
@@ -431,6 +470,7 @@ export default function Editor() {
               suggest: { showWords: false, localityBonus: true },
             }}
           />
+          </>
         )}
 
       </div>

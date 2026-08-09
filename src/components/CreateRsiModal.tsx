@@ -21,6 +21,8 @@ const defaultDraft: CreateRsiDraft = {
 export default function CreateRsiModal({ open, onClose, onCreated }: Props) {
   const { t } = useI18n();
   const [draft, setDraft] = useState<CreateRsiDraft>(defaultDraft);
+  const [destination, setDestination] = useState<'project' | 'external'>('project');
+  const [externalPath, setExternalPath] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
   useEffect(() => {
@@ -37,6 +39,11 @@ export default function CreateRsiModal({ open, onClose, onCreated }: Props) {
   const update = (patch: Partial<CreateRsiDraft>) => setDraft((current) => ({ ...current, ...patch }));
 
   const handleBrowseFolder = async () => {
+    if (destination === 'external') {
+      const selected = await window.prototypeStudio.pickExternalRsiFolder({ currentPath: externalPath });
+      if (selected) setExternalPath(selected);
+      return;
+    }
     const selected = await window.prototypeStudio.pickProjectFolder({ scope: 'textures', currentPath: draft.directory });
     if (selected) update({ directory: selected });
   };
@@ -44,9 +51,13 @@ export default function CreateRsiModal({ open, onClose, onCreated }: Props) {
   const handleCreate = async () => {
     setIsCreating(true);
     try {
-      const detail = await window.prototypeStudio.createRsiAsset(draft);
-      if (!detail) return;
-      await onCreated(detail.path);
+      if (destination === 'external') {
+        await window.prototypeStudio.createExternalRsi({ path: externalPath, draft });
+      } else {
+        const detail = await window.prototypeStudio.createRsiAsset(draft);
+        if (!detail) return;
+        await onCreated(detail.path);
+      }
       setDraft(defaultDraft);
       onClose();
     } finally {
@@ -68,9 +79,13 @@ export default function CreateRsiModal({ open, onClose, onCreated }: Props) {
         </div>
 
         <div className="grid gap-4 p-5">
-          <label className="wizard-label">{t('rsi.directory')}
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setDestination('project')} className={`rounded-md px-3 py-2 text-sm ${destination === 'project' ? 'bg-emerald-600 text-white' : 'bg-neutral-800 text-neutral-300'}`}>{t('wizard.destinationProject')}</button>
+            <button type="button" onClick={() => setDestination('external')} className={`rounded-md px-3 py-2 text-sm ${destination === 'external' ? 'bg-emerald-600 text-white' : 'bg-neutral-800 text-neutral-300'}`}>{t('wizard.destinationExternal')}</button>
+          </div>
+          <label className="wizard-label">{destination === 'external' ? t('wizard.destinationExternal') : t('rsi.directory')}
             <div className="grid grid-cols-[1fr_auto] gap-2">
-              <input value={draft.directory} onChange={(event) => update({ directory: event.target.value })} className="wizard-input" />
+              <input value={destination === 'external' ? externalPath : draft.directory} onChange={(event) => destination === 'external' ? setExternalPath(event.target.value) : update({ directory: event.target.value })} className="wizard-input" />
               <button type="button" onClick={() => void handleBrowseFolder()} className="inline-flex items-center gap-2 rounded-md border border-neutral-800 bg-neutral-900 px-3 text-xs text-neutral-300 hover:bg-neutral-800">
                 <FolderOpen size={14} />
                 {t('wizard.browse')}

@@ -11,7 +11,7 @@ export default function LocaleEditor() {
   const activeTabId = useProjectStore((state) => state.activeTabId);
   const tabsById = useProjectStore((state) => state.tabsById);
   const updateActiveLocaleText = useProjectStore((state) => state.updateActiveLocaleText);
-  const updateActiveLocaleSaved = useProjectStore((state) => state.updateActiveLocaleSaved);
+  const updateLocaleSavedById = useProjectStore((state) => state.updateLocaleSavedById);
   const activeLocaleTab = useMemo(() => {
     const tab = activeTabId ? tabsById[activeTabId] : null;
     return tab?.kind === 'locale' ? tab : null;
@@ -27,14 +27,17 @@ export default function LocaleEditor() {
   const isDirty = activeLocaleTab.dirty;
 
   const handleSave = async () => {
+    const savingTabId = activeLocaleTab.id;
+    const savingPath = activeLocaleTab.localePath;
+    const savingText = activeLocaleTab.text;
     setIsSaving(true);
     try {
       const saved = await window.prototypeStudio.saveLocaleAsset({
-        path: activeLocaleTab.localePath,
-        text: activeLocaleTab.text,
+        path: savingPath,
+        text: savingText,
       });
       if (saved) {
-        updateActiveLocaleSaved(saved, saved.text);
+        updateLocaleSavedById(savingTabId, saved, saved.text);
       }
     } catch (error) {
       console.error('Failed to save locale file', error);

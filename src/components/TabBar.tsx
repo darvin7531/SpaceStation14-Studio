@@ -103,11 +103,20 @@ const TabBar = memo(function TabBar({
       document.body.style.cursor = '';
     };
 
+    const onPointerCancel = (event: PointerEvent) => {
+      if (event.pointerId !== drag.pointerId) return;
+      setDrag(null);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerCancel);
     return () => {
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerCancel);
     };
   }, [drag, onReorder, targetIndex]);
 
