@@ -267,7 +267,7 @@ impl PrototypeCatalog {
 }
 
 fn read_bounded(path: &Path) -> Result<Vec<u8>, String> {
-    let mut file = fs::File::open(path).map_err(|error| error.to_string())?;
+    let file = fs::File::open(path).map_err(|error| error.to_string())?;
     let size = file.metadata().map_err(|error| error.to_string())?.len();
     if size > MAX_YAML_BYTES {
         return Err(format!(
@@ -419,7 +419,7 @@ struct Draft {
 
 enum Frame {
     RootSequence,
-    Prototype(Draft),
+    Prototype(Box<Draft>),
     ParentSequence,
     OtherSequence,
     OtherMapping,
@@ -554,7 +554,7 @@ impl MarkedEventReceiver for DeclarationCollector {
             Event::MappingStart(_, tag) => {
                 if matches!(self.frames.last(), Some(Frame::RootSequence)) {
                     self.item_index += 1;
-                    self.frames.push(Frame::Prototype(Draft {
+                    self.frames.push(Frame::Prototype(Box::new(Draft {
                         kind: None,
                         id: None,
                         parents: Vec::new(),
@@ -568,7 +568,7 @@ impl MarkedEventReceiver for DeclarationCollector {
                         line: mark.line(),
                         document_index: self.document_index,
                         item_index: self.item_index,
-                    }));
+                    })));
                 } else {
                     if let Some(Frame::Prototype(draft)) = self.frames.last_mut() {
                         draft.pending_key = None;
@@ -579,7 +579,7 @@ impl MarkedEventReceiver for DeclarationCollector {
             }
             Event::MappingEnd => {
                 if let Some(Frame::Prototype(draft)) = self.frames.pop() {
-                    self.finalize(draft);
+                    self.finalize(*draft);
                 }
             }
             Event::Scalar(value, _, _, tag) => {
