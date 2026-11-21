@@ -1096,7 +1096,9 @@ mod tests {
             )
             .unwrap_err()
             .code,
-            "COMPONENT_FIELD_LAYOUT"
+            // yaml-rust2 rejects duplicate YAML keys before the source-line
+            // guard is reached. Both refusal paths leave the draft untouched.
+            "FIELDS_UNSUPPORTED_YAML"
         );
     }
 
