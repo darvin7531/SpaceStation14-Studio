@@ -11,8 +11,13 @@ test('rejects malformed settings', () => {
   assert.deepEqual(sanitizeEditorSettings({ fontSize: Infinity, tabSize: 55, wordWrap: 'bad', lineNumbers: 'bad', minimap: 'true' }), DEFAULT_EDITOR_SETTINGS);
   assert.equal(sanitizeEditorSettings({ fontSize: 300 }).fontSize, 28);
   assert.equal(sanitizeEditorSettings({ fontSize: -5 }).fontSize, 10);
+  assert.equal(sanitizeEditorSettings({ validationDelay: 0 }).validationDelay, 100);
+  assert.equal(sanitizeEditorSettings({ validationDelay: 5000 }).validationDelay, 1500);
+  assert.equal(sanitizeEditorSettings({ validationDelay: NaN }).validationDelay, 250);
+  assert.equal(sanitizeEditorSettings({ liveValidation: false }).liveValidation, false);
 });
 test('loads supported values', () => {
-  const settings = { fontSize: 18, tabSize: 4, wordWrap: 'off', lineNumbers: 'relative', minimap: true };
+  const settings = { fontSize: 18, tabSize: 4, wordWrap: 'off', lineNumbers: 'relative', minimap: true,
+    liveValidation: false, validationDelay: 550 };
   assert.deepEqual(readEditorSettings({ getItem: k => k === SETTINGS_KEY ? JSON.stringify(settings) : null }), settings);
 });
