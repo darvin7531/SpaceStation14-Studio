@@ -2,7 +2,7 @@
  * Monaco runs entirely from the packaged app. Do not load editor code or workers
  * from a CDN: the editor must work offline in a Tauri webview.
  */
-import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
+import * as monaco from 'monaco-editor';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
 import 'monaco-editor/esm/vs/editor/editor.main.css';
