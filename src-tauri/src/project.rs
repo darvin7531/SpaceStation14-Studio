@@ -1722,29 +1722,42 @@ mod tests {
         fx.write(&format!("{path}/idle.png"), "original data");
         let index = ProjectIndex::open(fx.root_str()).unwrap();
         let original = index.read_resource(path).unwrap();
-        let removed = index.delete_rsi_state(&RsiDeleteRequest {
-            path: path.into(),
-            expected_revision: original.revision,
-            name: "idle".into(),
-        }).unwrap();
+        let removed = index
+            .delete_rsi_state(&RsiDeleteRequest {
+                path: path.into(),
+                expected_revision: original.revision,
+                name: "idle".into(),
+            })
+            .unwrap();
         let archives = index.list_rsi_archives(path).unwrap();
         assert_eq!(archives.archives.len(), 1);
         assert_eq!(archives.archives[0].state, "idle");
-        let restored = index.restore_rsi_state(&RsiRestoreRequest {
-            path: path.into(),
-            expected_revision: removed.revision,
-            archive_id: archives.archives[0].id.clone(),
-        }).unwrap();
+        let restored = index
+            .restore_rsi_state(&RsiRestoreRequest {
+                path: path.into(),
+                expected_revision: removed.revision,
+                archive_id: archives.archives[0].id.clone(),
+            })
+            .unwrap();
         assert!(restored.content.contains(r#""idle""#));
-        assert_eq!(index.read_resource(path).unwrap().revision, restored.revision);
-        assert_eq!(std::fs::read(fx.root.join(path).join("idle.png")).unwrap(), b"original data");
+        assert_eq!(
+            index.read_resource(path).unwrap().revision,
+            restored.revision
+        );
+        assert_eq!(
+            std::fs::read(fx.root.join(path).join("idle.png")).unwrap(),
+            b"original data"
+        );
         assert!(!index.list_rsi_archives(path).unwrap().archives.is_empty());
         assert_eq!(
-            index.restore_rsi_state(&RsiRestoreRequest {
-                path: "Resources/Textures/Unindexed.rsi".into(),
-                expected_revision: restored.revision,
-                archive_id: archives.archives[0].id.clone(),
-            }).unwrap_err().code,
+            index
+                .restore_rsi_state(&RsiRestoreRequest {
+                    path: "Resources/Textures/Unindexed.rsi".into(),
+                    expected_revision: restored.revision,
+                    archive_id: archives.archives[0].id.clone(),
+                })
+                .unwrap_err()
+                .code,
             "RSI_NOT_INDEXED"
         );
     }
