@@ -165,3 +165,13 @@
   border: 1px solid #457d9c; color: #edf8ff; background: #235779;
 }
 .rsi-restore-panel button:disabled { cursor: not-allowed; opacity: .5; }
+
+/* Attribution editor: explicit revision-safe save, no image writes. */
+.rsi-credits-panel { margin: 10px 14px; padding: 10px 12px; border: 1px solid #34526c; border-radius: 8px; background: #101d2b; }
+.rsi-credits-panel summary { display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; font-size: 13px; }
+.rsi-credits-panel p { color: #9fb4c9; font-size: 12px; line-height: 1.5; }
+.rsi-credits-fields { display: grid; gap: 10px; max-width: 700px; margin: 14px 0; }
+.rsi-credits-fields label { display: grid; gap: 6px; color: #c5d7ed; font-size: 12px; }
+.rsi-credits-fields input, .rsi-credits-fields textarea { background: #0c1420; border: 1px solid #405770; border-radius: 6px; color: #e8f2ff; padding: 9px; font: inherit; }
+.rsi-credits-panel button[type="submit"] { color: #fff; border: 1px solid #537daf; background: #27558a; padding: 9px 12px; border-radius: 6px; }
+.rsi-credits-panel button:disabled { opacity: .5; }
