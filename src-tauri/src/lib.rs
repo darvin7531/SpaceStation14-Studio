@@ -379,7 +379,10 @@ async fn create_new_fluent(
     match refreshed {
         Ok(rebuilt) => {
             let mut active = state.0.lock().map_err(|_| internal_lock())?;
-            if active.as_ref().is_some_and(|index| Arc::ptr_eq(index, &original)) {
+            if active
+                .as_ref()
+                .is_some_and(|index| Arc::ptr_eq(index, &original))
+            {
                 overview = Some(rebuilt.overview().clone());
                 *active = Some(Arc::new(rebuilt));
             } else {

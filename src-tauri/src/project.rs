@@ -1033,8 +1033,14 @@ mod tests {
         assert_eq!(index.search("new.ftl", Some("ftl"), 0, 100).total, 0);
         let fresh = index.refresh().unwrap().0;
         assert_eq!(fresh.search("new.ftl", Some("ftl"), 0, 100).total, 1);
-        assert_eq!(fresh.read_resource(&draft.file).unwrap().content, "new-key = New value\n");
-        assert_eq!(fresh.create_new_fluent(&draft).unwrap_err().code, "FTL_FILE_EXISTS");
+        assert_eq!(
+            fresh.read_resource(&draft.file).unwrap().content,
+            "new-key = New value\n"
+        );
+        assert_eq!(
+            fresh.create_new_fluent(&draft).unwrap_err().code,
+            "FTL_FILE_EXISTS"
+        );
     }
 
     #[test]
