@@ -78,3 +78,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .monaco-fallback p { color: #cdd8e7; }
 .monaco-fallback pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .fallback-content { color: #d7e5f5; background: #0a131e; border: 1px solid #304157; padding: 16px; }
+
+.monaco-shell { flex: 1; display: flex; min-width: 0; min-height: 120px; position: relative; }
+.monaco-shell .monaco-container { flex: 1; }
+.monaco-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #92a9c3; background: #0b111a; font-size: 13px; pointer-events: none; }

@@ -14,11 +14,13 @@ interface Props {
 export default function MonacoPreview({ resource, document }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     let dispose: (() => void) | undefined;
     setFailure(null);
+    setLoading(true);
 
     async function mount() {
       try {
@@ -47,6 +49,7 @@ export default function MonacoPreview({ resource, document }: Props) {
             editor.dispose();
             model.dispose();
           };
+          if (!cancelled) setLoading(false);
         } catch (error) {
           model.dispose();
           throw error;
@@ -54,6 +57,7 @@ export default function MonacoPreview({ resource, document }: Props) {
       } catch (error) {
         if (!cancelled) {
           setFailure(error instanceof Error ? error.message : String(error));
+          setLoading(false);
         }
       }
     }
@@ -76,5 +80,8 @@ export default function MonacoPreview({ resource, document }: Props) {
       <pre className="fallback-content"><code>{document.content}</code></pre>
     </div>;
   }
-  return <div ref={containerRef} className="monaco-container" aria-label={'Только чтение: ' + document.path}/>;
+  return <div className="monaco-shell">
+    <div ref={containerRef} className="monaco-container" aria-label={'Только чтение: ' + document.path}/>
+    {loading && <div className="monaco-loading" role="status">Загрузка редактора…</div>}
+  </div>;
 }

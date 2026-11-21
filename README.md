@@ -11,7 +11,7 @@ SS14 Studio is being rewritten on **Rust + Tauri 2**. The desktop application in
 - Open and verify the root directory of a Space Station 14 source checkout.
 - Read-only inventory of YAML prototype files, RSI folders and Fluent files.
 - Search by resource path and type, with pagination; queries use precomputed case-insensitive keys and resource reads use a direct lookup map, with no filesystem walk per search.
-- Display YAML/FTL contents and RSI meta.json in a Monaco-based syntax-highlighted, read-only viewer. Monaco and its workers are bundled locally (offline); open tabs are bounded and support close/reload.
+- Display YAML/FTL contents and RSI meta.json in a Monaco-based syntax-highlighted, read-only viewer. Monaco and its worker are bundled locally (offline); JSON metadata uses lightweight syntax colouring without the heavy JSON language service. Open tabs are bounded and support close/reload.
 - Actionable Russian-language error handling with stable codes, hints and expandable technical details.
 - No source file mutations, no symlink traversal during indexing, capped initial scan, capped text-file read size.
 - Rust/TypeScript CI checks and unit tests.

@@ -4,17 +4,18 @@
  */
 import * as monaco from 'monaco-editor/editor';
 import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker';
-import JsonWorker from 'monaco-editor/languages/features/json/json.worker.js?worker';
 import 'monaco-editor/languages/definitions/yaml/register';
-import 'monaco-editor/languages/features/json/register';
+import 'monaco-editor/features/find/register';
+import 'monaco-editor/features/folding/register';
+import 'monaco-editor/features/bracketMatching/register';
 
 type MonacoSelf = typeof self & {
   MonacoEnvironment?: { getWorker: (_moduleId: string, label: string) => Worker };
 };
 
 (self as MonacoSelf).MonacoEnvironment = {
-  getWorker(_moduleId, label) {
-    return label === 'json' ? new JsonWorker() : new EditorWorker();
+  getWorker() {
+    return new EditorWorker();
   },
 };
 
@@ -41,6 +42,21 @@ monaco.languages.setMonarchTokensProvider('fluent', {
   },
 });
 
+// JSON metadata only needs fast syntax colouring while the viewer is read-only.
+// Avoid the full Monaco JSON language service and its additional worker/bundle.
+monaco.languages.register({ id: 'ss14-json' });
+monaco.languages.setMonarchTokensProvider('ss14-json', {
+  tokenizer: {
+    root: [
+      [/"(?:\\.|[^"\\])*"(?=\s*:)/, 'key'],
+      [/"(?:\\.|[^"\\])*"/, 'string'],
+      [/\b(?:true|false|null)\b/, 'keyword'],
+      [/-?\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/, 'number'],
+      [/[{}\[\],:]/, 'delimiter'],
+    ],
+  },
+});
+
 monaco.editor.defineTheme('ss14-dark', {
   base: 'vs-dark',
   inherit: true,
@@ -56,7 +72,7 @@ monaco.editor.defineTheme('ss14-dark', {
 export function resourceLanguage(kind: 'yaml' | 'ftl' | 'rsi'): string {
   if (kind === 'yaml') return 'yaml';
   if (kind === 'ftl') return 'fluent';
-  return 'json';
+  return 'ss14-json';
 }
 
 export { monaco };
