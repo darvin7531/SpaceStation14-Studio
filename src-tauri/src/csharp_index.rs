@@ -683,12 +683,17 @@ mod tests {
             bytes_scanned: source.len() as u64,
         };
         let names: Vec<String> = ["Item", "Partial", "Double", "custom", "Missing"]
-            .into_iter().map(str::to_string).collect();
+            .into_iter()
+            .map(str::to_string)
+            .collect();
         let result = index.component_schemas(&names);
         assert!(result.index_complete);
         assert_eq!(result.components[0].status, "unique");
         assert_eq!(result.components[0].declarations[0].fields.len(), 2);
-        assert_eq!(result.components[0].declarations[0].fields[0].name, "display");
+        assert_eq!(
+            result.components[0].declarations[0].fields[0].name,
+            "display"
+        );
         assert_eq!(result.components[1].status, "partial");
         assert_eq!(result.components[2].status, "ambiguous");
         assert_eq!(result.components[2].declarations.len(), 2);
@@ -714,7 +719,10 @@ mod tests {
         };
         let result = index.component_schemas(&["Item".into()]);
         assert_eq!(result.components[0].status, "unique");
-        assert_eq!(result.components[0].declarations[0].class_name, "ItemComponent");
+        assert_eq!(
+            result.components[0].declarations[0].class_name,
+            "ItemComponent"
+        );
     }
 
     #[test]

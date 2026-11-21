@@ -262,11 +262,15 @@ impl ProjectIndex {
         &self,
         names: &[String],
     ) -> Result<ComponentSchemaBatch, StudioError> {
-        if names.len() > 128 || names.iter().any(|name| {
-            name.is_empty() || name.len() > 128
-                || !name.bytes().all(|b| b.is_ascii_alphanumeric()
-                    || matches!(b, b'_' | b'-' | b'.'))
-        }) {
+        if names.len() > 128
+            || names.iter().any(|name| {
+                name.is_empty()
+                    || name.len() > 128
+                    || !name
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.'))
+            })
+        {
             return Err(StudioError::new(
                 "CSHARP_SCHEMA_INPUT_INVALID",
                 "Список типов компонентов слишком велик или содержит неверное имя.",
@@ -965,11 +969,20 @@ mod tests {
         let initial = index.csharp_component_schemas(&names).unwrap();
         assert!(initial.index_complete);
         assert_eq!(initial.components[0].status, "unique");
-        assert_eq!(initial.components[0].declarations[0].fields[0].name, "visible");
+        assert_eq!(
+            initial.components[0].declarations[0].fields[0].name,
+            "visible"
+        );
         assert_eq!(initial.components[1].status, "not_indexed");
 
         // Same C# snapshot is reused for inspector and catalog pages.
-        assert_eq!(index.csharp_page("Sprite", Some("component"), 0, 10).unwrap().total, 1);
+        assert_eq!(
+            index
+                .csharp_page("Sprite", Some("component"), 0, 10)
+                .unwrap()
+                .total,
+            1
+        );
         fx.write(file, "public class SpriteComponent {}\n");
         let cached = index.csharp_component_schemas(&names).unwrap();
         assert_eq!(cached.components[0].status, "unique");
@@ -978,7 +991,10 @@ mod tests {
         let after = fresh.csharp_component_schemas(&names).unwrap();
         assert_eq!(after.components[0].status, "not_indexed");
         assert_eq!(
-            index.csharp_component_schemas(&["bad/path".into()]).unwrap_err().code,
+            index
+                .csharp_component_schemas(&["bad/path".into()])
+                .unwrap_err()
+                .code,
             "CSHARP_SCHEMA_INPUT_INVALID"
         );
     }
