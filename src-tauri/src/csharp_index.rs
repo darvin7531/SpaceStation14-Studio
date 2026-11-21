@@ -310,7 +310,11 @@ fn qualified_name(node: Node<'_>, source: &[u8]) -> String {
     parts.join(".")
 }
 
-fn parse_class(node: Node<'_>, file: &str, source: &[u8]) -> (Vec<CSharpDefinition>, Option<CSharpPart>) {
+fn parse_class(
+    node: Node<'_>,
+    file: &str,
+    source: &[u8],
+) -> (Vec<CSharpDefinition>, Option<CSharpPart>) {
     if !matches!(node.kind(), "class_declaration" | "record_declaration") {
         return (Vec::new(), None);
     }
@@ -746,7 +750,9 @@ mod tests {
     #[test]
     fn partial_fragments_match_full_namespace_not_just_class_name() {
         let mut parser = Parser::new();
-        parser.set_language(&tree_sitter_c_sharp::LANGUAGE.into()).unwrap();
+        parser
+            .set_language(&tree_sitter_c_sharp::LANGUAGE.into())
+            .unwrap();
         let registered = r#"
             namespace Content.Shared.One {
                 [RegisterComponent]
@@ -791,11 +797,18 @@ mod tests {
         let result = catalog.component_schemas(&["Example".into()]);
         let component = &result.components[0];
         assert_eq!(component.status, "partial");
-        assert_eq!(component.declarations[0].qualified_name, "Content.Shared.One.ExampleComponent");
+        assert_eq!(
+            component.declarations[0].qualified_name,
+            "Content.Shared.One.ExampleComponent"
+        );
         assert_eq!(component.parts.len(), 2);
         assert_eq!(
-            component.parts.iter().flat_map(|part| part.fields.iter())
-                .map(|field| field.name.as_str()).collect::<Vec<_>>(),
+            component
+                .parts
+                .iter()
+                .flat_map(|part| part.fields.iter())
+                .map(|field| field.name.as_str())
+                .collect::<Vec<_>>(),
             vec!["initial", "extra"]
         );
         assert_eq!(component.parts[1].file, "Content.Shared/Two.cs");
@@ -804,20 +817,29 @@ mod tests {
     #[test]
     fn non_partial_definition_does_not_merge_similar_partial_type() {
         let mut parser = Parser::new();
-        parser.set_language(&tree_sitter_c_sharp::LANGUAGE.into()).unwrap();
+        parser
+            .set_language(&tree_sitter_c_sharp::LANGUAGE.into())
+            .unwrap();
         let (definitions, _, failed) = parse_source(
-            &mut parser, "A.cs",
-            "[RegisterComponent] public class BodyComponent { [DataField] public int Count; }"
+            &mut parser,
+            "A.cs",
+            "[RegisterComponent] public class BodyComponent { [DataField] public int Count; }",
         );
         assert!(!failed);
         let (_, parts, failed) = parse_source(
-            &mut parser, "B.cs",
-            "public partial class BodyComponent { [DataField] public bool Active; }"
+            &mut parser,
+            "B.cs",
+            "public partial class BodyComponent { [DataField] public bool Active; }",
         );
         assert!(!failed);
         let catalog = CSharpCatalog {
-            definitions, parts, warnings: Vec::new(), complete: true,
-            files_scanned: 2, files_parsed: 2, bytes_scanned: 0,
+            definitions,
+            parts,
+            warnings: Vec::new(),
+            complete: true,
+            files_scanned: 2,
+            files_parsed: 2,
+            bytes_scanned: 0,
         };
         let result = catalog.component_schemas(&["Body".into()]);
         assert_eq!(result.components[0].status, "unique");
