@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -24,6 +25,8 @@ pub struct ProjectOverview {
 pub struct ResourceEntry {
     pub path: String,
     pub kind: &'static str,
+    #[serde(skip)]
+    search_key: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -44,6 +47,7 @@ pub struct ProjectIndex {
     root: PathBuf,
     overview: ProjectOverview,
     resources: Vec<ResourceEntry>,
+    positions: HashMap<String, usize>,
 }
 
 #[derive(Copy, Clone)]
@@ -131,6 +135,16 @@ impl ProjectIndex {
             &mut resources,
         )?;
         resources.sort_unstable_by(|a, b| a.path.cmp(&b.path));
+        let mut positions = HashMap::with_capacity(resources.len());
+        for (index, item) in resources.iter().enumerate() {
+            if positions.insert(item.path.clone(), index).is_some() {
+                return Err(StudioError::new(
+                    "PROJECT_PATH_COLLISION",
+                    "Некоторые пути ресурсов невозможно однозначно различить.",
+                    "Проверьте имена файлов проекта и используемую кодировку файловой системы.",
+                ));
+            }
+        }
 
         let mut warnings = Vec::new();
         if !resources_root.join("Textures").is_dir() {
@@ -163,6 +177,7 @@ impl ProjectIndex {
             root,
             overview,
             resources,
+            positions,
         })
     }
 
@@ -181,7 +196,7 @@ impl ProjectIndex {
         let requested_kind = kind.unwrap_or("all");
         let filtered = self.resources.iter().filter(|entry| {
             (requested_kind == "all" || requested_kind == entry.kind)
-                && (needle.is_empty() || entry.path.to_lowercase().contains(&needle))
+                && (needle.is_empty() || entry.search_key.contains(&needle))
         });
         let mut total = 0;
         let mut items = Vec::new();
@@ -197,9 +212,9 @@ impl ProjectIndex {
 
     pub fn read_resource(&self, rel_path: &str) -> Result<ResourceDocument, StudioError> {
         let item = self
-            .resources
-            .iter()
-            .find(|entry| entry.path == rel_path)
+            .positions
+            .get(rel_path)
+            .and_then(|index| self.resources.get(*index))
             .ok_or_else(|| {
                 StudioError::new(
                     "RESOURCE_NOT_INDEXED",
@@ -415,8 +430,10 @@ fn resource_entry(
         .with_details(error.to_string())
     })?;
 
+    let path = relative.to_string_lossy().replace('\\', "/");
     Ok(ResourceEntry {
-        path: relative.to_string_lossy().replace('\\', "/"),
+        search_key: path.to_lowercase(),
+        path,
         kind,
     })
 }
@@ -542,6 +559,18 @@ mod tests {
         assert!(next.items[0].path.ends_with("B.yml"));
         let match_page = index.search("A.yaml", None, 0, 100);
         assert_eq!(match_page.total, 1);
+    }
+
+    #[test]
+    fn search_is_case_insensitive_but_identity_is_exact() {
+        let fixture = Fixture::new();
+        fixture.write("Resources/Prototypes/Weapons/PISTOL.YML", "- type: entity");
+        let index = ProjectIndex::open(fixture.root_str()).unwrap();
+        let page = index.search("weapons/pistol", Some("yaml"), 0, 100);
+        assert_eq!(page.total, 1);
+        assert!(page.items[0].path.ends_with("PISTOL.YML"));
+        assert!(index.read_resource("Resources/Prototypes/Weapons/pistol.yml").is_err());
+        assert!(index.read_resource("Resources/Prototypes/Weapons/PISTOL.YML").is_ok());
     }
 
     #[test]
