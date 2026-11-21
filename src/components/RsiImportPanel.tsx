@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useRef, useState, type DragEvent, type FormEvent } from 'react';
 import { AlertCircle, ImagePlus } from 'lucide-react';
 import { studio, type ImportedRsiState } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
@@ -31,8 +31,54 @@ export default function RsiImportPanel({ path, revision, onImported }: Props) {
   const [frames, setFrames] = useState(1);
   const [delay, setDelay] = useState(0.1);
   const [uploading, setUploading] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<StudioError | null>(null);
   const input = useRef<HTMLInputElement>(null);
+
+  function chooseFile(candidate: File | null) {
+    setError(null);
+    if (!candidate) {
+      setFile(null);
+      return;
+    }
+    if (!candidate.name.toLowerCase().endsWith('.png')) {
+      setError({
+        code: 'RSI_IMPORT_FILE_EXTENSION',
+        message: 'Для импорта нужен файл PNG.',
+        hint: 'Выберите PNG-лист со спрайтами, а не другой формат изображения.',
+      });
+      return;
+    }
+    if (candidate.size === 0 || candidate.size > PNG_LIMIT) {
+      setError({
+        code: 'RSI_IMPORT_PNG_TOO_LARGE',
+        message: 'Выберите непустой PNG не больше 8 МиБ.',
+        hint: 'Уменьшите размер файла или сохраните изображение повторно.',
+      });
+      return;
+    }
+    setFile(candidate);
+    const suggested = candidate.name.replace(/\.png$/i, '')
+      .toLowerCase().replace(/[^a-z0-9_-]/g, '-').slice(0, 128);
+    setName(suggested);
+  }
+
+  function onDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setDragging(false);
+    if (uploading) return;
+    const candidates = Array.from(event.dataTransfer.files);
+    if (candidates.length !== 1) {
+      setError({
+        code: 'RSI_IMPORT_SINGLE_FILE',
+        message: 'Для добавления состояния выберите один PNG.',
+        hint: 'Импортируйте остальные изображения по одному, чтобы настроить кадры и направления каждого состояния.',
+      });
+      return;
+    }
+    if (input.current) input.current.value = '';
+    chooseFile(candidates[0]);
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -70,19 +116,17 @@ export default function RsiImportPanel({ path, revision, onImported }: Props) {
       <p>Импорт добавляет состояние в <code>meta.json</code> и создаёт новый
         <code> state.png</code>. Существующие изображения и состояния не перезаписываются.
         PNG должен содержать ровно столько кадров, сколько указано ниже.</p>
+      <div className={'rsi-dropzone' + (dragging ? ' dragging' : '')}
+        role="group" aria-label="Перетащить PNG для импорта"
+        onDragOver={(event) => { event.preventDefault(); if (!uploading) setDragging(true); }}
+        onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }}
+        onDrop={onDrop}>
+        Перетащите сюда один PNG-лист или выберите файл ниже.
+      </div>
       <div className="rsi-import-fields">
         <label>PNG-лист
-          <input ref={input} type="file" accept="image/png,.png" required disabled={uploading}
-            onChange={(event) => {
-              const candidate = event.target.files?.[0] ?? null;
-              setFile(candidate);
-              setError(null);
-              if (candidate) {
-                const suggested = candidate.name.replace(/\.png$/i, '')
-                  .toLowerCase().replace(/[^a-z0-9_-]/g, '-').slice(0, 128);
-                setName(suggested);
-              }
-            }}/>
+          <input ref={input} type="file" accept="image/png,.png" disabled={uploading}
+            onChange={(event) => chooseFile(event.target.files?.[0] ?? null)}/>
         </label>
         <label>Имя состояния
           <input type="text" value={name} required maxLength={128}
