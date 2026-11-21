@@ -569,8 +569,12 @@ mod tests {
         let page = index.search("weapons/pistol", Some("yaml"), 0, 100);
         assert_eq!(page.total, 1);
         assert!(page.items[0].path.ends_with("PISTOL.YML"));
-        assert!(index.read_resource("Resources/Prototypes/Weapons/pistol.yml").is_err());
-        assert!(index.read_resource("Resources/Prototypes/Weapons/PISTOL.YML").is_ok());
+        assert!(index
+            .read_resource("Resources/Prototypes/Weapons/pistol.yml")
+            .is_err());
+        assert!(index
+            .read_resource("Resources/Prototypes/Weapons/PISTOL.YML")
+            .is_ok());
     }
 
     #[test]
