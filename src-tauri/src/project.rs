@@ -37,6 +37,13 @@ pub struct ResourceEntry {
     search_key: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ProjectRefresh {
+    pub overview: ProjectOverview,
+    pub added_resources: usize,
+    pub removed_resources: usize,
+}
+
 #[derive(Debug, Serialize)]
 pub struct ResourcePage {
     pub total: usize,
@@ -196,6 +203,28 @@ impl ProjectIndex {
 
     pub fn overview(&self) -> &ProjectOverview {
         &self.overview
+    }
+
+    /// Full, explicit rescan. The old immutable snapshot remains usable until
+    /// the new one is built; future watcher updates can reuse this boundary.
+    pub fn refresh(&self) -> Result<(Self, ProjectRefresh), StudioError> {
+        let refreshed = Self::open(&self.overview.project_root)?;
+        let added_resources = refreshed
+            .positions
+            .keys()
+            .filter(|path| !self.positions.contains_key(*path))
+            .count();
+        let removed_resources = self
+            .positions
+            .keys()
+            .filter(|path| !refreshed.positions.contains_key(*path))
+            .count();
+        let summary = ProjectRefresh {
+            overview: refreshed.overview.clone(),
+            added_resources,
+            removed_resources,
+        };
+        Ok((refreshed, summary))
     }
 
     pub fn is_yaml_indexed(&self, path: &str) -> bool {
@@ -783,6 +812,38 @@ mod tests {
         assert_eq!(index.overview().locale_files, 1);
         assert_eq!(index.overview().total_resources, 4);
         assert!(index.overview().warnings.is_empty());
+    }
+
+    #[test]
+    fn refresh_detects_created_and_removed_resources_without_mutating_old_snapshot() {
+        let fx = Fixture::new();
+        fx.write("Resources/Prototypes/one.yml", "- type: entity\n  id: One\n");
+        fx.write("Resources/Locale/en-US/old.ftl", "old = old");
+        let old = ProjectIndex::open(fx.root_str()).unwrap();
+        fx.write("Resources/Prototypes/two.yml", "- type: entity\n  id: Two\n");
+        fx.write("Resources/Textures/item.rsi/meta.json", "{\"version\":1}");
+        fs::remove_file(fx.root.join("Resources/Locale/en-US/old.ftl")).unwrap();
+
+        let (new, result) = old.refresh().unwrap();
+        assert_eq!(result.added_resources, 2);
+        assert_eq!(result.removed_resources, 1);
+        assert_eq!(result.overview.prototype_files, 2);
+        assert_eq!(result.overview.rsi_directories, 1);
+        assert_eq!(result.overview.locale_files, 0);
+        assert_eq!(old.search("two.yml", None, 0, 100).total, 0);
+        assert_eq!(new.search("two.yml", None, 0, 100).total, 1);
+        assert_eq!(old.search("old.ftl", None, 0, 100).total, 1);
+        assert_eq!(new.search("old.ftl", None, 0, 100).total, 0);
+    }
+
+    #[test]
+    fn failed_refresh_leaves_previous_index_available() {
+        let fx = Fixture::new();
+        fx.write("Resources/Prototypes/one.yml", "- type: entity\n  id: One\n");
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        fs::remove_dir_all(fx.root.join("Resources/Prototypes")).unwrap();
+        assert_eq!(index.refresh().unwrap_err().code, "PROJECT_STRUCTURE_INVALID");
+        assert_eq!(index.search("one.yml", None, 0, 100).total, 1);
     }
 
     #[test]

@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 
 use draft_journal::{DraftJournal, DraftList, DraftSnapshot, DraftSummary, DraftWriteResult};
 use error::{internal_lock, interrupted, StudioError};
-use project::{ProjectIndex, ProjectOverview, ResourceDocument, ResourcePage};
+use project::{ProjectIndex, ProjectOverview, ProjectRefresh, ResourceDocument, ResourcePage};
 use prototype_append::AppendPreview;
 use prototype_components::{ComponentInspection, ComponentOperation};
 use prototype_create::{PrototypeDraft, PrototypePreview};
@@ -70,6 +70,29 @@ async fn open_project(
         .map_err(interrupted)??;
     let summary = index.overview().clone();
     *state.0.lock().map_err(|_| internal_lock())? = Some(Arc::new(index));
+    Ok(summary)
+}
+
+/// Only swap the workspace after a complete and valid scan. An overlapping
+/// project switch must not be undone by a late refresh result.
+#[tauri::command]
+async fn refresh_project(
+    state: State<'_, WorkspaceState>,
+) -> Result<ProjectRefresh, StudioError> {
+    let original = current_project(&state)?;
+    let source = original.clone();
+    let (rebuilt, summary) = tauri::async_runtime::spawn_blocking(move || source.refresh())
+        .await
+        .map_err(interrupted)??;
+    let mut active = state.0.lock().map_err(|_| internal_lock())?;
+    if !active.as_ref().is_some_and(|index| Arc::ptr_eq(index, &original)) {
+        return Err(StudioError::new(
+            "PROJECT_REFRESH_STALE",
+            "Проект изменился во время обновления каталога.",
+            "Повторите обновление для активного проекта.",
+        ));
+    }
+    *active = Some(Arc::new(rebuilt));
     Ok(summary)
 }
 
@@ -486,6 +509,7 @@ pub fn run() -> Result<(), tauri::Error> {
         .manage(DraftStorageLock::default())
         .invoke_handler(tauri::generate_handler![
             open_project,
+            refresh_project,
             search_resources,
             search_prototypes,
             prototype_relations,

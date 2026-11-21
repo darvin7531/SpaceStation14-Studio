@@ -10,6 +10,7 @@ import { closeTab, openTab, type TabState } from './lib/tabs';
 import { dirtyDocumentPaths, reconcileSavedDraft } from './lib/draft-state';
 import { DraftWriteQueue, journalKey } from './lib/draft-queue';
 import { reviewDecision } from './lib/review-guard';
+import { reconcileWorkspaceRefresh } from './lib/workspace-refresh';
 import MonacoPreview from './editor/MonacoPreview';
 import RsiPreview from './components/RsiPreview';
 import PrototypeExplorer from './components/PrototypeExplorer';
@@ -61,6 +62,7 @@ export default function App() {
   });
   const [overview, setOverview] = useState<ProjectOverview | null>(null);
   const [opening, setOpening] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [creatingPrototype, setCreatingPrototype] = useState(false);
   const [fieldTarget, setFieldTarget] = useState<PrototypeFieldLocator | null>(null);
   const [prototypePanel, setPrototypePanel] = useState<'fields' | 'components'>('fields');
@@ -136,7 +138,7 @@ export default function App() {
 
   // Per-file debounce. Switching tabs must not cancel a different file's draft.
   useEffect(() => {
-    if (!overview || opening || saving || transitioning) return;
+    if (!overview || opening || saving || transitioning || refreshing) return;
     const active = new Set<string>();
     const epoch = journalEpoch.current;
     for (const file of dirtyPaths) {
@@ -170,7 +172,7 @@ export default function App() {
         journalTimers.current.delete(key);
       }
     }
-  }, [overview, drafts, draftBases, document, saving, transitioning, opening]);
+  }, [overview, drafts, draftBases, document, saving, transitioning, opening, refreshing]);
 
   async function loadProject(requestedPath: string) {
     setCreatingPrototype(false);
@@ -219,6 +221,75 @@ export default function App() {
     }
   }
 
+  /** Manual full rescan: refresh the index without discarding in-memory drafts
+   * or silently taking a changed on-disk YAML revision as the draft baseline.
+   */
+  async function refreshProject() {
+    if (!overview || opening || reading || saving || transitioning || refreshing || creatingPrototype) return;
+    setRefreshing(true);
+    cancelJournalTimers();
+    setError(null);
+    setNotice(null);
+    try {
+      const changed = await studio.refreshProject();
+      // Any old read that finishes now belongs to the replaced index.
+      readVersion.current += 1;
+      const reads = await Promise.all(tabState.tabs.map(async (tab) => {
+        try {
+          return { path: tab.path, document: await studio.readResource(tab.path), error: null };
+        } catch (failure) {
+          return { path: tab.path, document: null, error: normalizeStudioError(failure) };
+        }
+      }));
+      const result = reconcileWorkspaceRefresh(
+        tabState.tabs, documents.current, draftsRef.current, draftBases, reads,
+      );
+      documents.current = result.documents;
+      draftsRef.current = result.drafts;
+      setDrafts(result.drafts);
+      setDraftBases(result.draftBases);
+      setDocument(tabState.active ? result.documents.get(tabState.active) ?? null : null);
+      setReading(false);
+      setOverview(changed.overview);
+      setPage(0);
+      setWorkspaceRevision((value) => value + 1);
+      setFieldTarget(null);
+      closeComparison();
+
+      try {
+        setRecoveries(await studio.listDrafts());
+      } catch (failure) {
+        const explained = normalizeStudioError(failure);
+        setRecoveries((previous) => ({
+          ...previous,
+          warnings: [...previous.warnings, explained.message + ' ' + explained.hint],
+        }));
+      }
+      setNotice(
+        'Индекс обновлён: +' + changed.added_resources + ' / −' + changed.removed_resources
+        + ' ресурсов. Перечитано вкладок: ' + result.reloaded.length
+        + '. Черновики сохранены в памяти.',
+      );
+      if (result.conflicting.length || result.unavailable.length) {
+        const unavailable = reads.filter((item) => item.error !== null);
+        setError({
+          code: 'REFRESH_TABS_REQUIRE_ATTENTION',
+          message: 'Некоторые открытые файлы требуют внимания после обновления.',
+          hint: 'Изменённые черновики не перезаписаны. Для изменённого YAML откройте сравнение версий. '
+            + 'Для удалённого файла сохраните копию текста вручную.',
+          details: [
+            ...result.conflicting.map((file) => 'Изменён на диске (черновик сохранён): ' + file),
+            ...unavailable.map((item) => 'Недоступен: ' + item.path + ' [' + item.error?.code + ']'),
+          ].join('\n'),
+        });
+      }
+    } catch (failure) {
+      setError(normalizeStudioError(failure));
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   useEffect(() => {
     if (!overview) return;
     let active = true;
@@ -237,7 +308,7 @@ export default function App() {
       active = false;
       window.clearTimeout(handle);
     };
-  }, [overview, query, kind, page]);
+  }, [overview, query, kind, page, workspaceRevision]);
 
   async function chooseProjectFolder() {
     setPicking(true);
@@ -358,7 +429,7 @@ export default function App() {
   }
 
   function requestAction(action: PendingAction) {
-    if (saving || transitioning || opening) return;
+    if (saving || transitioning || opening || refreshing) return;
     const needsConfirmation = action.type === 'open'
       ? dirtyPaths.length > 0
       : isDirty(action.path);
@@ -420,7 +491,7 @@ export default function App() {
   // Inspect fresh disk contents. This does not update the editor baseline or write.
   async function compareCurrent() {
     const file = selectedPathRef.current;
-    if (!file || !overview || opening || transitioning) return;
+    if (!file || !overview || opening || transitioning || refreshing) return;
     const loaded = documents.current.get(file);
     if (!loaded) return;
     const request = ++comparisonVersion.current;
@@ -440,7 +511,7 @@ export default function App() {
 
   async function acceptComparison() {
     const review = comparison;
-    if (!review || comparing || saving || opening || transitioning) return;
+    if (!review || comparing || saving || opening || transitioning || refreshing) return;
     const request = ++comparisonVersion.current;
     setComparing(true);
     try {
@@ -485,7 +556,7 @@ export default function App() {
   }
 
   async function saveCurrent() {
-    if (!selected || selected.kind !== 'yaml' || saving) return;
+    if (!selected || selected.kind !== 'yaml' || saving || refreshing) return;
     const file = selected.path;
     const baseline = documents.current.get(file);
     if (!baseline) return;
@@ -558,7 +629,7 @@ export default function App() {
   }, [selected?.path, document?.revision, drafts, saving]);
 
   function openResource(item: ResourceEntry) {
-    if (saving || transitioning || opening) return;
+    if (saving || transitioning || opening || refreshing) return;
     if (item.path !== fieldTarget?.file) setFieldTarget(null);
     if (selectedPathRef.current !== item.path) closeComparison();
     const outcome = openTab(tabState, item);
@@ -582,7 +653,7 @@ export default function App() {
   }
 
   function editPrototypeFields(entry: PrototypeDeclaration, panel: 'fields' | 'components') {
-    if (saving || opening || transitioning) return;
+    if (saving || opening || transitioning || refreshing) return;
     openPrototypeSource(entry.file, entry.line);
     setPrototypePanel(panel);
     setFieldTarget({
@@ -596,7 +667,7 @@ export default function App() {
     locator: PrototypeFieldLocator, original: string, changed: string,
   ): boolean {
     const file = fieldTarget?.file;
-    if (!file || selectedPathRef.current !== file || saving || opening || transitioning) return false;
+    if (!file || selectedPathRef.current !== file || saving || opening || transitioning || refreshing) return false;
     // A slow native IPC result must never apply to a different declaration
     // even when another selected prototype shares the same source file.
     if (locator.file !== fieldTarget.file || locator.id !== fieldTarget.id
@@ -614,7 +685,7 @@ export default function App() {
   }
 
   function selectTab(path: string) {
-    if (saving || transitioning || opening || tabState.active === path) return;
+    if (saving || transitioning || opening || refreshing || tabState.active === path) return;
     setFieldTarget(null);
     closeComparison();
     setTabState((state) => ({ ...state, active: path }));
@@ -696,9 +767,14 @@ export default function App() {
         <span><b>{overview.prototype_files}</b> YAML-файлов</span>
         <span><b>{overview.rsi_directories}</b> RSI</span>
         <span><b>{overview.locale_files}</b> FTL</span>
-        <button type="button" className="create-proto-open" disabled={opening || saving || transitioning}
+        <button type="button" className="create-proto-open" disabled={opening || saving || transitioning || refreshing}
           onClick={() => setCreatingPrototype(true)}>
           <FilePlus2 size={15}/> Создать прототип
+        </button>
+        <button type="button" className="create-proto-open" disabled={opening || picking || saving || transitioning || reading || refreshing || creatingPrototype}
+          title="Полностью пересканировать проект, сохранив открытые черновики"
+          onClick={() => void refreshProject()}>
+          <RotateCcw size={15}/>{refreshing ? 'Обновляю…' : 'Обновить индекс'}
         </button>
       </div>}
     </section>
@@ -779,12 +855,12 @@ export default function App() {
           {tabState.tabs.map((tab) => <div className={'tab' + (tabState.active === tab.path ? ' active' : '')} key={tab.path}>
             <button type="button" role="tab" title={tab.path}
               aria-selected={tabState.active === tab.path}
-              className="tab-focus" disabled={saving} onClick={() => selectTab(tab.path)}>
+              className="tab-focus" disabled={saving || refreshing} onClick={() => selectTab(tab.path)}>
               <ResourceIcon kind={tab.kind}/>
               <span>{tab.path.split('/').at(-1)}{isDirty(tab.path) ? ' ●' : ''}</span>
             </button>
             <button className="tab-close" type="button"
-              aria-label={'Закрыть вкладку ' + tab.path} disabled={saving} onClick={() => removeTab(tab.path)}>
+              aria-label={'Закрыть вкладку ' + tab.path} disabled={saving || refreshing} onClick={() => removeTab(tab.path)}>
               <X size={13}/>
             </button>
           </div>)}
@@ -793,16 +869,16 @@ export default function App() {
           <div className="editor-heading">
             <div><ResourceIcon kind={selected.kind}/><span>{selected.path}</span></div>
             <div className="editor-tools">
-              <button type="button" onClick={reloadCurrent} disabled={reading || saving} title="Загрузить содержимое файла с диска">
+              <button type="button" onClick={reloadCurrent} disabled={reading || saving || refreshing} title="Загрузить содержимое файла с диска">
                 <RotateCcw size={14}/> Перечитать
               </button>
               {selected.kind === 'yaml' && <button type="button" onClick={() => void compareCurrent()}
-                disabled={saving || reading || comparing || !isDirty(selected.path)}
+                disabled={saving || reading || comparing || refreshing || !isDirty(selected.path)}
                 title="Сравнить черновик с актуальным YAML на диске">
                 <FileCode2 size={14}/>{comparing ? 'Сравниваю…' : 'Сравнить'}
               </button>}
               {selected.kind === 'yaml' && <button type="button" onClick={() => void saveCurrent()}
-                disabled={saving || reading || !isDirty(selected.path)} title="Сохранить YAML (Ctrl+S)">
+                disabled={saving || reading || refreshing || !isDirty(selected.path)} title="Сохранить YAML (Ctrl+S)">
                 <Save size={14}/>{saving ? 'Сохраняю…' : 'Сохранить'}
               </button>}
               <span className="readonly"><CheckCircle2 size={14}/>
@@ -814,11 +890,11 @@ export default function App() {
             && document?.path === selected.path && !reading && (prototypePanel === 'fields'
               ? <PrototypeFieldsPanel
                   key={fieldTarget.file + ':' + fieldTarget.document_index + ':' + fieldTarget.item_index}
-                  locator={fieldTarget} source={activeText} busy={saving || transitioning}
+                  locator={fieldTarget} source={activeText} busy={saving || transitioning || refreshing}
                   onApply={applyPrototypeFields} onClose={() => setFieldTarget(null)}/>
               : <PrototypeComponentsPanel
                   key={fieldTarget.file + ':' + fieldTarget.document_index + ':' + fieldTarget.item_index}
-                  locator={fieldTarget} source={activeText} busy={saving || transitioning}
+                  locator={fieldTarget} source={activeText} busy={saving || transitioning || refreshing}
                   onApply={applyPrototypeFields} onClose={() => setFieldTarget(null)}/>)}
           {comparison && comparison.path === selected.path && <ConflictReviewPanel
             file={comparison.path} disk={comparison.disk} draft={comparison.reviewedDraft}
@@ -827,9 +903,9 @@ export default function App() {
             onClose={closeComparison}/>}
           {reading ? <div className="placeholder">Чтение ресурса…</div> :
             document && selected.kind === 'rsi'
-              ? <RsiPreview key={document.path + ':' + document.revision} path={selected.path} metadata={document.content}/>
+              ? <RsiPreview key={document.path + ':' + document.revision + ':' + workspaceRevision} path={selected.path} metadata={document.content}/>
               : document ? <MonacoPreview key={document.path} resource={selected} document={document}
-              value={activeText} editable={selected.kind === 'yaml' && !saving}
+              value={activeText} editable={selected.kind === 'yaml' && !saving && !refreshing}
               onChange={selected.kind === 'yaml' ? (value) => {
                 const next = { ...draftsRef.current, [selected.path]: value };
                 draftsRef.current = next;
@@ -841,6 +917,6 @@ export default function App() {
         </> : <div className="placeholder"><FileCode2 size={44} strokeWidth={1.2}/><h2>Выбери ресурс слева</h2><p>Здесь откроется его исходный текст.</p></div>}
       </section>
     </main>}
-    <footer className="statusbar"><span>● {overview ? ('Проект открыт · ' + dirtyPaths.length + ' несохранённых черновиков') : 'Ожидание проекта'}</span><span>Rust Core · Tauri 2 · без Electron</span></footer>
+    <footer className="statusbar"><span>● {refreshing ? 'Обновление индекса…' : overview ? ('Проект открыт · ' + dirtyPaths.length + ' несохранённых черновиков') : 'Ожидание проекта'}</span><span>Rust Core · Tauri 2 · без Electron</span></footer>
   </div>;
 }

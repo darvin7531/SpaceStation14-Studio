@@ -9,6 +9,11 @@ export interface ProjectOverview {
   total_resources: number;
   warnings: string[];
 }
+export interface ProjectRefresh {
+  overview: ProjectOverview;
+  added_resources: number;
+  removed_resources: number;
+}
 export interface ResourceEntry {
   path: string;
   kind: Exclude<ResourceKind, 'all'>;
@@ -220,6 +225,9 @@ export interface ResourceDocument {
 export const studio = {
   openProject(path: string): Promise<ProjectOverview> {
     return invoke('open_project', { path });
+  },
+  refreshProject(): Promise<ProjectRefresh> {
+    return invoke('refresh_project');
   },
   searchResources(query: string, kind: ResourceKind, offset: number, limit = 100): Promise<ResourcePage> {
     return invoke('search_resources', { query, kind, offset, limit });
