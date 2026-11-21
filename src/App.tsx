@@ -21,6 +21,7 @@ import RecoveryPanel from './components/RecoveryPanel';
 import CreatePrototypeWizard, { type PrototypeDestinationMode } from './components/CreatePrototypeWizard';
 import CreateFluentWizard from './components/CreateFluentWizard';
 import FluentDiagnosticsPanel from './components/FluentDiagnosticsPanel';
+import YamlDiagnosticsPanel from './components/YamlDiagnosticsPanel';
 import CSharpCatalogPanel from './components/CSharpCatalogPanel';
 import ConflictReviewPanel from './components/ConflictReviewPanel';
 import EditorSettingsDialog from './components/EditorSettingsDialog';
@@ -1064,6 +1065,12 @@ export default function App() {
               </span>
             </div>
           </div>
+          {selected.kind === 'yaml' && document?.path === selected.path && !reading
+            && <YamlDiagnosticsPanel key={selected.path} path={selected.path} source={activeText}
+              enabled={editorSettings.liveValidation} delayMs={editorSettings.validationDelay}
+              onRevealLine={(line) => setJumpTarget({
+                path: selected.path, line, token: ++jumpCounter.current,
+              })}/>}
           {selected.kind === 'ftl' && document?.path === selected.path && !reading
             && <FluentDiagnosticsPanel key={selected.path} path={selected.path} source={activeText}
               enabled={editorSettings.liveValidation} delayMs={editorSettings.validationDelay}
