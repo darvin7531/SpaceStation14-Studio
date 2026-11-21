@@ -74,10 +74,9 @@ This is **structural C# metadata**, not compiler semantic resolution: inherited 
 
 ## Rework roadmap
 
-For the continuously updated task-level checklist, acceptance criteria, and the latest development cycle, see [RUST_REWORK_PLAN.md](RUST_REWORK_PLAN.md).
+For the continuously updated task-level checklist and development cycles, see [RUST_REWORK_PLAN.md](RUST_REWORK_PLAN.md). For a weighted, explicitly uncertain assessment of Electron parity and a breakdown of missing user scenarios, see [RUST_REWORK_PARITY.md](RUST_REWORK_PARITY.md). The old practice of adding one percentage point per commit has been retired.
 
-
-1. Migrate the existing Monaco editor, tab/workspace UX and i18n with a typed Tauri API. Keep file editing disabled until safe write semantics are implemented.
+1. Complete unported settings, workspace UX and i18n on the typed Tauri API (Monaco and revision-checked YAML/FTL editing are already enabled).
 2. Incremental file watcher and persistent SQLite index with rapid warm startup (manual full-rescan refresh is now the safe baseline).
 3. Correct lossless YAML/CST editing, unique declaration identity, SS14 inheritance and partial prototype semantics; verification against RobustToolbox fixtures.
 4. Conflict-safe file saving with revision checks, atomic replace where supported, useful error explanations and recovery steps.

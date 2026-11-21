@@ -42,6 +42,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      # Fail fast on formatting mistakes before downloading cache and
+      # installing the WebKit system toolchain. This saves CI minutes.
+      - name: Verify Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
@@ -51,8 +55,6 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libwebkit2gtk-4.1-dev build-essential libssl-dev \
             libayatana-appindicator3-dev librsvg2-dev patchelf
-      - name: Verify Rust formatting
-        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
       - name: Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
       - name: Clippy warnings are errors
