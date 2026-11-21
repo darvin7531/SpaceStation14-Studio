@@ -401,9 +401,11 @@ async fn inspect_prototype_fields(
     state: State<'_, WorkspaceState>,
 ) -> Result<FieldInspection, StudioError> {
     let project = current_project(&state)?;
-    tauri::async_runtime::spawn_blocking(move || project.inspect_prototype_fields(&locator, &source))
-        .await
-        .map_err(interrupted)?
+    tauri::async_runtime::spawn_blocking(move || {
+        project.inspect_prototype_fields(&locator, &source)
+    })
+    .await
+    .map_err(interrupted)?
 }
 
 #[tauri::command]
