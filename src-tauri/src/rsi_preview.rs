@@ -18,7 +18,8 @@ const PNG_HEADER: &[u8] = b"\x89PNG\r\n\x1a\n";
 /// Validate the PNG IHDR before returning compressed data to the WebView.
 /// An 8 MiB PNG can otherwise decompress to gigabytes of pixels.
 fn png_dimensions(bytes: &[u8]) -> Result<(u32, u32), StudioError> {
-    if !bytes.starts_with(PNG_HEADER) || bytes.len() < 29
+    if !bytes.starts_with(PNG_HEADER)
+        || bytes.len() < 29
         || &bytes[12..16] != b"IHDR"
         || u32::from_be_bytes(bytes[8..12].try_into().unwrap_or([0; 4])) != 13
     {
@@ -30,7 +31,8 @@ fn png_dimensions(bytes: &[u8]) -> Result<(u32, u32), StudioError> {
     }
     let width = u32::from_be_bytes(bytes[16..20].try_into().unwrap_or([0; 4]));
     let height = u32::from_be_bytes(bytes[20..24].try_into().unwrap_or([0; 4]));
-    if width == 0 || height == 0
+    if width == 0
+        || height == 0
         || width > MAX_IMAGE_DIMENSION
         || height > MAX_IMAGE_DIMENSION
         || u64::from(width) * u64::from(height) > MAX_IMAGE_PIXELS
@@ -286,9 +288,15 @@ mod tests {
         assert_eq!(png_dimensions(&png).unwrap(), (32, 32));
         png[16..20].copy_from_slice(&16_384_u32.to_be_bytes());
         png[20..24].copy_from_slice(&16_384_u32.to_be_bytes());
-        assert_eq!(png_dimensions(&png).unwrap_err().code, "RSI_IMAGE_DIMENSIONS_LIMIT");
+        assert_eq!(
+            png_dimensions(&png).unwrap_err().code,
+            "RSI_IMAGE_DIMENSIONS_LIMIT"
+        );
         png[12..16].copy_from_slice(b"IDAT");
-        assert_eq!(png_dimensions(&png).unwrap_err().code, "RSI_PNG_HEADER_INVALID");
+        assert_eq!(
+            png_dimensions(&png).unwrap_err().code,
+            "RSI_PNG_HEADER_INVALID"
+        );
     }
 
     #[test]
