@@ -44,3 +44,13 @@
 }
 .rsi-player-timeline input { min-width: 80px; flex: 1; }
 .rsi-player-description { margin: 0; color: #a6bed9; font-size: 11px; }
+
+.rsi-create-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+.fluent-create-modal .rsi-create-copyright {
+  min-height: 65px; resize: vertical; font: inherit;
+  border: 1px solid #46556a; border-radius: 6px;
+  background: #0b121c; color: #d9e7f5; padding: 10px 12px;
+}
+.fluent-create-modal .rsi-create-metadata {
+  max-height: 170px; overflow: auto; font-size: 11px;
+}

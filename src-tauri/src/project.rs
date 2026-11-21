@@ -17,6 +17,7 @@ use crate::prototype_create::{self, CreatedPrototype, PrototypeDraft, PrototypeP
 use crate::prototype_fields::{self, FieldInspection, FieldLocator, FieldPatch, PrototypeFields};
 use crate::prototypes::PrototypeCatalog;
 use crate::resource_edit::{self, SaveResult};
+use crate::rsi_create::{self, CreatedRsi, RsiCreationPreview, RsiDraft};
 use crate::rsi_preview::{self, RsiSheetImage, RsiSheetList};
 
 const MAX_SCAN_ENTRIES: usize = 250_000;
@@ -384,6 +385,15 @@ impl ProjectIndex {
             syntax,
             locale: snapshot.inspect(rel_path, source),
         })
+    }
+
+    pub fn preview_new_rsi(&self, draft: &RsiDraft) -> Result<RsiCreationPreview, StudioError> {
+        rsi_create::preview(draft)
+    }
+
+    pub fn create_new_rsi(&self, draft: &RsiDraft) -> Result<CreatedRsi, StudioError> {
+        let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;
+        rsi_create::create(&self.root, draft)
     }
 
     pub fn preview_new_fluent(&self, draft: &FluentDraft) -> Result<FluentPreview, StudioError> {
@@ -1559,6 +1569,31 @@ mod tests {
         let error = ProjectIndex::open(fixture.root_str()).unwrap_err();
         assert_eq!(error.code, "PROJECT_SYMLINKED_SCOPE");
         assert!(!error.hint.is_empty());
+    }
+
+    #[test]
+    fn newly_created_rsi_becomes_indexed_after_refresh() {
+        let fx = Fixture::new();
+        fx.write("Resources/Textures/seed.rsi/meta.json", "{\"version\":1}");
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let draft = RsiDraft {
+            directory: "Resources/Textures".into(),
+            name: "generated".into(),
+            size_x: 32,
+            size_y: 32,
+            license: "CC0-1.0".into(),
+            copyright: "Fixture".into(),
+        };
+        let created = index.create_new_rsi(&draft).unwrap();
+        assert_eq!(created.path, "Resources/Textures/generated.rsi");
+        assert_eq!(
+            index.read_resource(&created.path).unwrap_err().code,
+            "RESOURCE_NOT_INDEXED"
+        );
+        let (fresh, _) = index.refresh().unwrap();
+        let doc = fresh.read_resource(&created.path).unwrap();
+        assert!(doc.content.contains("\"version\""));
+        assert_eq!(fresh.overview().rsi_directories, 2);
     }
 
     #[test]

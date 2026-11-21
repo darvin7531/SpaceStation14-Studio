@@ -272,6 +272,27 @@ export interface FluentInspection {
   locale: FluentLocaleAnalysis;
 }
 
+export interface NewRsiDraft {
+  directory: string;
+  name: string;
+  size_x: number;
+  size_y: number;
+  license: string;
+  copyright: string;
+}
+
+export interface NewRsiPreview {
+  path: string;
+  metadata: string;
+  warnings: string[];
+}
+
+export interface CreatedRsi {
+  path: string;
+  warning: string | null;
+  overview: ProjectOverview | null;
+}
+
 export interface NewFluentDraft {
   file: string;
   starter_key: string;
@@ -396,6 +417,12 @@ export const studio = {
   },
   deleteDraft(path: string): Promise<void> {
     return invoke('delete_draft', { path });
+  },
+  previewNewRsi(draft: NewRsiDraft): Promise<NewRsiPreview> {
+    return invoke('preview_new_rsi', { draft });
+  },
+  createNewRsi(draft: NewRsiDraft): Promise<CreatedRsi> {
+    return invoke('create_new_rsi', { draft });
   },
   previewNewFluent(draft: NewFluentDraft): Promise<NewFluentPreview> {
     return invoke('preview_new_fluent', { draft });

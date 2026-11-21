@@ -4,7 +4,7 @@ import {
   AlertCircle, AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight,
   FileCode2, FileText, FolderOpen, Image as ImageIcon, Search, X, RotateCcw, Save, FilePlus2,
 } from 'lucide-react';
-import { studio, type DraftList, type DraftSnapshot, type CreatedPrototype, type CreatedFluent, type PrototypeDeclaration, type PrototypeFieldLocator, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage } from './lib/api';
+import { studio, type DraftList, type DraftSnapshot, type CreatedPrototype, type CreatedFluent, type CreatedRsi, type PrototypeDeclaration, type PrototypeFieldLocator, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage } from './lib/api';
 import { normalizeStudioError, type StudioError } from './lib/errors';
 import { closeTab, openTab, type TabState } from './lib/tabs';
 import { dirtyDocumentPaths, reconcileSavedDraft } from './lib/draft-state';
@@ -13,6 +13,7 @@ import { reviewDecision } from './lib/review-guard';
 import { reconcileWorkspaceRefresh } from './lib/workspace-refresh';
 import MonacoPreview from './editor/MonacoPreview';
 import RsiPreview from './components/RsiPreview';
+import CreateRsiWizard from './components/CreateRsiWizard';
 import PrototypeExplorer from './components/PrototypeExplorer';
 import PrototypeFieldsPanel from './components/PrototypeFieldsPanel';
 import PrototypeComponentsPanel from './components/PrototypeComponentsPanel';
@@ -69,6 +70,7 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [creatingPrototype, setCreatingPrototype] = useState(false);
   const [creatingFluent, setCreatingFluent] = useState(false);
+  const [creatingRsi, setCreatingRsi] = useState(false);
   const [showingCSharp, setShowingCSharp] = useState(false);
   const [fieldTarget, setFieldTarget] = useState<PrototypeFieldLocator | null>(null);
   const [prototypePanel, setPrototypePanel] = useState<'fields' | 'components'>('fields');
@@ -183,6 +185,7 @@ export default function App() {
   async function loadProject(requestedPath: string) {
     setCreatingPrototype(false);
     setCreatingFluent(false);
+    setCreatingRsi(false);
     setShowingCSharp(false);
     setFieldTarget(null);
     comparisonVersion.current += 1;
@@ -776,6 +779,22 @@ export default function App() {
       : 'Прототип ' + result.kind + ':' + result.id + ' ' + verb + ' ' + result.file);
   }
 
+  function onRsiCreated(created: CreatedRsi) {
+    setCreatingRsi(false);
+    setFieldTarget(null);
+    if (created.overview) {
+      setOverview(created.overview);
+      setWorkspaceRevision((value) => value + 1);
+      setPage(0);
+      setKind('rsi');
+      setExplorerMode('files');
+      openResource({ path: created.path, kind: 'rsi' });
+    }
+    setNotice(created.warning
+      ? 'RSI создан: ' + created.path + '. ' + created.warning
+      : 'RSI создан: ' + created.path + '. Каталог готов для добавления кадров.');
+  }
+
   function onFluentCreated(created: CreatedFluent) {
     setCreatingFluent(false);
     setFieldTarget(null);
@@ -796,6 +815,10 @@ export default function App() {
     {showingCSharp && overview && <CSharpCatalogPanel
       projectKey={overview.project_root + ':' + workspaceRevision}
       onClose={() => setShowingCSharp(false)}/>}
+    {creatingRsi && overview && <CreateRsiWizard
+      onClose={() => setCreatingRsi(false)}
+      onCreated={onRsiCreated}
+      preferredPath={selected?.kind === 'rsi' ? selected.path : undefined}/>}
     {creatingFluent && overview && <CreateFluentWizard
       onClose={() => setCreatingFluent(false)}
       onCreated={onFluentCreated}
@@ -824,21 +847,26 @@ export default function App() {
         <span><b>{overview.prototype_files}</b> YAML-файлов</span>
         <span><b>{overview.rsi_directories}</b> RSI</span>
         <span><b>{overview.locale_files}</b> FTL</span>
-        <button type="button" className="create-proto-open" disabled={opening || saving || transitioning || refreshing || creatingFluent}
+        <button type="button" className="create-proto-open" disabled={opening || saving || transitioning || refreshing || creatingFluent || creatingRsi || creatingPrototype}
           onClick={() => setCreatingPrototype(true)}>
           <FilePlus2 size={15}/> Создать прототип
         </button>
         <button type="button" className="create-proto-open"
-          disabled={opening || saving || transitioning || refreshing || creatingPrototype || creatingFluent}
+          disabled={opening || saving || transitioning || refreshing || creatingPrototype || creatingFluent || creatingRsi}
+          onClick={() => setCreatingRsi(true)}>
+          <FilePlus2 size={15}/> Создать RSI
+        </button>
+        <button type="button" className="create-proto-open"
+          disabled={opening || saving || transitioning || refreshing || creatingPrototype || creatingFluent || creatingRsi}
           onClick={() => setCreatingFluent(true)}>
           <FilePlus2 size={15}/> Создать FTL
         </button>
         <button type="button" className="create-proto-open"
-          disabled={opening || saving || transitioning || refreshing || creatingPrototype || creatingFluent}
+          disabled={opening || saving || transitioning || refreshing || creatingPrototype || creatingFluent || creatingRsi}
           onClick={() => setShowingCSharp(true)}>
           <FileCode2 size={15}/> C# схемы
         </button>
-        <button type="button" className="create-proto-open" disabled={opening || picking || saving || transitioning || reading || refreshing || creatingPrototype || creatingFluent}
+        <button type="button" className="create-proto-open" disabled={opening || picking || saving || transitioning || reading || refreshing || creatingPrototype || creatingFluent || creatingRsi}
           title="Полностью пересканировать проект, сохранив открытые черновики"
           onClick={() => void refreshProject()}>
           <RotateCcw size={15}/>{refreshing ? 'Обновляю…' : 'Обновить индекс'}
