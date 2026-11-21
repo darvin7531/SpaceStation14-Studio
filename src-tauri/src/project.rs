@@ -432,12 +432,15 @@ impl ProjectIndex {
     }
 
     fn verify_indexed_rsi(&self, rel_path: &str) -> Result<(), StudioError> {
-        let indexed = self.positions.get(rel_path)
+        let indexed = self
+            .positions
+            .get(rel_path)
             .and_then(|index| self.resources.get(*index))
             .is_some_and(|entry| entry.kind == "rsi");
         if !indexed {
             return Err(StudioError::new(
-                "RSI_NOT_INDEXED", "RSI отсутствует в индексе проекта.",
+                "RSI_NOT_INDEXED",
+                "RSI отсутствует в индексе проекта.",
                 "Выберите RSI через список ресурсов открытого проекта.",
             ));
         }
@@ -1084,7 +1087,8 @@ mod tests {
         fs::write(
             fx.root.join("Resources/Textures/Test.rsi/idle.png"),
             b"\\x89PNG\\r\\n\\x1a\\nminimal fixture",
-        ).unwrap();
+        )
+        .unwrap();
         let index = ProjectIndex::open(fx.root_str()).unwrap();
         let sheets = index.list_rsi_sheets(path).unwrap();
         assert_eq!(sheets.sheets.len(), 1);
@@ -1096,7 +1100,10 @@ mod tests {
             "RSI_IMAGE_NAME_INVALID"
         );
         assert_eq!(
-            index.list_rsi_sheets("Resources/Prototypes").unwrap_err().code,
+            index
+                .list_rsi_sheets("Resources/Prototypes")
+                .unwrap_err()
+                .code,
             "RSI_NOT_INDEXED"
         );
     }
@@ -1108,14 +1115,22 @@ mod tests {
         let fx = Fixture::new();
         fx.write("Resources/Textures/Link.rsi/meta.json", "{}");
         fx.write("outside.png", "not a png");
-        symlink(fx.root.join("outside.png"),
-            fx.root.join("Resources/Textures/Link.rsi/escape.png")).unwrap();
+        symlink(
+            fx.root.join("outside.png"),
+            fx.root.join("Resources/Textures/Link.rsi/escape.png"),
+        )
+        .unwrap();
         let index = ProjectIndex::open(fx.root_str()).unwrap();
-        let listing = index.list_rsi_sheets("Resources/Textures/Link.rsi").unwrap();
+        let listing = index
+            .list_rsi_sheets("Resources/Textures/Link.rsi")
+            .unwrap();
         assert!(listing.sheets.is_empty());
         assert!(!listing.warnings.is_empty());
         assert_eq!(
-            index.read_rsi_sheet("Resources/Textures/Link.rsi", "escape.png").unwrap_err().code,
+            index
+                .read_rsi_sheet("Resources/Textures/Link.rsi", "escape.png")
+                .unwrap_err()
+                .code,
             "RSI_IMAGE_INVALID"
         );
     }
