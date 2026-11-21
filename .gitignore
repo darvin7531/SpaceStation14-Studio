@@ -5,3 +5,6 @@ src-tauri/gen/schemas/
 src-tauri/.tauri/
 *.log
 .DS_Store
+
+# Created by src-tauri/build.rs for Windows resource compilation.
+src-tauri/icons/icon.ico
