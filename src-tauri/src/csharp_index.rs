@@ -288,10 +288,14 @@ fn prototype_name(class_name: &str) -> String {
     member_name(class_name.strip_suffix("Prototype").unwrap_or(class_name))
 }
 
-fn qualified_name(node: Node<'_>, source: &[u8]) -> String {
+fn qualified_name(node: Node<'_>, source: &[u8], file_scoped: Option<&str>) -> String {
     let mut parts = Vec::new();
     let mut parent = Some(node);
+    let mut has_file_scoped_ancestor = false;
     while let Some(current) = parent {
+        if current.kind() == "file_scoped_namespace_declaration" {
+            has_file_scoped_ancestor = true;
+        }
         if matches!(
             current.kind(),
             "class_declaration"
@@ -306,6 +310,14 @@ fn qualified_name(node: Node<'_>, source: &[u8]) -> String {
         }
         parent = current.parent();
     }
+    // Tree-sitter represents `namespace A.B;` as a sibling of the class
+    // declaration rather than its ancestor. Keep its scope for every
+    // top-level declaration without duplicating it when nested by grammar.
+    if !has_file_scoped_ancestor {
+        if let Some(namespace) = file_scoped {
+            parts.push(namespace.to_string());
+        }
+    }
     parts.reverse();
     parts.join(".")
 }
@@ -314,6 +326,7 @@ fn parse_class(
     node: Node<'_>,
     file: &str,
     source: &[u8],
+    file_scoped: Option<&str>,
 ) -> (Vec<CSharpDefinition>, Option<CSharpPart>) {
     if !matches!(node.kind(), "class_declaration" | "record_declaration") {
         return (Vec::new(), None);
@@ -350,7 +363,7 @@ fn parse_class(
         })
         .unwrap_or_default();
     let line = node.start_position().row + 1;
-    let qualified_name = qualified_name(node, source);
+    let qualified_name = qualified_name(node, source, file_scoped);
     let fragment = if partial && (!fields.is_empty() || component || prototype.is_some()) {
         Some(CSharpPart {
             qualified_name: qualified_name.clone(),
@@ -415,9 +428,14 @@ fn parse_source(
     let mut definitions = Vec::new();
     let mut fragments = Vec::new();
     let root = tree.root_node();
+    let file_scoped = named_children(root)
+        .into_iter()
+        .find(|child| child.kind() == "file_scoped_namespace_declaration")
+        .and_then(|child| child.child_by_field_name("name"))
+        .map(|name| node_text(name, source.as_bytes()));
     let mut pending = vec![root];
     while let Some(node) = pending.pop() {
-        let (found, fragment) = parse_class(node, file, source.as_bytes());
+        let (found, fragment) = parse_class(node, file, source.as_bytes(), file_scoped);
         definitions.extend(found);
         if let Some(fragment) = fragment {
             fragments.push(fragment);
@@ -780,6 +798,8 @@ mod tests {
         let (_, second, invalid) =
             parse_source(&mut parser, "Content.Shared/Two.cs", same_namespace);
         assert!(!invalid);
+        assert_eq!(second.len(), 1);
+        assert_eq!(second[0].qualified_name, "Content.Shared.One.ExampleComponent");
         let (_, unrelated, invalid) =
             parse_source(&mut parser, "Content.Shared/Other.cs", other_namespace);
         assert!(!invalid);
