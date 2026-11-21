@@ -1325,7 +1325,7 @@ mod tests {
     #[test]
     fn adds_typed_fields_after_component_type_preserving_nested_and_siblings() {
         let original = "# preserved header\n- type: entity\n  id: First\n  components:\n  - type: Sprite\n    layers:\n    - state: icon\n  - type: Item\n    size: Normal\n- type: entity\n  id: Second\n  name: untouched\n";
-        let mut text = original.into();
+        let mut text = original.to_owned();
         for (key, kind, value) in [
             ("sprite", "string", "Objects/Tools/sword.rsi"),
             ("visible", "bool", "true"),
