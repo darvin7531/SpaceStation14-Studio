@@ -91,7 +91,8 @@ impl PrototypeCatalog {
                     if scope.is_file {
                         path == scope.relative
                     } else {
-                        path.starts_with(&format!("{}/", scope.relative.trim_end_matches('/')))
+                        path.strip_prefix(scope.relative.as_str())
+                            .is_some_and(|remainder| remainder.starts_with('/'))
                     }
                 })
                 .map(|scope| scope.order);
@@ -289,7 +290,28 @@ fn configured_partials(root: &Path, issues: &mut Vec<PrototypeDiagnostic>) -> Ve
     if !config.exists() {
         return Vec::new();
     }
-    let content = match read_bounded(&config)
+    let canonical = match fs::canonicalize(&config) {
+        Ok(path) if path.starts_with(root) => path,
+        Ok(_) => {
+            issues.push(PrototypeDiagnostic {
+                code: "PARTIAL_CONFIG_OUTSIDE_PROJECT",
+                file: config_rel.into(),
+                line: 0,
+                message: "Конфигурация partial-каталогов ссылается за пределы проекта.".into(),
+            });
+            return Vec::new();
+        }
+        Err(error) => {
+            issues.push(PrototypeDiagnostic {
+                code: "PARTIAL_CONFIG_UNREADABLE",
+                file: config_rel.into(),
+                line: 0,
+                message: error.to_string(),
+            });
+            return Vec::new();
+        }
+    };
+    let content = match read_bounded(&canonical)
         .and_then(|bytes| String::from_utf8(bytes).map_err(|error| error.to_string()))
     {
         Ok(content) => content,
@@ -705,6 +727,49 @@ mod tests {
         assert_eq!(scopes[0].order, 0);
         assert!(!scopes[0].is_file);
         assert!(scopes[1].is_file);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn catalog_keeps_base_and_partial_separate_and_reports_bad_yaml() {
+        let root = std::env::temp_dir()
+            .join(format!("ss14-prototype-integration-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let prototypes = root.join("Resources/Prototypes");
+        let partials = prototypes.join("_Local/Partials");
+        fs::create_dir_all(&partials).unwrap();
+        fs::create_dir_all(root.join("Resources/PartialPrototypes")).unwrap();
+
+        fs::write(
+            prototypes.join("base.yml"),
+            "- type: entity\n  id: Example\n  parent: BaseEntity\n",
+        ).unwrap();
+        fs::write(
+            partials.join("changes.yml"),
+            "- type: entity\n  id: Example\n  name: Modified\n",
+        ).unwrap();
+        fs::write(
+            prototypes.join("broken.yml"),
+            "- type: entity\n  id: [unfinished\n",
+        ).unwrap();
+        fs::write(
+            root.join("Resources/PartialPrototypes/partialPrototypes.yml"),
+            "- /Prototypes/_Local/Partials\n",
+        ).unwrap();
+
+        let workspace = crate::project::ProjectIndex::open(root.to_str().unwrap()).unwrap();
+        let catalog = workspace.prototypes();
+        let page = catalog.search("Example", Some("entity"), 0, 100);
+
+        assert_eq!(page.total, 2);
+        assert!(page.items.iter().all(|entry| entry.source_count == 2));
+        assert_eq!(page.items.iter().filter(|entry| entry.mode == "normal").count(), 1);
+        assert_eq!(page.items.iter().filter(|entry| entry.mode == "configured_partial").count(), 1);
+        assert!(catalog.diagnostics(0, 50).items.iter()
+            .any(|item| item.code == "YAML_PARSE_ERROR" && item.file.ends_with("broken.yml")));
+        assert!(!catalog.diagnostics(0, 50).items.iter()
+            .any(|item| item.code == "MULTIPLE_BASE_DECLARATIONS"));
+
         let _ = fs::remove_dir_all(root);
     }
 }
