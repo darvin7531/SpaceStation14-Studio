@@ -112,3 +112,7 @@
   border-bottom: 1px solid #665132;
   overflow-wrap: anywhere;
 }
+
+.fluent-diagnostics-row { border-bottom: 1px solid #223247; }
+.fluent-related-source { margin: 0 0 6px 65px; border: 1px solid #3f5c7b; border-radius: 4px; background: #1b344e; color: #b6d8ff; font-size: 11px; padding: 4px 8px; text-align: left; max-width: calc(100% - 70px); overflow-wrap: anywhere; }
+.fluent-check-now { margin-left: auto; padding: 5px 8px; border: 1px solid #426787; border-radius: 5px; background: #234360; color: #dcecff; }
