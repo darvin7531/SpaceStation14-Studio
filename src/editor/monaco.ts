@@ -2,12 +2,11 @@
  * Monaco runs entirely from the packaged app. Do not load editor code or workers
  * from a CDN: the editor must work offline in a Tauri webview.
  */
-import * as monaco from 'monaco-editor';
-import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
-import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
-import 'monaco-editor/esm/vs/editor/editor.main.css';
-import 'monaco-editor/esm/vs/basic-languages/yaml/yaml.contribution';
-import 'monaco-editor/esm/vs/language/json/monaco.contribution';
+import * as monaco from 'monaco-editor/editor';
+import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker';
+import JsonWorker from 'monaco-editor/languages/features/json/json.worker.js?worker';
+import 'monaco-editor/languages/definitions/yaml/register';
+import 'monaco-editor/languages/features/json/register';
 
 type MonacoSelf = typeof self & {
   MonacoEnvironment?: { getWorker: (_moduleId: string, label: string) => Worker };
