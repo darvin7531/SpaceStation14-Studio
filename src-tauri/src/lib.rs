@@ -34,7 +34,7 @@ use prototype_create::{PrototypeDraft, PrototypePreview};
 use prototype_fields::{FieldInspection, FieldLocator, FieldPatch, PrototypeFields};
 use prototype_graph::PrototypeRelations;
 use prototypes::{DiagnosticPage, PrototypePage};
-use resource_edit::SaveResult;
+use resource_edit::{SaveResult, YamlSyntaxReport};
 use rsi_create::{RsiCreationPreview, RsiDraft};
 use rsi_credits::RsiCreditsUpdate;
 use rsi_delete::{DeletedRsiState, RsiDeleteRequest};
@@ -333,6 +333,19 @@ async fn prototype_relations(
     })
     .await
     .map_err(interrupted)?
+}
+
+/// Analyze a YAML draft entirely in Rust without writing to disk.
+#[tauri::command]
+async fn analyze_yaml_resource(
+    path: String,
+    content: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<YamlSyntaxReport, StudioError> {
+    let index = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || index.analyze_yaml(&path, &content))
+        .await
+        .map_err(interrupted)?
 }
 
 /// A text-only operation: no YAML reserialization or unreviewed graph edits.
@@ -813,6 +826,7 @@ pub fn run() -> Result<(), tauri::Error> {
             restore_rsi_state,
             preview_new_rsi,
             create_new_rsi,
+            analyze_yaml_resource,
             save_yaml_resource,
             analyze_fluent_resource,
             save_ftl_resource,
