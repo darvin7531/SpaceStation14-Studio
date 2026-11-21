@@ -105,9 +105,9 @@ fn declaration_lines(source: &str) -> HashMap<&str, Vec<usize>> {
     result
 }
 
-fn take_line<'a>(
+fn take_line(
     id: &str,
-    positions: &HashMap<&'a str, Vec<usize>>,
+    positions: &HashMap<&str, Vec<usize>>,
     seen: &mut HashMap<String, usize>,
 ) -> usize {
     let index = seen.entry(id.to_string()).or_default();
