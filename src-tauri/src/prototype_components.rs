@@ -1138,8 +1138,8 @@ mod tests {
             .code,
             "COMPONENT_KIND_INVALID"
         );
-        assert_eq!(
-            patch(
+        assert!(
+            !patch(
                 source,
                 &loc(1, "Gear"),
                 &ComponentOperation::UpdateField {
@@ -1151,8 +1151,7 @@ mod tests {
                 }
             )
             .unwrap()
-            .changed,
-            false
+            .changed
         );
     }
 }
