@@ -278,13 +278,15 @@ fn validate_path(path: &str) -> Result<(), StudioError> {
             .iter()
             .all(|part| matches!(part, Component::Normal(_)))
         && components[0].as_os_str() == "Resources"
-        && components[1].as_os_str() == "Prototypes"
-        && (path.to_lowercase().ends_with(".yml") || path.to_lowercase().ends_with(".yaml"))
+        && ((components[1].as_os_str() == "Prototypes"
+            && (path.to_lowercase().ends_with(".yml") || path.to_lowercase().ends_with(".yaml")))
+            || (components[1].as_os_str() == "Locale"
+                && path.to_lowercase().ends_with(".ftl")))
         && !path.contains('\\');
     if !valid {
         return Err(problem(
             "DRAFT_PATH_INVALID",
-            "Для восстановления допустимы только пути YAML в Resources/Prototypes.",
+            "Для восстановления допустимы только YAML в Resources/Prototypes и FTL в Resources/Locale.",
         ));
     }
     Ok(())
@@ -383,6 +385,22 @@ mod tests {
     }
 
     #[test]
+    fn fluent_drafts_are_persisted_without_changing_project_files() {
+        let fx = Fixture::new();
+        let journal = fx.journal("/localization project");
+        let file = "Resources/Locale/ru-RU/prototypes/entities.ftl";
+        let rev = revision(b"original");
+        let source = "# a comment\r\nentity-example = Пример\r\n";
+        journal.write(file, &rev, source).unwrap();
+        let recovered = journal.read(file).unwrap().unwrap();
+        assert_eq!(recovered.content, source);
+        assert_eq!(recovered.base_revision, rev);
+        assert_eq!(journal.list().unwrap().0.len(), 1);
+        journal.delete(file).unwrap();
+        assert!(journal.read(file).unwrap().is_none());
+    }
+
+    #[test]
     fn different_projects_and_resource_paths_are_isolated() {
         let fx = Fixture::new();
         let first = fx.journal("/project A");
@@ -430,7 +448,9 @@ mod tests {
         for path in [
             "../secret.yml",
             "Resources/Prototypes/../escape.yml",
-            "Resources/Locale/en.ftl",
+            "Resources/Locale/en.yml",
+            "Resources/Other/unsafe.ftl",
+            "Resources/Locale/../escape.ftl",
             "/root/secret.yml",
         ] {
             assert_eq!(

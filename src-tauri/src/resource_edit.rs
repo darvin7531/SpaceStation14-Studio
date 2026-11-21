@@ -55,6 +55,27 @@ pub fn save_yaml(
     expected_revision: &str,
     content: String,
 ) -> Result<SaveResult, StudioError> {
+    save_text(root, relative_path, expected_revision, content, true)
+}
+
+/// Save source Fluent text exactly as authored. Syntax checking is deliberately
+/// not guessed here: the source might use SS14-specific macros and constructs.
+pub fn save_ftl(
+    root: &Path,
+    relative_path: &str,
+    expected_revision: &str,
+    content: String,
+) -> Result<SaveResult, StudioError> {
+    save_text(root, relative_path, expected_revision, content, false)
+}
+
+fn save_text(
+    root: &Path,
+    relative_path: &str,
+    expected_revision: &str,
+    content: String,
+    is_yaml: bool,
+) -> Result<SaveResult, StudioError> {
     if expected_revision.len() != 64 || !expected_revision.bytes().all(|c| c.is_ascii_hexdigit()) {
         return Err(StudioError::new(
             "REVISION_INVALID",
@@ -65,11 +86,13 @@ pub fn save_yaml(
     if content.len() as u64 > MAX_TEXT_BYTES {
         return Err(StudioError::new(
             "RESOURCE_TOO_LARGE",
-            "Изменённый YAML превышает лимит записи (4 МиБ).",
+            "Изменённый текстовый ресурс превышает лимит записи (4 МиБ).",
             "Уменьшите размер файла или используйте внешний редактор.",
         ));
     }
-    validate_yaml(&content)?;
+    if is_yaml {
+        validate_yaml(&content)?;
+    }
 
     let original = root.join(relative_path);
     let target = safe_target(root, &original)?;
@@ -141,7 +164,7 @@ pub fn save_yaml(
     fs::rename(&temp_path, &target).map_err(|error| {
         StudioError::new(
             "SAVE_REPLACE_FAILED",
-            "Не удалось заменить исходный YAML-файл.",
+            "Не удалось заменить исходный файл ресурса.",
             "Проверьте права папки, свободное место и блокировки. Черновик остался в Studio.",
         )
         .with_details(error.to_string())
@@ -216,7 +239,7 @@ fn bounded_read(path: &Path) -> Result<Vec<u8>, StudioError> {
     if bytes.len() as u64 > MAX_TEXT_BYTES {
         return Err(StudioError::new(
             "RESOURCE_TOO_LARGE",
-            "Исходный YAML вырос за пределы 4 МиБ.",
+            "Исходный ресурс вырос за пределы 4 МиБ.",
             "Проверьте изменения в файле; черновик не изменён.",
         ));
     }
@@ -281,7 +304,7 @@ fn conflict() -> StudioError {
 fn io_error(code: &'static str, error: std::io::Error) -> StudioError {
     StudioError::new(
         code,
-        "Не удалось выполнить операцию с YAML-файлом.",
+        "Не удалось выполнить операцию с файлом ресурса.",
         "Проверьте права доступа и диск. Черновик остался в Studio.",
     )
     .with_details(error.to_string())
@@ -326,6 +349,78 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+
+    #[test]
+    fn saves_fluent_exactly_with_original_comments_and_line_endings() {
+        let fx = Fixture::new();
+        let file = fx.root.join("Resources/Locale/en-US/test.ftl");
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, "# Original\r\nitem = Before\r\n").unwrap();
+        let rev = revision(&fs::read(&file).unwrap());
+        let updated = "# Updated\r\nitem = New\r\n    .desc = A description\r\n";
+        let result = save_ftl(
+            &fx.root,
+            "Resources/Locale/en-US/test.ftl",
+            &rev,
+            updated.into(),
+        )
+        .unwrap();
+        assert_eq!(fs::read_to_string(&file).unwrap(), updated);
+        assert_eq!(result.document.revision, revision(updated.as_bytes()));
+    }
+
+    #[test]
+    fn fluent_save_refuses_external_revision_change() {
+        let fx = Fixture::new();
+        let file = fx.root.join("Resources/Locale/en-US/test.ftl");
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, "key = First\n").unwrap();
+        let rev = revision(&fs::read(&file).unwrap());
+        fs::write(&file, "key = External\n").unwrap();
+        let error = save_ftl(
+            &fx.root,
+            "Resources/Locale/en-US/test.ftl",
+            &rev,
+            "key = Mine\n".into(),
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "RESOURCE_CHANGED_ON_DISK");
+        assert_eq!(fs::read_to_string(&file).unwrap(), "key = External\n");
+    }
+
+    #[test]
+    fn fluent_save_refuses_path_escape() {
+        let fx = Fixture::new();
+        let error = save_ftl(
+            &fx.root,
+            "../outside.ftl",
+            &revision(b"anything"),
+            "evil = no".into(),
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "RESOURCE_PATH_INVALID");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fluent_save_rejects_symlink_replacement() {
+        use std::os::unix::fs::symlink;
+        let fx = Fixture::new();
+        let file = fx.root.join("Resources/Locale/en-US/test.ftl");
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, "key = Original").unwrap();
+        let rev = revision(&fs::read(&file).unwrap());
+        fs::rename(&file, file.with_extension("backup")).unwrap();
+        symlink(file.with_extension("backup"), &file).unwrap();
+        let error = save_ftl(
+            &fx.root,
+            "Resources/Locale/en-US/test.ftl",
+            &rev,
+            "key = Mine".into(),
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "RESOURCE_SYMLINK_BLOCKED");
     }
 
     #[test]

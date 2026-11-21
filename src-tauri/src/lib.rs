@@ -228,6 +228,22 @@ async fn save_yaml_resource(
     .map_err(interrupted)?
 }
 
+/// Native Fluent source save. Preserves user text and refuses stale revisions.
+#[tauri::command]
+async fn save_ftl_resource(
+    path: String,
+    expected_revision: String,
+    content: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<SaveResult, StudioError> {
+    let index = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        index.save_ftl(&path, &expected_revision, content)
+    })
+    .await
+    .map_err(interrupted)?
+}
+
 /// List snapshots without modifying SS14 resource files.
 #[tauri::command]
 async fn list_drafts(
@@ -245,7 +261,7 @@ async fn list_drafts(
         let items = entries
             .into_iter()
             .map(|entry| DraftSummary {
-                source_indexed: project.is_yaml_indexed(&entry.path),
+                source_indexed: project.is_editable_text_indexed(&entry.path),
                 path: entry.path,
                 saved_at_ms: entry.saved_at_ms,
             })
@@ -284,11 +300,11 @@ async fn persist_draft(
     drafts: State<'_, DraftStorageLock>,
 ) -> Result<DraftWriteResult, StudioError> {
     let project = current_project(&state)?;
-    if !project.is_yaml_indexed(&path) {
+    if !project.is_editable_text_indexed(&path) {
         return Err(StudioError::new(
             "DRAFT_SOURCE_NOT_INDEXED",
-            "Автосохранение доступно только для YAML из открытого проекта.",
-            "Выберите настоящий YAML-файл в списке ресурсов Studio.",
+            "Автосохранение доступно только для YAML и FTL из открытого проекта.",
+            "Выберите существующий текстовый файл в списке ресурсов Studio.",
         ));
     }
     let root = draft_storage_root(&app)?;
@@ -519,6 +535,7 @@ pub fn run() -> Result<(), tauri::Error> {
             list_rsi_sheets,
             read_rsi_sheet,
             save_yaml_resource,
+            save_ftl_resource,
             preview_new_prototype,
             create_new_prototype,
             preview_append_prototype,

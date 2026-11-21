@@ -234,6 +234,13 @@ impl ProjectIndex {
             .is_some_and(|entry| entry.kind == "yaml")
     }
 
+    pub fn is_editable_text_indexed(&self, path: &str) -> bool {
+        self.positions
+            .get(path)
+            .and_then(|index| self.resources.get(*index))
+            .is_some_and(|entry| matches!(entry.kind, "yaml" | "ftl"))
+    }
+
     pub fn prototypes(&self) -> Result<Arc<PrototypeCatalog>, StudioError> {
         let mut cache = self.prototype_catalog.lock().map_err(|_| internal_lock())?;
         Ok(cache
@@ -433,6 +440,36 @@ impl ProjectIndex {
             }
         }
         Ok(result)
+    }
+
+    /// Edit indexed Fluent files with the same revision and atomic-write
+    /// safeguards as YAML. The prototype cache is unaffected by FTL edits.
+    pub fn save_ftl(
+        &self,
+        rel_path: &str,
+        expected_revision: &str,
+        content: String,
+    ) -> Result<SaveResult, StudioError> {
+        let item = self
+            .positions
+            .get(rel_path)
+            .and_then(|index| self.resources.get(*index))
+            .ok_or_else(|| {
+                StudioError::new(
+                    "RESOURCE_NOT_INDEXED",
+                    "Файл локализации отсутствует в индексе проекта.",
+                    "Обновите индекс и выберите существующий FTL-файл.",
+                )
+            })?;
+        if item.kind != "ftl" {
+            return Err(StudioError::new(
+                "RESOURCE_EDIT_NOT_SUPPORTED",
+                "Этим действием разрешено сохранять только Fluent-файлы.",
+                "Для YAML используйте сохранение YAML; RSI пока доступны только для просмотра.",
+            ));
+        }
+        let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;
+        resource_edit::save_ftl(&self.root, rel_path, expected_revision, content)
     }
 
     pub fn search(
@@ -969,6 +1006,47 @@ mod tests {
             fresh.create_new_prototype(&draft).unwrap_err().code,
             "PROTOTYPE_ID_EXISTS"
         );
+    }
+
+    #[test]
+    fn saves_only_indexed_fluent_without_affecting_yaml() {
+        let fx = Fixture::new();
+        let file = "Resources/Locale/ru-RU/proto.ftl";
+        fx.write(file, "# original\nthing-name = Before\n");
+        fx.write("Resources/Prototypes/test.yml", "- type: entity\n  id: Test\n");
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let loaded = index.read_resource(file).unwrap();
+        let updated = "# original\nthing-name = После\n";
+        let result = index
+            .save_ftl(file, &loaded.revision, updated.into())
+            .unwrap();
+        assert_eq!(result.document.content, updated);
+        assert_eq!(index.read_resource(file).unwrap().content, updated);
+        assert_eq!(
+            index
+                .save_ftl(
+                    "Resources/Prototypes/test.yml",
+                    &loaded.revision,
+                    updated.into(),
+                )
+                .unwrap_err()
+                .code,
+            "RESOURCE_EDIT_NOT_SUPPORTED"
+        );
+        assert_eq!(
+            index
+                .save_ftl(
+                    "Resources/Locale/ru-RU/absent.ftl",
+                    &loaded.revision,
+                    updated.into(),
+                )
+                .unwrap_err()
+                .code,
+            "RESOURCE_NOT_INDEXED"
+        );
+        assert!(index.is_editable_text_indexed(file));
+        assert!(!index.is_yaml_indexed(file));
+        assert!(!index.is_editable_text_indexed("Resources/Textures/thing.rsi"));
     }
 
     #[test]

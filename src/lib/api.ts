@@ -256,6 +256,9 @@ export const studio = {
   saveYamlResource(path: string, expectedRevision: string, content: string): Promise<SaveResult> {
     return invoke('save_yaml_resource', { path, expectedRevision, content });
   },
+  saveFtlResource(path: string, expectedRevision: string, content: string): Promise<SaveResult> {
+    return invoke('save_ftl_resource', { path, expectedRevision, content });
+  },
   listDrafts(): Promise<DraftList> {
     return invoke('list_drafts');
   },

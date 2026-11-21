@@ -53,7 +53,7 @@ export default function RecoveryPanel({
           sourceWarning = explained.message;
         }
       } else {
-        sourceWarning = 'Исходный YAML больше не входит в индекс проекта. Текст копии можно выделить и скопировать.';
+        sourceWarning = 'Исходный текстовый ресурс больше не входит в индекс проекта. Текст копии можно выделить и скопировать.';
       }
       setPreview({ snapshot, current, sourceWarning });
     } catch (failure) {

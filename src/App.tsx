@@ -23,6 +23,7 @@ import ConflictReviewPanel from './components/ConflictReviewPanel';
 const PAGE_SIZE = 100;
 const LAST_PROJECT_KEY = 'ss14-studio-rust.last-project-root';
 const kinds: ResourceKind[] = ['all', 'yaml', 'rsi', 'ftl'];
+const isEditableText = (kind: ResourceEntry['kind']) => kind === 'yaml' || kind === 'ftl';
 type PendingAction =
   | { type: 'open'; path: string }
   | { type: 'close'; path: string }
@@ -406,7 +407,10 @@ export default function App() {
   function restoreRecovery(snapshot: DraftSnapshot): boolean {
     if (!overview || isDirty(snapshot.path)) return false;
     closeComparison();
-    const item: ResourceEntry = { path: snapshot.path, kind: 'yaml' };
+    const item: ResourceEntry = {
+      path: snapshot.path,
+      kind: snapshot.path.toLowerCase().endsWith('.ftl') ? 'ftl' : 'yaml',
+    };
     const result = openTab(tabState, item);
     if (!result.ok) {
       setError({
@@ -575,7 +579,7 @@ export default function App() {
   }
 
   async function saveCurrent() {
-    if (!selected || selected.kind !== 'yaml' || saving || refreshing) return;
+    if (!selected || !isEditableText(selected.kind) || saving || refreshing) return;
     const file = selected.path;
     const baseline = documents.current.get(file);
     if (!baseline) return;
@@ -602,7 +606,9 @@ export default function App() {
     setNotice(null);
     setError(null);
     try {
-      const result = await studio.saveYamlResource(file, sourceRevision, submitted);
+      const result = selected.kind === 'yaml'
+        ? await studio.saveYamlResource(file, sourceRevision, submitted)
+        : await studio.saveFtlResource(file, sourceRevision, submitted);
       documents.current.set(file, result.document);
       setDrafts((previous) => ({
         ...previous,
@@ -623,7 +629,9 @@ export default function App() {
       closeComparison();
       setWorkspaceRevision((previous) => previous + 1);
       setNotice([
-        'YAML сохранён. Индекс прототипов будет перестроен при следующем обращении.',
+        selected.kind === 'yaml'
+          ? 'YAML сохранён. Индекс прототипов будет перестроен при следующем обращении.'
+          : 'FTL сохранён без изменения форматирования. Проверка синтаксиса Fluent пока не реализована.',
         result.durability_warning,
         cleanupWarning,
       ].filter(Boolean).join(' '));
@@ -820,7 +828,7 @@ export default function App() {
     </div>}
     {activeConflict && selected && <div className="recovery-conflict-notice" role="alert">
       <AlertTriangle size={16}/>
-      <span>Восстановленный черновик основан на старой версии YAML. Сохранение заблокировано до проверки diff.</span>
+      <span>Черновик основан на прежней версии файла. Сохранение заблокировано до проверки diff.</span>
       <button type="button" disabled={comparing} onClick={() => void compareCurrent()}>Сравнить версии</button>
     </div>}
     {overview && <RecoveryPanel entries={recoveries.items}
@@ -833,7 +841,7 @@ export default function App() {
       <FolderOpen size={46} strokeWidth={1.2}/>
       <h1>Открыть проект SS14</h1>
       <p>Rust-ядро безопасно проверит структуру репозитория, построит индекс ресурсов и откроет их для просмотра.</p>
-      <small>YAML-файлы прототипов можно редактировать с проверкой конфликта; RSI и FTL пока доступны только для просмотра.</small>
+      <small>YAML и Fluent можно редактировать с проверкой конфликта; RSI пока доступны для просмотра.</small>
     </main> :
     <main className="workspace">
       <aside className="explorer">
@@ -891,17 +899,19 @@ export default function App() {
               <button type="button" onClick={reloadCurrent} disabled={reading || saving || refreshing} title="Загрузить содержимое файла с диска">
                 <RotateCcw size={14}/> Перечитать
               </button>
-              {selected.kind === 'yaml' && <button type="button" onClick={() => void compareCurrent()}
+              {isEditableText(selected.kind) && <button type="button" onClick={() => void compareCurrent()}
                 disabled={saving || reading || comparing || refreshing || !isDirty(selected.path)}
-                title="Сравнить черновик с актуальным YAML на диске">
+                title="Сравнить черновик с актуальной версией файла на диске">
                 <FileCode2 size={14}/>{comparing ? 'Сравниваю…' : 'Сравнить'}
               </button>}
-              {selected.kind === 'yaml' && <button type="button" onClick={() => void saveCurrent()}
-                disabled={saving || reading || refreshing || !isDirty(selected.path)} title="Сохранить YAML (Ctrl+S)">
+              {isEditableText(selected.kind) && <button type="button" onClick={() => void saveCurrent()}
+                disabled={saving || reading || refreshing || !isDirty(selected.path)} title="Сохранить ресурс (Ctrl+S)">
                 <Save size={14}/>{saving ? 'Сохраняю…' : 'Сохранить'}
               </button>}
               <span className="readonly"><CheckCircle2 size={14}/>
-                {selected.kind === 'yaml' ? (isDirty(selected.path) ? 'Черновик изменён' : 'YAML · редактирование') : 'Только чтение'}
+                {isEditableText(selected.kind)
+                  ? (isDirty(selected.path) ? 'Черновик изменён' : selected.kind.toUpperCase() + ' · редактирование')
+                  : 'Только чтение'}
               </span>
             </div>
           </div>
@@ -924,8 +934,8 @@ export default function App() {
             document && selected.kind === 'rsi'
               ? <RsiPreview key={document.path + ':' + document.revision + ':' + workspaceRevision} path={selected.path} metadata={document.content}/>
               : document ? <MonacoPreview key={document.path} resource={selected} document={document}
-              value={activeText} editable={selected.kind === 'yaml' && !saving && !refreshing}
-              onChange={selected.kind === 'yaml' ? (value) => {
+              value={activeText} editable={isEditableText(selected.kind) && !saving && !refreshing}
+              onChange={isEditableText(selected.kind) ? (value) => {
                 const next = { ...draftsRef.current, [selected.path]: value };
                 draftsRef.current = next;
                 setDrafts(next);
