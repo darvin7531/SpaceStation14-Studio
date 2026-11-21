@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { open as openDirectoryDialog } from '@tauri-apps/plugin-dialog';
 import {
   AlertCircle, AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight,
   FileCode2, FileText, FolderOpen, Image as ImageIcon, Search, X, RotateCcw,
@@ -9,6 +10,7 @@ import { closeTab, openTab, type TabState } from './lib/tabs';
 import MonacoPreview from './editor/MonacoPreview';
 
 const PAGE_SIZE = 100;
+const LAST_PROJECT_KEY = 'ss14-studio-rust.last-project-root';
 const kinds: ResourceKind[] = ['all', 'yaml', 'rsi', 'ftl'];
 
 function ResourceIcon({ kind }: { kind: ResourceEntry['kind'] }) {
@@ -30,9 +32,16 @@ function ErrorPanel({ error, close }: { error: StudioError; close: () => void })
 }
 
 export default function App() {
-  const [path, setPath] = useState('');
+  const [path, setPath] = useState(() => {
+    try {
+      return window.localStorage.getItem(LAST_PROJECT_KEY) ?? '';
+    } catch {
+      return '';
+    }
+  });
   const [overview, setOverview] = useState<ProjectOverview | null>(null);
   const [opening, setOpening] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState<ResourceKind>('all');
   const [page, setPage] = useState(0);
@@ -46,12 +55,16 @@ export default function App() {
   const [error, setError] = useState<StudioError | null>(null);
   const readVersion = useRef(0);
 
-  async function openProject(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function loadProject(requestedPath: string) {
     setOpening(true);
     setError(null);
     try {
-      const next = await studio.openProject(path);
+      const next = await studio.openProject(requestedPath);
+      try {
+        window.localStorage.setItem(LAST_PROJECT_KEY, next.project_root);
+      } catch {
+        // Saving a recent path is optional and must not block opening.
+      }
       readVersion.current += 1;
       documents.current.clear();
       setOverview(next);
@@ -88,6 +101,32 @@ export default function App() {
       window.clearTimeout(handle);
     };
   }, [overview, query, kind, page]);
+
+  async function chooseProjectFolder() {
+    setPicking(true);
+    setError(null);
+    try {
+      const selected = await openDirectoryDialog({
+        directory: true,
+        multiple: false,
+        title: 'Выберите корень исходников Space Station 14',
+      });
+      if (typeof selected === 'string') {
+        setPath(selected);
+        await loadProject(selected);
+      }
+    } catch (failure) {
+      const normalized = normalizeStudioError(failure);
+      setError({
+        code: 'FOLDER_PICKER_FAILED',
+        message: 'Не удалось выбрать папку через системный диалог.',
+        hint: 'Введите путь вручную или проверьте доступность графического окружения.',
+        details: normalized.details ?? normalized.message,
+      });
+    } finally {
+      setPicking(false);
+    }
+  }
 
   /** A late IPC response must never replace the content of a newer tab. */
   async function focusResource(path: string) {
@@ -166,13 +205,14 @@ export default function App() {
     </header>
 
     <section className="project-bar">
-      <form onSubmit={(event) => void openProject(event)}>
+      <form onSubmit={(event: FormEvent<HTMLFormElement>) => { event.preventDefault(); void loadProject(path); }}>
         <label htmlFor="project-path"><FolderOpen size={16}/> Папка исходников SS14</label>
         <div className="path-control">
           <input id="project-path" value={path} spellCheck={false} autoComplete="off"
             placeholder="/home/user/SpaceStation14 или C:\SpaceStation14"
             onChange={(event) => setPath(event.target.value)}/>
-          <button type="submit" disabled={opening}><FolderOpen size={16}/>{opening ? 'Проверяю…' : 'Открыть проект'}</button>
+          <button type="button" className="browse-button" disabled={opening || picking} onClick={() => void chooseProjectFolder()}>Обзор…</button>
+          <button type="submit" disabled={opening || picking}><FolderOpen size={16}/>{opening ? 'Проверяю…' : 'Открыть проект'}</button>
         </div>
       </form>
       {overview && <div className="project-counts">

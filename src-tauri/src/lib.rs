@@ -73,6 +73,7 @@ async fn read_resource(
 
 pub fn run() -> Result<(), tauri::Error> {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(WorkspaceState::default())
         .invoke_handler(tauri::generate_handler![
             open_project,

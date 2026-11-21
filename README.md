@@ -7,7 +7,7 @@ SS14 Studio is being rewritten on **Rust + Tauri 2**. The desktop application in
 
 ## What is working now
 
-- A native Tauri window with a lightweight React interface.
+- A native Tauri window with a lightweight React interface and an OS-native folder picker (only `dialog:allow-open` permission). The last successful project path is remembered locally.
 - Open and verify the root directory of a Space Station 14 source checkout.
 - Read-only inventory of YAML prototype files, RSI folders and Fluent files.
 - Search by resource path and type, with pagination; queries use precomputed case-insensitive keys and resource reads use a direct lookup map, with no filesystem walk per search.

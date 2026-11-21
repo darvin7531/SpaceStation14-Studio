@@ -82,3 +82,10 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .monaco-shell { flex: 1; display: flex; min-width: 0; min-height: 120px; position: relative; }
 .monaco-shell .monaco-container { flex: 1; }
 .monaco-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #92a9c3; background: #0b111a; font-size: 13px; pointer-events: none; }
+
+.path-control .browse-button { border-color: #3e5775; background: #253c55; color: #d4e4f7; }
+.path-control .browse-button:hover:not(:disabled) { background: #335372; }
+@media (max-width: 600px) {
+  .path-control { flex-wrap: wrap; }
+  .path-control input { flex-basis: 100%; }
+}
