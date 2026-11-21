@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Component, Path};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 const MAX_PNG_BYTES: usize = 8 * 1024 * 1024;
@@ -293,7 +293,8 @@ fn updated_metadata(
     let (png_width, png_height) = png_dimensions(png)?;
     if png_width % width != 0
         || png_height % height != 0
-        || u64::from(png_width / width) * u64::from(png_height / height) != u64::from(expected_cells)
+        || u64::from(png_width / width) * u64::from(png_height / height)
+            != u64::from(expected_cells)
     {
         return Err(issue(
             "RSI_IMPORT_PNG_SIZE_MISMATCH",
@@ -359,12 +360,44 @@ fn updated_metadata(
     Ok(serialized)
 }
 
+/// Reject symlinks in every ancestor: read-only previews may resolve links
+/// inside Textures, but a write operation must never follow them.
+fn safe_import_directory(root: &Path, relative: &str) -> Result<std::path::PathBuf, StudioError> {
+    let mut cursor = root.to_path_buf();
+    for part in Path::new(relative).components() {
+        let Component::Normal(segment) = part else {
+            return Err(issue(
+                "RSI_IMPORT_PATH_INVALID",
+                "Путь к RSI содержит недопустимые компоненты.",
+                "Выберите ресурс из списка текущего проекта.",
+            ));
+        };
+        cursor.push(segment);
+        let meta = fs::symlink_metadata(&cursor).map_err(|e| {
+            issue(
+                "RSI_IMPORT_PATH_INVALID",
+                "Часть пути к RSI не доступна.",
+                "Обновите индекс проекта.",
+            )
+            .with_details(e.to_string())
+        })?;
+        if meta.file_type().is_symlink() || !meta.is_dir() {
+            return Err(issue(
+                "RSI_IMPORT_SYMLINK_FORBIDDEN",
+                "Путь к RSI содержит символическую ссылку или файл вместо каталога.",
+                "Для записи выберите обычную папку без символических ссылок.",
+            ));
+        }
+    }
+    directory(root, relative)
+}
+
 /// The caller serializes actions in a project-local mutex. A second precommit
 /// revision check catches external edits during PNG staging. Power loss can
 /// leave an orphan PNG, which is intentionally never deleted on startup.
 pub fn import(root: &Path, request: &RsiStateImport) -> Result<ImportedRsiState, StudioError> {
     validate_request(request)?;
-    let folder = directory(root, &request.path)?;
+    let folder = safe_import_directory(root, &request.path)?;
     let meta_path = folder.join("meta.json");
     let original = bounded_metadata(&meta_path)?;
     if revision(&original) != request.expected_revision {
@@ -699,6 +732,25 @@ mod tests {
             import(&fx.root, &request).unwrap_err().code,
             "RSI_IMPORT_PNG_INVALID"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_parent_symlink_inside_textures() {
+        use std::os::unix::fs::symlink;
+        let fx = Fixture::new();
+        symlink(
+            fx.root.join("Resources/Textures"),
+            fx.root.join("Resources/Textures/alias"),
+        )
+        .unwrap();
+        let mut request = fx.request();
+        request.path = "Resources/Textures/alias/sample.rsi".into();
+        assert_eq!(
+            import(&fx.root, &request).unwrap_err().code,
+            "RSI_IMPORT_SYMLINK_FORBIDDEN"
+        );
+        assert!(!fx.root.join(&fx.rel).join("idle.png").exists());
     }
 
     #[test]
