@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, CheckCircle2, FileWarning2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, FileWarning } from 'lucide-react';
 import { studio, type FluentAnalysis } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 
@@ -50,7 +50,7 @@ export default function FluentDiagnosticsPanel({ path, source, onRevealLine }: P
 
   return <section className="fluent-diagnostics" aria-label="Диагностика Fluent">
     <div className="fluent-diagnostics-heading">
-      <FileWarning2 size={16}/>
+      <FileWarning size={16}/>
       <strong>Проверка Fluent</strong>
       <small>Только текущий текст · файл не изменяется</small>
       {visible && <span>

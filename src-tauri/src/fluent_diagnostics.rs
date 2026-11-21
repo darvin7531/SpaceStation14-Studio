@@ -66,8 +66,12 @@ fn message(kind: &parser::ErrorKind) -> &'static str {
         ErrorKind::MissingValue => "Ожидалось значение сообщения или выражения.",
         ErrorKind::UnterminatedStringLiteral => "Строка не закрыта кавычкой.",
         ErrorKind::UnbalancedClosingBrace => "Лишняя закрывающая фигурная скобка.",
-        ErrorKind::MissingDefaultVariant => "В выражении выбора отсутствует вариант по умолчанию (*).",
-        ErrorKind::MultipleDefaultVariants => "У выражения выбора несколько вариантов по умолчанию (*).",
+        ErrorKind::MissingDefaultVariant => {
+            "В выражении выбора отсутствует вариант по умолчанию (*)."
+        }
+        ErrorKind::MultipleDefaultVariants => {
+            "У выражения выбора несколько вариантов по умолчанию (*)."
+        }
         ErrorKind::UnknownEscapeSequence(_) | ErrorKind::InvalidUnicodeEscapeSequence(_) => {
             "Недопустимая escape-последовательность."
         }
@@ -104,8 +108,11 @@ pub fn analyze(source: &str) -> Result<FluentAnalysis, StudioError> {
         .take(MAX_DIAGNOSTICS)
         .map(|error| {
             let (line, column) = location(source, &starts, error.pos.start);
-            let (end_line, end_column) =
-                location(source, &starts, error.pos.end.max(error.pos.start.saturating_add(1)));
+            let (end_line, end_column) = location(
+                source,
+                &starts,
+                error.pos.end.max(error.pos.start.saturating_add(1)),
+            );
             FluentDiagnostic {
                 code: "FTL_SYNTAX",
                 message: message(&error.kind).into(),
@@ -156,7 +163,10 @@ mod tests {
         let starts = line_starts(source);
         let byte = source.find("вет").unwrap();
         assert_eq!(location(source, &starts, byte), (1, 11));
-        assert_eq!(location(source, &starts, source.find("next").unwrap()), (2, 1));
+        assert_eq!(
+            location(source, &starts, source.find("next").unwrap()),
+            (2, 1)
+        );
     }
 
     #[test]
@@ -170,6 +180,9 @@ mod tests {
     #[test]
     fn rejects_oversized_buffer_without_mutation() {
         let source = "a".repeat(MAX_TEXT_BYTES as usize + 1);
-        assert_eq!(analyze(&source).unwrap_err().code, "FTL_DIAGNOSTICS_TOO_LARGE");
+        assert_eq!(
+            analyze(&source).unwrap_err().code,
+            "FTL_DIAGNOSTICS_TOO_LARGE"
+        );
     }
 }

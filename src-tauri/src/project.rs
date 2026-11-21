@@ -252,7 +252,11 @@ impl ProjectIndex {
 
     /// Validate live editor text without reading or writing the disk.
     /// Restrict this action to indexed Fluent resources.
-    pub fn analyze_fluent(&self, rel_path: &str, source: &str) -> Result<FluentAnalysis, StudioError> {
+    pub fn analyze_fluent(
+        &self,
+        rel_path: &str,
+        source: &str,
+    ) -> Result<FluentAnalysis, StudioError> {
         let indexed_ftl = self
             .positions
             .get(rel_path)
@@ -1043,7 +1047,10 @@ mod tests {
         let path = "Resources/Locale/en-US/items.ftl";
         let original = "valid = Hello\n";
         fx.write(path, original);
-        fx.write("Resources/Prototypes/item.yml", "- type: entity\n  id: Item\n");
+        fx.write(
+            "Resources/Prototypes/item.yml",
+            "- type: entity\n  id: Item\n",
+        );
         let index = ProjectIndex::open(fx.root_str()).unwrap();
         let diagnostics = index
             .analyze_fluent(path, "valid = Hello\nbad@name = Broken\n")
@@ -1056,13 +1063,17 @@ mod tests {
             "Diagnostics must never persist a live editor draft",
         );
         assert_eq!(
-            index.analyze_fluent("Resources/Prototypes/item.yml", original)
-                .unwrap_err().code,
+            index
+                .analyze_fluent("Resources/Prototypes/item.yml", original)
+                .unwrap_err()
+                .code,
             "FTL_NOT_INDEXED"
         );
         assert_eq!(
-            index.analyze_fluent("Resources/Locale/en-US/missing.ftl", original)
-                .unwrap_err().code,
+            index
+                .analyze_fluent("Resources/Locale/en-US/missing.ftl", original)
+                .unwrap_err()
+                .code,
             "FTL_NOT_INDEXED"
         );
     }
