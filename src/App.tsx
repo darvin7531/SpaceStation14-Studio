@@ -13,6 +13,7 @@ import { reviewDecision } from './lib/review-guard';
 import MonacoPreview from './editor/MonacoPreview';
 import PrototypeExplorer from './components/PrototypeExplorer';
 import PrototypeFieldsPanel from './components/PrototypeFieldsPanel';
+import PrototypeComponentsPanel from './components/PrototypeComponentsPanel';
 import RecoveryPanel from './components/RecoveryPanel';
 import CreatePrototypeWizard, { type PrototypeDestinationMode } from './components/CreatePrototypeWizard';
 import ConflictReviewPanel from './components/ConflictReviewPanel';
@@ -61,6 +62,7 @@ export default function App() {
   const [opening, setOpening] = useState(false);
   const [creatingPrototype, setCreatingPrototype] = useState(false);
   const [fieldTarget, setFieldTarget] = useState<PrototypeFieldLocator | null>(null);
+  const [prototypePanel, setPrototypePanel] = useState<'fields' | 'components'>('fields');
   const [picking, setPicking] = useState(false);
   const [explorerMode, setExplorerMode] = useState<'files' | 'prototypes'>('files');
   const [workspaceRevision, setWorkspaceRevision] = useState(0);
@@ -578,9 +580,10 @@ export default function App() {
     openResource({ path: file, kind: 'yaml' });
   }
 
-  function editPrototypeFields(entry: PrototypeDeclaration) {
+  function editPrototypeFields(entry: PrototypeDeclaration, panel: 'fields' | 'components') {
     if (saving || opening || transitioning) return;
     openPrototypeSource(entry.file, entry.line);
+    setPrototypePanel(panel);
     setFieldTarget({
       file: entry.file, kind: entry.kind, id: entry.id,
       document_index: entry.document_index, item_index: entry.item_index,
@@ -798,10 +801,15 @@ export default function App() {
             </div>
           </div>
           {fieldTarget && selected.kind === 'yaml' && selected.path === fieldTarget.file
-            && document?.path === selected.path && !reading && <PrototypeFieldsPanel
-              key={fieldTarget.file + ':' + fieldTarget.document_index + ':' + fieldTarget.item_index}
-              locator={fieldTarget} source={activeText} busy={saving || transitioning}
-              onApply={applyPrototypeFields} onClose={() => setFieldTarget(null)}/>}
+            && document?.path === selected.path && !reading && (prototypePanel === 'fields'
+              ? <PrototypeFieldsPanel
+                  key={fieldTarget.file + ':' + fieldTarget.document_index + ':' + fieldTarget.item_index}
+                  locator={fieldTarget} source={activeText} busy={saving || transitioning}
+                  onApply={applyPrototypeFields} onClose={() => setFieldTarget(null)}/>
+              : <PrototypeComponentsPanel
+                  key={fieldTarget.file + ':' + fieldTarget.document_index + ':' + fieldTarget.item_index}
+                  locator={fieldTarget} source={activeText} busy={saving || transitioning}
+                  onApply={applyPrototypeFields} onClose={() => setFieldTarget(null)}/>)}
           {comparison && comparison.path === selected.path && <ConflictReviewPanel
             file={comparison.path} disk={comparison.disk} draft={comparison.reviewedDraft}
             draftChanged={Boolean(reviewDirty)} busy={comparing}

@@ -53,6 +53,21 @@ export interface FieldInspection {
   notice: string;
 }
 
+export interface PrototypeComponentEntry {
+  index: number;
+  type_name: string;
+  field_count: number;
+}
+
+export interface ComponentInspection {
+  components: PrototypeComponentEntry[];
+  notice: string;
+}
+
+export type ComponentOperation =
+  | { operation: 'add'; type_name: string }
+  | { operation: 'remove'; index: number; expected_type: string };
+
 export interface FieldPatch {
   content: string;
   changed: boolean;
@@ -185,6 +200,12 @@ export const studio = {
   },
   patchPrototypeFields(locator: PrototypeFieldLocator, source: string, fields: PrototypeFields): Promise<FieldPatch> {
     return invoke('patch_prototype_fields', { locator, source, fields });
+  },
+  inspectPrototypeComponents(locator: PrototypeFieldLocator, source: string): Promise<ComponentInspection> {
+    return invoke('inspect_prototype_components', { locator, source });
+  },
+  patchPrototypeComponents(locator: PrototypeFieldLocator, source: string, operation: ComponentOperation): Promise<FieldPatch> {
+    return invoke('patch_prototype_components', { locator, source, operation });
   },
   prototypeRelations(kind: string, id: string): Promise<PrototypeRelations> {
     return invoke('prototype_relations', { kind, id });

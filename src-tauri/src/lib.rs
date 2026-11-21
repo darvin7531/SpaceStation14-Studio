@@ -2,6 +2,7 @@ mod draft_journal;
 mod error;
 mod project;
 mod prototype_append;
+mod prototype_components;
 mod prototype_create;
 mod prototype_fields;
 mod prototype_graph;
@@ -14,6 +15,7 @@ use draft_journal::{DraftJournal, DraftList, DraftSnapshot, DraftSummary, DraftW
 use error::{internal_lock, interrupted, StudioError};
 use project::{ProjectIndex, ProjectOverview, ResourceDocument, ResourcePage};
 use prototype_append::AppendPreview;
+use prototype_components::{ComponentInspection, ComponentOperation};
 use prototype_create::{PrototypeDraft, PrototypePreview};
 use prototype_fields::{FieldInspection, FieldLocator, FieldPatch, PrototypeFields};
 use prototype_graph::PrototypeRelations;
@@ -423,6 +425,35 @@ async fn patch_prototype_fields(
     .map_err(interrupted)?
 }
 
+#[tauri::command]
+async fn inspect_prototype_components(
+    locator: FieldLocator,
+    source: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<ComponentInspection, StudioError> {
+    let project = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        project.inspect_prototype_components(&locator, &source)
+    })
+    .await
+    .map_err(interrupted)?
+}
+
+#[tauri::command]
+async fn patch_prototype_components(
+    locator: FieldLocator,
+    source: String,
+    operation: ComponentOperation,
+    state: State<'_, WorkspaceState>,
+) -> Result<FieldPatch, StudioError> {
+    let project = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        project.patch_prototype_components(&locator, &source, &operation)
+    })
+    .await
+    .map_err(interrupted)?
+}
+
 pub fn run() -> Result<(), tauri::Error> {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -442,6 +473,8 @@ pub fn run() -> Result<(), tauri::Error> {
             append_prototype,
             inspect_prototype_fields,
             patch_prototype_fields,
+            inspect_prototype_components,
+            patch_prototype_components,
             list_drafts,
             read_draft,
             persist_draft,

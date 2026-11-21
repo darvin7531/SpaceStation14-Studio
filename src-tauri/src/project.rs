@@ -8,6 +8,7 @@ use serde::Serialize;
 
 use crate::error::{internal_lock, StudioError};
 use crate::prototype_append::{self, AppendPreview};
+use crate::prototype_components::{self, ComponentInspection, ComponentOperation};
 use crate::prototype_create::{self, CreatedPrototype, PrototypeDraft, PrototypePreview};
 use crate::prototype_fields::{self, FieldInspection, FieldLocator, FieldPatch, PrototypeFields};
 use crate::prototypes::PrototypeCatalog;
@@ -293,6 +294,39 @@ impl ProjectIndex {
             yaml: prepared.yaml,
             warning,
         })
+    }
+
+    /// Changes made here produce only draft content; they cannot touch disk.
+    pub fn inspect_prototype_components(
+        &self,
+        locator: &FieldLocator,
+        source: &str,
+    ) -> Result<ComponentInspection, StudioError> {
+        if !self.is_yaml_indexed(&locator.file) {
+            return Err(StudioError::new(
+                "COMPONENT_NOT_INDEXED",
+                "Файл прототипа не входит в индекс проекта.",
+                "Откройте прототип из каталога Studio.",
+            ));
+        }
+        if self.prototypes()?.has_partial_declarations(&locator.file) {
+            return Err(StudioError::new(
+                "COMPONENT_PARTIAL_UNSUPPORTED",
+                "Редактор компонентов пока не поддерживает Partial Prototypes.",
+                "Используйте текстовый редактор для нестандартных объявлений.",
+            ));
+        }
+        prototype_components::inspect(source, locator)
+    }
+
+    pub fn patch_prototype_components(
+        &self,
+        locator: &FieldLocator,
+        source: &str,
+        operation: &ComponentOperation,
+    ) -> Result<FieldPatch, StudioError> {
+        self.inspect_prototype_components(locator, source)?;
+        prototype_components::patch(source, locator, operation)
     }
 
     /// Both operations only transform in-memory text: the user commits through

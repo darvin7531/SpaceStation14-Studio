@@ -49,7 +49,7 @@ fn unsupported(code: &'static str, message: &str) -> StudioError {
     )
 }
 
-fn parse_source(source: &str) -> Result<Vec<Yaml>, StudioError> {
+pub(crate) fn parse_source(source: &str) -> Result<Vec<Yaml>, StudioError> {
     if source.len() as u64 > MAX_TEXT_BYTES {
         return Err(unsupported(
             "FIELDS_TOO_LARGE",
@@ -72,7 +72,7 @@ fn parse_source(source: &str) -> Result<Vec<Yaml>, StudioError> {
     })
 }
 
-fn item<'a>(
+pub(crate) fn item<'a>(
     docs: &'a [Yaml],
     locator: &FieldLocator,
 ) -> Result<(&'a Yaml, &'a [Yaml]), StudioError> {
@@ -155,7 +155,7 @@ fn read_values(row: &Yaml) -> Result<PrototypeFields, StudioError> {
     })
 }
 
-fn item_rows(
+pub(crate) fn item_rows(
     source: &str,
     expected_count: usize,
     item_index: usize,

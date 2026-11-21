@@ -15,7 +15,7 @@ const PAGE_SIZE = 80;
 interface Props {
   workspaceKey: string;
   onOpen: (path: string, line: number) => void;
-  onEdit: (entry: PrototypeDeclaration) => void;
+  onEdit: (entry: PrototypeDeclaration, panel: 'fields' | 'components') => void;
 }
 
 export default function PrototypeExplorer({ workspaceKey, onOpen, onEdit }: Props) {
@@ -115,8 +115,14 @@ export default function PrototypeExplorer({ workspaceKey, onOpen, onEdit }: Prop
           </button>
           {entry.mode === 'normal' && <button type="button" className="prototype-relations-trigger"
             title="Редактировать простые поля через форму"
-            onClick={() => onEdit(entry)}>
+            onClick={() => onEdit(entry, 'fields')}>
             Поля
+          </button>}
+          {entry.kind === 'entity' && entry.mode === 'normal' && <button
+            type="button" className="prototype-relations-trigger"
+            title="Просмотр, добавление и удаление явно объявленных компонентов"
+            onClick={() => onEdit(entry, 'components')}>
+            Компоненты
           </button>}
           <button type="button" className="prototype-relations-trigger"
             aria-label={'Показать связи прототипа ' + entry.kind + ':' + entry.id}
