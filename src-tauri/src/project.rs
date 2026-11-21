@@ -18,6 +18,7 @@ use crate::prototype_fields::{self, FieldInspection, FieldLocator, FieldPatch, P
 use crate::prototypes::PrototypeCatalog;
 use crate::resource_edit::{self, SaveResult};
 use crate::rsi_create::{self, CreatedRsi, RsiCreationPreview, RsiDraft};
+use crate::rsi_credits::{self, RsiCreditsUpdate};
 use crate::rsi_delete::{self, DeletedRsiState, RsiDeleteRequest};
 use crate::rsi_import::{self, ImportedRsiState, RsiStateImport};
 use crate::rsi_preview::{self, RsiSheetImage, RsiSheetList};
@@ -704,6 +705,15 @@ impl ProjectIndex {
         self.verify_indexed_rsi(&request.path)?;
         let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;
         rsi_import::import(&self.root, request)
+    }
+
+    pub fn update_rsi_credits(
+        &self,
+        request: &RsiCreditsUpdate,
+    ) -> Result<ImportedRsiState, StudioError> {
+        self.verify_indexed_rsi(&request.path)?;
+        let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;
+        rsi_credits::update(&self.root, request)
     }
 
     pub fn update_rsi_timing(
