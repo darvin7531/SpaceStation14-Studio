@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AlertTriangle, FileCode2, LoaderCircle, Search, X } from 'lucide-react';
 import { studio, type CSharpPage } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
+import CSharpSourcePanel from './CSharpSourcePanel';
 
 type Kind = 'all' | 'component' | 'prototype';
 const PAGE_SIZE = 50;
@@ -18,6 +19,7 @@ export default function CSharpCatalogPanel({ projectKey, onClose }: Props) {
   const [results, setResults] = useState<CSharpPage | null>(null);
   const [error, setError] = useState<StudioError | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sourceTarget, setSourceTarget] = useState<{ path: string; line: number } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -39,6 +41,10 @@ export default function CSharpCatalogPanel({ projectKey, onClose }: Props) {
     }, query ? 200 : 0);
     return () => { active = false; window.clearTimeout(timer); };
   }, [projectKey, query, kind, page]);
+
+  if (sourceTarget) return <CSharpSourcePanel key={sourceTarget.path + ':' + sourceTarget.line}
+    path={sourceTarget.path} line={sourceTarget.line}
+    onBack={() => setSourceTarget(null)} onClose={onClose}/>;
 
   return <div className="csharp-catalog-backdrop">
     <section className="csharp-catalog-modal" role="dialog"
@@ -101,6 +107,10 @@ export default function CSharpCatalogPanel({ projectKey, onClose }: Props) {
               </div>
             </div>
             <p className="csharp-catalog-location">{definition.file}:{definition.line}</p>
+            <button type="button" className="csharp-open-source"
+              onClick={() => setSourceTarget({ path: definition.file, line: definition.line })}>
+              <FileCode2 size={14}/> Просмотреть C# исходник
+            </button>
             {definition.base_types && <p>Базовые типы: <code>{definition.base_types}</code></p>}
             {definition.fields.length > 0 &&
               <details>
@@ -112,7 +122,10 @@ export default function CSharpCatalogPanel({ projectKey, onClose }: Props) {
                       <td>{field.name}{field.required ? ' *' : ''}</td>
                       <td><code>{field.field_type}</code></td>
                       <td>{field.member}</td>
-                      <td>{field.line}</td>
+                      <td><button type="button" className="csharp-field-line"
+                        onClick={() => setSourceTarget({ path: definition.file, line: field.line })}>
+                        {field.line}
+                      </button></td>
                     </tr>)}</tbody>
                 </table>
               </details>}

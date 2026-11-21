@@ -176,6 +176,18 @@ async fn search_csharp_definitions(
     .map_err(interrupted)?
 }
 
+/// Preview only files that were indexed as C# definitions. No editor writes.
+#[tauri::command]
+async fn read_csharp_source(
+    path: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<ResourceDocument, StudioError> {
+    let index = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || index.read_csharp_source(&path))
+        .await
+        .map_err(interrupted)?
+}
+
 /// Return only direct C# schema matches for explicitly declared YAML
 /// components. Keep schema inference separate from source-preserving edits.
 #[tauri::command]
@@ -828,6 +840,7 @@ pub fn run() -> Result<(), tauri::Error> {
             search_resources,
             search_resource_content,
             search_csharp_definitions,
+            read_csharp_source,
             inspect_component_schemas,
             search_prototypes,
             prototype_relations,

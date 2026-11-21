@@ -653,6 +653,13 @@ impl CSharpCatalog {
         Ok(catalog)
     }
 
+    /// Only paths that contributed C# declarations are viewable from the catalog.
+    /// This prevents the source viewer from being an arbitrary filesystem reader.
+    pub fn has_source(&self, path: &str) -> bool {
+        self.definitions.iter().any(|entry| entry.file == path)
+            || self.parts.iter().any(|part| part.file == path)
+    }
+
     /// Resolve exact YAML component names only. Never guess a class by
     /// fuzzy match or merge duplicated / partial declarations silently.
     pub fn component_schemas(&self, names: &[String]) -> ComponentSchemaBatch {

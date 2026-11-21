@@ -27,6 +27,7 @@ use crate::rsi_timing::{self, RsiTimingUpdate};
 
 const MAX_SCAN_ENTRIES: usize = 250_000;
 const MAX_READ_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_CSHARP_PREVIEW_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_RESULTS: usize = 250;
 
 const MAX_CONTENT_SEARCH_FILES: usize = 8_192;
@@ -306,6 +307,80 @@ impl ProjectIndex {
             ));
         }
         Ok(self.csharp_catalog()?.component_schemas(names))
+    }
+
+    /// Read an indexed C# declaration's source for the inspector, never write it.
+    pub fn read_csharp_source(&self, rel_path: &str) -> Result<ResourceDocument, StudioError> {
+        if !self.csharp_catalog()?.has_source(rel_path) {
+            return Err(StudioError::new(
+                "CSHARP_SOURCE_NOT_INDEXED",
+                "Файл C# отсутствует в каталоге распознанных объявлений.",
+                "Выберите класс через каталог C# и обновите индекс при изменении исходников.",
+            ));
+        }
+        let path = fs::canonicalize(self.root.join(rel_path)).map_err(|error| {
+            StudioError::new(
+                "CSHARP_SOURCE_UNAVAILABLE",
+                "Не удалось открыть исходник C#.",
+                "Проверьте, что файл не был перемещён или удалён.",
+            )
+            .with_details(error.to_string())
+        })?;
+        if !path.starts_with(&self.root) {
+            return Err(StudioError::new(
+                "CSHARP_SOURCE_OUTSIDE_PROJECT",
+                "Исходник C# оказался за пределами открытого проекта.",
+                "Не открывайте исходники через внешние символические ссылки.",
+            ));
+        }
+        let meta = fs::metadata(&path).map_err(|error| {
+            StudioError::new(
+                "CSHARP_SOURCE_UNAVAILABLE",
+                "Не удалось получить сведения о C# файле.",
+                "Проверьте права доступа.",
+            )
+            .with_details(error.to_string())
+        })?;
+        if !meta.is_file() || meta.len() > MAX_CSHARP_PREVIEW_BYTES {
+            return Err(StudioError::new(
+                "CSHARP_SOURCE_SIZE_INVALID",
+                "Исходник C# не является обычным файлом или превышает 2 МиБ.",
+                "Откройте этот файл во внешнем редакторе.",
+            ));
+        }
+        let mut bytes = Vec::new();
+        fs::File::open(&path)
+            .and_then(|file| file.take(MAX_CSHARP_PREVIEW_BYTES + 1).read_to_end(&mut bytes))
+            .map_err(|error| {
+                StudioError::new(
+                    "CSHARP_SOURCE_UNAVAILABLE",
+                    "Не удалось прочитать исходник C#.",
+                    "Проверьте файл на диске.",
+                )
+                .with_details(error.to_string())
+            })?;
+        if bytes.len() as u64 > MAX_CSHARP_PREVIEW_BYTES {
+            return Err(StudioError::new(
+                "CSHARP_SOURCE_SIZE_INVALID",
+                "Исходник C# вырос во время чтения и превысил лимит 2 МиБ.",
+                "Откройте файл во внешнем редакторе.",
+            ));
+        }
+        let length = bytes.len();
+        let content = String::from_utf8(bytes).map_err(|error| {
+            StudioError::new(
+                "CSHARP_SOURCE_ENCODING_INVALID",
+                "Исходник C# не является UTF-8.",
+                "Проверьте кодировку файла.",
+            )
+            .with_details(error.to_string())
+        })?;
+        Ok(ResourceDocument {
+            path: rel_path.into(),
+            revision: resource_edit::revision(content.as_bytes()),
+            bytes: length,
+            content,
+        })
     }
 
     pub fn is_yaml_indexed(&self, path: &str) -> bool {
@@ -1171,6 +1246,56 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+
+    #[test]
+    fn csharp_source_preview_requires_indexed_declaration() {
+        let fx = Fixture::new();
+        let file = "Content.Shared/Components/SpriteComponent.cs";
+        fx.write(
+            file,
+            "[RegisterComponent]\npublic class SpriteComponent : Component {}\n",
+        );
+        fx.write(
+            "Content.Shared/Components/Unlisted.cs",
+            "public class Unlisted {}\n",
+        );
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let document = index.read_csharp_source(file).unwrap();
+        assert_eq!(document.path, file);
+        assert!(document.content.contains("RegisterComponent"));
+        assert_eq!(
+            index
+                .read_csharp_source("Content.Shared/Components/Unlisted.cs")
+                .unwrap_err()
+                .code,
+            "CSHARP_SOURCE_NOT_INDEXED"
+        );
+        assert_eq!(
+            index.read_csharp_source("../outside.cs").unwrap_err().code,
+            "CSHARP_SOURCE_NOT_INDEXED"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn csharp_preview_blocks_source_symlink_outside_project() {
+        use std::os::unix::fs::symlink;
+        let fx = Fixture::new();
+        let file = "Content.Shared/Components/SpriteComponent.cs";
+        fx.write(
+            file,
+            "[RegisterComponent]\npublic class SpriteComponent : Component {}\n",
+        );
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        index.read_csharp_source(file).unwrap();
+        let path = fx.root.join(file);
+        fs::remove_file(&path).unwrap();
+        symlink("/etc/hosts", &path).unwrap();
+        assert_eq!(
+            index.read_csharp_source(file).unwrap_err().code,
+            "CSHARP_SOURCE_OUTSIDE_PROJECT"
+        );
     }
 
     #[test]

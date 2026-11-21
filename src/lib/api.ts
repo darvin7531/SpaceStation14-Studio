@@ -465,6 +465,9 @@ export const studio = {
   searchCSharpDefinitions(query: string, kind: 'all' | 'component' | 'prototype', offset: number, limit = 50): Promise<CSharpPage> {
     return invoke('search_csharp_definitions', { query, kind, offset, limit });
   },
+  readCSharpSource(path: string): Promise<ResourceDocument> {
+    return invoke('read_csharp_source', { path });
+  },
   inspectComponentSchemas(names: string[]): Promise<ComponentSchemaBatch> {
     return invoke('inspect_component_schemas', { names });
   },
