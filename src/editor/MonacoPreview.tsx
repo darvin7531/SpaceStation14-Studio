@@ -5,16 +5,28 @@ import type { ResourceDocument, ResourceEntry } from '../lib/api';
 interface Props {
   resource: ResourceEntry;
   document: ResourceDocument;
+  revealLine?: number;
+  jumpToken?: number;
 }
 
 /**
  * Lazy-loads Monaco only when a resource is opened, and disposes the model,
  * workers' consumers and editor on tab switch/unmount.
  */
-export default function MonacoPreview({ resource, document }: Props) {
+export default function MonacoPreview({ resource, document, revealLine, jumpToken }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<{ revealLineInCenter(line: number): void; setPosition(position: { lineNumber: number; column: number }): void } | null>(null);
+  const latestJump = useRef(revealLine);
   const [failure, setFailure] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    latestJump.current = revealLine;
+    if (revealLine && editorRef.current) {
+      editorRef.current.revealLineInCenter(revealLine);
+      editorRef.current.setPosition({ lineNumber: revealLine, column: 1 });
+    }
+  }, [revealLine, jumpToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,7 +57,13 @@ export default function MonacoPreview({ resource, document }: Props) {
             padding: { top: 14, bottom: 14 },
             overviewRulerBorder: false,
           });
+          editorRef.current = editor;
+          if (latestJump.current) {
+            editor.revealLineInCenter(latestJump.current);
+            editor.setPosition({ lineNumber: latestJump.current, column: 1 });
+          }
           dispose = () => {
+            editorRef.current = null;
             editor.dispose();
             model.dispose();
           };

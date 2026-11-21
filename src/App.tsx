@@ -8,6 +8,7 @@ import { studio, type ProjectOverview, type ResourceDocument, type ResourceEntry
 import { normalizeStudioError, type StudioError } from './lib/errors';
 import { closeTab, openTab, type TabState } from './lib/tabs';
 import MonacoPreview from './editor/MonacoPreview';
+import PrototypeExplorer from './components/PrototypeExplorer';
 
 const PAGE_SIZE = 100;
 const LAST_PROJECT_KEY = 'ss14-studio-rust.last-project-root';
@@ -42,6 +43,10 @@ export default function App() {
   const [overview, setOverview] = useState<ProjectOverview | null>(null);
   const [opening, setOpening] = useState(false);
   const [picking, setPicking] = useState(false);
+  const [explorerMode, setExplorerMode] = useState<'files' | 'prototypes'>('files');
+  const [workspaceRevision, setWorkspaceRevision] = useState(0);
+  const [jumpTarget, setJumpTarget] = useState<{ path: string; line: number; token: number } | null>(null);
+  const jumpCounter = useRef(0);
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState<ResourceKind>('all');
   const [page, setPage] = useState(0);
@@ -66,6 +71,8 @@ export default function App() {
         // Saving a recent path is optional and must not block opening.
       }
       readVersion.current += 1;
+      setWorkspaceRevision((value) => value + 1);
+      setJumpTarget(null);
       documents.current.clear();
       setOverview(next);
       setResults({ total: 0, items: [] });
@@ -170,6 +177,11 @@ export default function App() {
     }
   }
 
+  function openPrototypeSource(file: string, line: number) {
+    setJumpTarget({ path: file, line, token: ++jumpCounter.current });
+    openResource({ path: file, kind: 'yaml' });
+  }
+
   function selectTab(path: string) {
     if (tabState.active === path) return;
     setTabState((state) => ({ ...state, active: path }));
@@ -234,6 +246,13 @@ export default function App() {
     </main> :
     <main className="workspace">
       <aside className="explorer">
+        <div className="explorer-switch" role="group" aria-label="Режим навигации">
+          <button type="button" className={explorerMode === 'files' ? 'selected' : ''}
+            onClick={() => setExplorerMode('files')}>Файлы</button>
+          <button type="button" className={explorerMode === 'prototypes' ? 'selected' : ''}
+            onClick={() => setExplorerMode('prototypes')}>Прототипы</button>
+        </div>
+        {explorerMode === 'files' ? <>
         <div className="section-heading"><strong>Ресурсы</strong><small>{results.total} найдено</small></div>
         <div className="search"><Search size={16}/><input aria-label="Поиск ресурсов" value={query}
           placeholder="Поиск по путям…" onChange={(event) => { setQuery(event.target.value); setPage(0); }}/></div>
@@ -256,6 +275,8 @@ export default function App() {
           <span>{results.total ? (page * PAGE_SIZE + 1) + '–' + Math.min((page + 1) * PAGE_SIZE, results.total) + ' из ' + results.total : '0 ресурсов'}</span>
           <button type="button" aria-label="Следующая страница" disabled={(page + 1) * PAGE_SIZE >= results.total} onClick={() => setPage((value) => value + 1)}><ChevronRight size={17}/></button>
         </div>
+        </> : <PrototypeExplorer workspaceKey={overview.project_root + ':' + workspaceRevision}
+          onOpen={openPrototypeSource} />}
       </aside>
       <section className="editor">
         {tabState.tabs.length > 0 && <div className="tab-strip" role="tablist" aria-label="Открытые файлы">
@@ -283,7 +304,9 @@ export default function App() {
             </div>
           </div>
           {reading ? <div className="placeholder">Чтение ресурса…</div> :
-            document ? <MonacoPreview key={document.path} resource={selected} document={document}/> :
+            document ? <MonacoPreview key={document.path} resource={selected} document={document}
+              revealLine={jumpTarget?.path === selected.path ? jumpTarget.line : undefined}
+              jumpToken={jumpTarget?.path === selected.path ? jumpTarget.token : 0}/> :
               <div className="placeholder">Не удалось открыть ресурс. Объяснение ошибки показано выше.</div>}
         </> : <div className="placeholder"><FileCode2 size={44} strokeWidth={1.2}/><h2>Выбери ресурс слева</h2><p>Здесь откроется его исходный текст.</p></div>}
       </section>

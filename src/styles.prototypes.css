@@ -1,0 +1,28 @@
+/* Prototype catalogue: source declarations, never a falsely resolved graph. */
+.explorer-switch { display: flex; gap: 6px; margin: 12px; }
+.explorer-switch button { flex: 1; background: #172637; color: #9bb3ce; border: 1px solid #30445b; padding: 8px; border-radius: 7px; font-size: 12px; }
+.explorer-switch button.selected { background: #284b6f; color: #e9f4ff; border-color: #6a96c6; }
+.prototype-explorer { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.proto-sections { display: flex; gap: 6px; margin: 0 12px 11px; }
+.proto-sections button { flex: 1; border: 1px solid #32465c; background: #101a26; color: #8da5bf; font-size: 12px; padding: 8px; border-radius: 6px; }
+.proto-sections button.selected { background: #25415d; color: white; }
+.proto-kind { display: flex; gap: 6px; align-items: center; margin: 0 12px 8px; font-size: 11px; }
+.proto-kind label { color: #94aac3; }
+.proto-kind input { flex: 1; min-width: 0; padding: 7px; color: #dbe6f4; background: #0b131e; border: 1px solid #344862; border-radius: 5px; font-size: 11px; }
+.prototype-results { scrollbar-width: thin; }
+.prototype-entry { display: grid; padding: 9px 12px; gap: 4px; border-bottom: 1px solid #263548; }
+.prototype-entry:hover { background: #1a2b40; }
+.prototype-open { display: grid; gap: 4px; text-align: left; border: 0; padding: 0; background: none; color: #d5e6f7; min-width: 0; }
+.prototype-id { display: flex; gap: 8px; align-items: center; font-size: 13px; font-weight: 650; overflow-wrap: anywhere; }
+.prototype-kind-text { color: #90abc9; font-size: 11px; }
+.prototype-path { font-size: 11px; color: #6d8bab; overflow-wrap: anywhere; }
+.prototype-partial { justify-self: start; font-size: 10px; padding: 3px 6px; border: 1px solid #6b5f41; border-radius: 4px; color: #e1c88f; }
+.prototype-parents { max-width: 100%; overflow-wrap: anywhere; line-height: 1.45; color: #9db2cc; font-size: 11px; }
+.prototype-parents > span { color: #6f8cab; }
+.proto-diagnostic { width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid #334259; padding: 13px 12px; display: grid; gap: 6px; color: #dfb991; }
+.proto-diagnostic:hover { background: #2a2c35; }
+.proto-diagnostic > span { display: flex; align-items: center; gap: 7px; font-size: 10px; }
+.proto-diagnostic > strong { font-size: 12px; font-weight: 450; line-height: 1.5; overflow-wrap: anywhere; }
+.proto-diagnostic > small { font-size: 10px; color: #879cb1; overflow-wrap: anywhere; }
+.proto-error { font-size: 12px; color: #f3b9c1; background: #37242a; padding: 12px; }
+.proto-error p { color: #ead2d5; }

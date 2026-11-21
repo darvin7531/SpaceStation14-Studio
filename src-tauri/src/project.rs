@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
+use std::sync::OnceLock;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
 use crate::error::StudioError;
+use crate::prototypes::PrototypeCatalog;
 
 const MAX_SCAN_ENTRIES: usize = 250_000;
 const MAX_READ_BYTES: u64 = 4 * 1024 * 1024;
@@ -48,6 +50,7 @@ pub struct ProjectIndex {
     overview: ProjectOverview,
     resources: Vec<ResourceEntry>,
     positions: HashMap<String, usize>,
+    prototype_catalog: OnceLock<PrototypeCatalog>,
 }
 
 #[derive(Copy, Clone)]
@@ -178,11 +181,17 @@ impl ProjectIndex {
             overview,
             resources,
             positions,
+            prototype_catalog: OnceLock::new(),
         })
     }
 
     pub fn overview(&self) -> &ProjectOverview {
         &self.overview
+    }
+
+    pub fn prototypes(&self) -> &PrototypeCatalog {
+        self.prototype_catalog
+            .get_or_init(|| PrototypeCatalog::build(&self.root, &self.resources))
     }
 
     pub fn search(

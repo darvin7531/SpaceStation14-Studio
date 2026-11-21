@@ -10,13 +10,16 @@ SS14 Studio is being rewritten on **Rust + Tauri 2**. The desktop application in
 - A native Tauri window with a lightweight React interface and an OS-native folder picker (only `dialog:allow-open` permission). The last successful project path is remembered locally.
 - Open and verify the root directory of a Space Station 14 source checkout.
 - Read-only inventory of YAML prototype files, RSI folders and Fluent files.
+- **Lazy Rust YAML declaration catalog:** enumerate real prototype `type` + `id` entries, parents, abstract flag, source line and multi-document origin. Search uses a prebuilt in-memory index; parse happens once when the Prototypes pane is opened.
+- Partial declarations are kept separate: configured partial directories from `Resources/PartialPrototypes/partialPrototypes.yml`, `!PartialOnly`, `!Partial:0`. Unsupported dynamic IDs are reported, not silently treated as ordinary prototypes.
+- Parsed YAML diagnostics are exposed in a separate paginated view. A malformed source file is reported without poisoning the index of other files.
 - Search by resource path and type, with pagination; queries use precomputed case-insensitive keys and resource reads use a direct lookup map, with no filesystem walk per search.
 - Display YAML/FTL contents and RSI meta.json in a Monaco-based syntax-highlighted, read-only viewer. Monaco and its worker are bundled locally (offline); JSON metadata uses lightweight syntax colouring without the heavy JSON language service. Open tabs are bounded and support close/reload.
 - Actionable Russian-language error handling with stable codes, hints and expandable technical details.
 - No source file mutations, no symlink traversal during indexing, capped initial scan, capped text-file read size.
 - Rust/TypeScript CI checks and unit tests.
 
-**Limitations:** Current counts refer to YAML *files*, not individual prototype declarations. This is the first functional Rust work slice, not a feature-complete replacement for the old editor. YAML parsing and editing, Monaco, inheritance, C# symbol extraction, persistent incremental index and RSI preview are intentionally not claimed as implemented.
+**Limitations:** Current counts refer to YAML *files*, not individual prototype declarations. This is the first functional Rust work slice, not a feature-complete replacement for the old editor. lossless YAML editing, resolved inheritance, C# symbol extraction, persistent incremental index and RSI image preview are intentionally not claimed as implemented. The prototype catalog is a read-only *declaration index*, not an engine-accurate resolved graph. External file changes currently require reopening the workspace.
 
 ## Develop
 

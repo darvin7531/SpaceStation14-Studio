@@ -1,10 +1,12 @@
 mod error;
 mod project;
+mod prototypes;
 
 use std::sync::{Arc, Mutex};
 
 use error::{internal_lock, interrupted, StudioError};
 use project::{ProjectIndex, ProjectOverview, ResourceDocument, ResourcePage};
+use prototypes::{DiagnosticPage, PrototypePage};
 use tauri::State;
 
 #[derive(Default)]
@@ -71,6 +73,43 @@ async fn read_resource(
         .map_err(interrupted)?
 }
 
+/// Indexing is lazy and runs off the webview thread. Every declaration has
+/// stable source provenance; partials are not silently merged.
+#[tauri::command]
+async fn search_prototypes(
+    query: String,
+    kind: Option<String>,
+    offset: Option<usize>,
+    limit: Option<usize>,
+    state: State<'_, WorkspaceState>,
+) -> Result<PrototypePage, StudioError> {
+    let index = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        index.prototypes().search(
+            &query,
+            kind.as_deref(),
+            offset.unwrap_or(0),
+            limit.unwrap_or(100),
+        )
+    })
+    .await
+    .map_err(interrupted)
+}
+
+#[tauri::command]
+async fn list_prototype_diagnostics(
+    offset: Option<usize>,
+    limit: Option<usize>,
+    state: State<'_, WorkspaceState>,
+) -> Result<DiagnosticPage, StudioError> {
+    let index = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        index.prototypes().diagnostics(offset.unwrap_or(0), limit.unwrap_or(100))
+    })
+    .await
+    .map_err(interrupted)
+}
+
 pub fn run() -> Result<(), tauri::Error> {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -78,6 +117,8 @@ pub fn run() -> Result<(), tauri::Error> {
         .invoke_handler(tauri::generate_handler![
             open_project,
             search_resources,
+            search_prototypes,
+            list_prototype_diagnostics,
             read_resource
         ])
         .run(tauri::generate_context!())

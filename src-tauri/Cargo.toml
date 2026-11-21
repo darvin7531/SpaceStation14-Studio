@@ -21,3 +21,4 @@ tauri-build = "2"
 serde = { version = "1", features = ["derive"] }
 tauri = "2"
 tauri-plugin-dialog = "2"
+yaml-rust2 = "0.13"
