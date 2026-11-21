@@ -3,8 +3,8 @@
 //! Unlike the Electron regex scanner, Tree-sitter attaches attributes to the
 //! actual class/member syntax node, not a nearby line. This is intentionally a
 //! structural index, not Roslyn semantic type resolution: inheritance,
-//! preprocessor symbols, generated sources and partial-class merging remain
-//! unverified until an explicit semantic pass is added.
+//! preprocessor symbols, generated sources and cross-assembly partial classes
+//! remain unverified until an explicit semantic pass is added.
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Read;
@@ -36,6 +36,7 @@ pub struct CSharpDefinition {
     pub kind: &'static str,
     pub name: String,
     pub class_name: String,
+    pub qualified_name: String,
     pub file: String,
     pub line: usize,
     pub partial: bool,
@@ -47,6 +48,7 @@ pub struct CSharpDefinition {
 #[derive(Debug)]
 pub struct CSharpCatalog {
     definitions: Vec<CSharpDefinition>,
+    parts: Vec<CSharpPart>,
     warnings: Vec<String>,
     complete: bool,
     files_scanned: usize,
@@ -65,6 +67,18 @@ pub struct CSharpPage {
     pub items: Vec<CSharpDefinition>,
 }
 
+/// A C# partial declaration carrying its own DataField members. Collected
+/// independently of RegisterComponent, which is often present on only one
+/// partial declaration. Every field retains its source via the containing part.
+#[derive(Debug, Clone, Serialize)]
+pub struct CSharpPart {
+    pub qualified_name: String,
+    pub file: String,
+    pub line: usize,
+    pub fields: Vec<CSharpField>,
+    pub parse_uncertain: bool,
+}
+
 /// A conservative lookup for a YAML component type. "unique" only means
 /// one complete direct declaration was found, not a Roslyn-resolved schema.
 #[derive(Debug, Serialize)]
@@ -73,6 +87,9 @@ pub struct ComponentSchema {
     /// unique | ambiguous | partial | uncertain | not_indexed
     pub status: &'static str,
     pub declarations: Vec<CSharpDefinition>,
+    /// Related partial C# fragments under an identical namespace + type.
+    /// Informational only: no assembly/preprocessor semantics are inferred.
+    pub parts: Vec<CSharpPart>,
 }
 
 #[derive(Debug, Serialize)]
@@ -271,12 +288,34 @@ fn prototype_name(class_name: &str) -> String {
     member_name(class_name.strip_suffix("Prototype").unwrap_or(class_name))
 }
 
-fn parse_class(node: Node<'_>, file: &str, source: &[u8]) -> Vec<CSharpDefinition> {
+fn qualified_name(node: Node<'_>, source: &[u8]) -> String {
+    let mut parts = Vec::new();
+    let mut parent = Some(node);
+    while let Some(current) = parent {
+        if matches!(
+            current.kind(),
+            "class_declaration"
+                | "record_declaration"
+                | "struct_declaration"
+                | "namespace_declaration"
+                | "file_scoped_namespace_declaration"
+        ) {
+            if let Some(name) = current.child_by_field_name("name") {
+                parts.push(node_text(name, source).to_string());
+            }
+        }
+        parent = current.parent();
+    }
+    parts.reverse();
+    parts.join(".")
+}
+
+fn parse_class(node: Node<'_>, file: &str, source: &[u8]) -> (Vec<CSharpDefinition>, Option<CSharpPart>) {
     if !matches!(node.kind(), "class_declaration" | "record_declaration") {
-        return Vec::new();
+        return (Vec::new(), None);
     }
     let Some(name_node) = node.child_by_field_name("name") else {
-        return Vec::new();
+        return (Vec::new(), None);
     };
     let class_name = node_text(name_node, source).to_string();
     let attrs = attributes(node, source);
@@ -285,10 +324,6 @@ fn parse_class(node: Node<'_>, file: &str, source: &[u8]) -> Vec<CSharpDefinitio
     let prototype = attrs
         .iter()
         .find(|attr| attr.name == "Prototype" || attr.name == "PrototypeRecord");
-    if !component && prototype.is_none() {
-        return Vec::new();
-    }
-
     let body = node.child_by_field_name("body");
     let mut fields = Vec::new();
     if let Some(body) = body {
@@ -311,6 +346,21 @@ fn parse_class(node: Node<'_>, file: &str, source: &[u8]) -> Vec<CSharpDefinitio
         })
         .unwrap_or_default();
     let line = node.start_position().row + 1;
+    let qualified_name = qualified_name(node, source);
+    let fragment = if partial && (!fields.is_empty() || component || prototype.is_some()) {
+        Some(CSharpPart {
+            qualified_name: qualified_name.clone(),
+            file: file.into(),
+            line,
+            fields: fields.clone(),
+            parse_uncertain: node.has_error(),
+        })
+    } else {
+        None
+    };
+    if !component && prototype.is_none() {
+        return (Vec::new(), fragment);
+    }
     let mut result = Vec::new();
     if component {
         let override_name = attrs
@@ -321,6 +371,7 @@ fn parse_class(node: Node<'_>, file: &str, source: &[u8]) -> Vec<CSharpDefinitio
             kind: "component",
             name: override_name.unwrap_or_else(|| component_name(&class_name)),
             class_name: class_name.clone(),
+            qualified_name: qualified_name.clone(),
             file: file.into(),
             line,
             partial,
@@ -337,6 +388,7 @@ fn parse_class(node: Node<'_>, file: &str, source: &[u8]) -> Vec<CSharpDefinitio
                 .clone()
                 .unwrap_or_else(|| prototype_name(&class_name)),
             class_name,
+            qualified_name,
             file: file.into(),
             line,
             partial,
@@ -345,23 +397,32 @@ fn parse_class(node: Node<'_>, file: &str, source: &[u8]) -> Vec<CSharpDefinitio
             parse_uncertain: node.has_error(),
         });
     }
-    result
+    (result, fragment)
 }
 
-fn parse_source(parser: &mut Parser, file: &str, source: &str) -> (Vec<CSharpDefinition>, bool) {
+fn parse_source(
+    parser: &mut Parser,
+    file: &str,
+    source: &str,
+) -> (Vec<CSharpDefinition>, Vec<CSharpPart>, bool) {
     let Some(tree) = parser.parse(source, None) else {
-        return (Vec::new(), true);
+        return (Vec::new(), Vec::new(), true);
     };
     let mut definitions = Vec::new();
+    let mut fragments = Vec::new();
     let root = tree.root_node();
     let mut pending = vec![root];
     while let Some(node) = pending.pop() {
-        definitions.extend(parse_class(node, file, source.as_bytes()));
+        let (found, fragment) = parse_class(node, file, source.as_bytes());
+        definitions.extend(found);
+        if let Some(fragment) = fragment {
+            fragments.push(fragment);
+        }
         for child in named_children(node).into_iter().rev() {
             pending.push(child);
         }
     }
-    (definitions, root.has_error())
+    (definitions, fragments, root.has_error())
 }
 
 fn warning(warnings: &mut Vec<String>, issue: String) {
@@ -408,6 +469,7 @@ impl CSharpCatalog {
 
         let mut catalog = Self {
             definitions: Vec::new(),
+            parts: Vec::new(),
             warnings: Vec::new(),
             complete: true,
             files_scanned: 0,
@@ -536,11 +598,16 @@ impl CSharpCatalog {
                         // Most C# files do not declare SS14 serialization
                         // metadata. A cheap substring prefilter avoids building
                         // a syntax tree for unrelated source code.
-                        if !source.contains("RegisterComponent") && !source.contains("Prototype") {
+                        if !source.contains("RegisterComponent")
+                            && !source.contains("Prototype")
+                            && !(source.contains("partial") && source.contains("DataField"))
+                        {
                             continue;
                         }
                         catalog.files_parsed += 1;
-                        let (definitions, uncertain) = parse_source(&mut parser, &relative, source);
+                        let (definitions, fragments, uncertain) =
+                            parse_source(&mut parser, &relative, source);
+                        catalog.parts.extend(fragments);
                         if uncertain {
                             catalog.complete = false;
                             warning(&mut catalog.warnings,
@@ -573,6 +640,13 @@ impl CSharpCatalog {
                 by_name.entry(entry.name.as_str()).or_default().push(entry);
             }
         }
+        let mut fragments_by_type: HashMap<&str, Vec<&CSharpPart>> = HashMap::new();
+        for part in &self.parts {
+            fragments_by_type
+                .entry(part.qualified_name.as_str())
+                .or_default()
+                .push(part);
+        }
         let components = names
             .iter()
             .map(|type_name| {
@@ -589,10 +663,25 @@ impl CSharpCatalog {
                     [_] => "unique",
                     _ => "ambiguous",
                 };
+                let parts = if status == "partial" {
+                    let mut parts: Vec<CSharpPart> = fragments_by_type
+                        .get(declarations[0].qualified_name.as_str())
+                        .into_iter()
+                        .flatten()
+                        .map(|part| (*part).clone())
+                        .collect();
+                    parts.sort_unstable_by(|a, b| {
+                        a.file.cmp(&b.file).then_with(|| a.line.cmp(&b.line))
+                    });
+                    parts
+                } else {
+                    Vec::new()
+                };
                 ComponentSchema {
                     type_name: type_name.clone(),
                     status,
                     declarations,
+                    parts,
                 }
             })
             .collect();
@@ -649,9 +738,90 @@ mod tests {
         parser
             .set_language(&tree_sitter_c_sharp::LANGUAGE.into())
             .unwrap();
-        let (defs, failed) = parse_source(&mut parser, "Content.Shared/Test.cs", input);
+        let (defs, _, failed) = parse_source(&mut parser, "Content.Shared/Test.cs", input);
         assert!(!failed, "Syntax error in test fixture");
         defs
+    }
+
+    #[test]
+    fn partial_fragments_match_full_namespace_not_just_class_name() {
+        let mut parser = Parser::new();
+        parser.set_language(&tree_sitter_c_sharp::LANGUAGE.into()).unwrap();
+        let registered = r#"
+            namespace Content.Shared.One {
+                [RegisterComponent]
+                public partial class ExampleComponent {
+                    [DataField] public int Initial = 1;
+                }
+            }
+        "#;
+        let same_namespace = r#"
+            namespace Content.Shared.One;
+            public partial class ExampleComponent {
+                [DataField("extra")] public bool Extra;
+            }
+        "#;
+        let other_namespace = r#"
+            namespace Content.Shared.Other {
+                public partial class ExampleComponent {
+                    [DataField("unrelated")] public string Wrong;
+                }
+            }
+        "#;
+        let (definitions, mut parts, invalid) =
+            parse_source(&mut parser, "Content.Shared/One.cs", registered);
+        assert!(!invalid);
+        let (_, second, invalid) =
+            parse_source(&mut parser, "Content.Shared/Two.cs", same_namespace);
+        assert!(!invalid);
+        let (_, unrelated, invalid) =
+            parse_source(&mut parser, "Content.Shared/Other.cs", other_namespace);
+        assert!(!invalid);
+        parts.extend(second);
+        parts.extend(unrelated);
+        let catalog = CSharpCatalog {
+            definitions,
+            parts,
+            warnings: Vec::new(),
+            complete: true,
+            files_scanned: 3,
+            files_parsed: 3,
+            bytes_scanned: 0,
+        };
+        let result = catalog.component_schemas(&["Example".into()]);
+        let component = &result.components[0];
+        assert_eq!(component.status, "partial");
+        assert_eq!(component.declarations[0].qualified_name, "Content.Shared.One.ExampleComponent");
+        assert_eq!(component.parts.len(), 2);
+        assert_eq!(
+            component.parts.iter().flat_map(|part| part.fields.iter())
+                .map(|field| field.name.as_str()).collect::<Vec<_>>(),
+            vec!["initial", "extra"]
+        );
+        assert_eq!(component.parts[1].file, "Content.Shared/Two.cs");
+    }
+
+    #[test]
+    fn non_partial_definition_does_not_merge_similar_partial_type() {
+        let mut parser = Parser::new();
+        parser.set_language(&tree_sitter_c_sharp::LANGUAGE.into()).unwrap();
+        let (definitions, _, failed) = parse_source(
+            &mut parser, "A.cs",
+            "[RegisterComponent] public class BodyComponent { [DataField] public int Count; }"
+        );
+        assert!(!failed);
+        let (_, parts, failed) = parse_source(
+            &mut parser, "B.cs",
+            "public partial class BodyComponent { [DataField] public bool Active; }"
+        );
+        assert!(!failed);
+        let catalog = CSharpCatalog {
+            definitions, parts, warnings: Vec::new(), complete: true,
+            files_scanned: 2, files_parsed: 2, bytes_scanned: 0,
+        };
+        let result = catalog.component_schemas(&["Body".into()]);
+        assert_eq!(result.components[0].status, "unique");
+        assert!(result.components[0].parts.is_empty());
     }
 
     #[test]
@@ -676,6 +846,7 @@ mod tests {
         "#;
         let index = CSharpCatalog {
             definitions: parse(source),
+            parts: Vec::new(),
             warnings: Vec::new(),
             complete: true,
             files_scanned: 1,
@@ -711,6 +882,7 @@ mod tests {
         "#;
         let index = CSharpCatalog {
             definitions: parse(source),
+            parts: Vec::new(),
             warnings: Vec::new(),
             complete: true,
             files_scanned: 1,

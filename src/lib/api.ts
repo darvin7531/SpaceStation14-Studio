@@ -22,6 +22,7 @@ export interface CSharpDefinition {
   kind: 'component' | 'prototype';
   name: string;
   class_name: string;
+  qualified_name: string;
   file: string;
   line: number;
   partial: boolean;
@@ -40,10 +41,19 @@ export interface CSharpPage {
   items: CSharpDefinition[];
 }
 
+export interface CSharpPart {
+  qualified_name: string;
+  file: string;
+  line: number;
+  fields: CSharpField[];
+  parse_uncertain: boolean;
+}
+
 export interface ComponentSchema {
   type_name: string;
   status: 'unique' | 'ambiguous' | 'partial' | 'uncertain' | 'not_indexed';
   declarations: CSharpDefinition[];
+  parts: CSharpPart[];
 }
 
 export interface ComponentSchemaBatch {

@@ -68,6 +68,8 @@ The Rust Rework can lazily scan C# source files through **Tree-sitter C#** (with
 
 The YAML component inspector also requests C# metadata for its explicitly listed components. It shows the direct class source and its DataFields, offering a *prefill-only* button for safe primitive fields not present in the YAML draft. The button fills the existing add-field form; nothing is written until the user applies the YAML change and saves. Ambiguous, partial, uncertain or incomplete C# schemas cannot auto-suggest fields. Names absent from the index are not treated as invalid components.
 
+Related `partial` C# declarations carrying `DataField` are now grouped by their **fully qualified namespace and type**, including unannotated companion files, and presented with their own file/line provenance. This is a conservative *candidate group*, not compiler-level merging: the YAML inspector still disables automatic field suggestions for `partial` classes. Identically named classes from unrelated namespaces are not grouped; identical names across separately compiled assemblies are not distinguishable without project/assembly analysis.
+
 This is **structural C# metadata**, not compiler semantic resolution: inherited fields, preprocessor symbols, multiple partial declarations and generated code need further handling. No source files are changed by the C# indexer.
 
 ## Rework roadmap

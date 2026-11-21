@@ -14,9 +14,11 @@ const schema = (status: ComponentSchema['status'], fields: CSharpField[]): Compo
   status, type_name: 'Sprite',
   declarations: [{
     kind: 'component', name: 'Sprite', class_name: 'SpriteComponent',
+    qualified_name: 'Content.Shared.SpriteComponent',
     file: 'Content.Shared/Sprite.cs', line: 10, partial: false,
     base_types: 'Component', parse_uncertain: false, fields,
   }],
+  parts: [],
 });
 
 test('maps only directly supported nonnullable primitive C# types', () => {

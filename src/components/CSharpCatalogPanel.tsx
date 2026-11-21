@@ -95,7 +95,7 @@ export default function CSharpCatalogPanel({ projectKey, onClose }: Props) {
               <div>
                 <strong>{definition.name}</strong>
                 <small>{definition.kind === 'component' ? 'Компонент' : 'Прототип'} ·
-                  {definition.class_name}{definition.partial ? ' · partial' : ''}
+                  {definition.qualified_name}{definition.partial ? ' · partial' : ''}
                   {definition.parse_uncertain ? ' · синтаксис требует проверки' : ''}
                 </small>
               </div>

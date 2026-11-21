@@ -98,3 +98,15 @@
   cursor: pointer;
 }
 .component-schema-field > button:disabled { cursor: not-allowed; opacity: .55; }
+
+.component-schema-partials { display: grid; gap: 8px; }
+.component-schema-partials > small { line-height: 1.5; color: #b6cce2; }
+.component-schema-partials > small code { margin-left: 5px; overflow-wrap: anywhere; }
+.component-schema-part {
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 8px 10px; border: 1px solid #40536a;
+  background: #17283b; border-radius: 5px;
+}
+.component-schema-part > strong { font-size: 11px; color: #d4e7fd; overflow-wrap: anywhere; }
+.component-schema-part > span { font-size: 11px; color: #afc6de; overflow-wrap: anywhere; }
+.component-schema-part code { color: #d3b9f1; }
