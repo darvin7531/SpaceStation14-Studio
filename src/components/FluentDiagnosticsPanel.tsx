@@ -7,6 +7,9 @@ interface Props {
   path: string;
   source: string;
   onRevealLine: (line: number) => void;
+  onRevealSource: (path: string, line: number) => void;
+  enabled: boolean;
+  delayMs: number;
 }
 
 interface Inspection {
@@ -20,12 +23,16 @@ interface Inspection {
  * Source + path identity ensures a delayed native result cannot display
  * findings from an old tab or an obsolete draft.
  */
-export default function FluentDiagnosticsPanel({ path, source, onRevealLine }: Props) {
+export default function FluentDiagnosticsPanel({ path, source, onRevealLine, onRevealSource, enabled, delayMs }: Props) {
   const [inspection, setInspection] = useState<Inspection | null>(null);
   const [failure, setFailure] = useState<StudioError | null>(null);
+  const [manual, setManual] = useState<{ path: string; source: string; token: number } | null>(null);
+  const manualCurrent = manual?.path === path && manual.source === source;
+  const shouldRun = enabled || manualCurrent;
 
   useEffect(() => {
     let active = true;
+    if (!shouldRun) return;
     setFailure(null);
     const handle = window.setTimeout(() => {
       void studio.analyzeFluentResource(path, source).then((result) => {
@@ -37,14 +44,14 @@ export default function FluentDiagnosticsPanel({ path, source, onRevealLine }: P
         setInspection(null);
         setFailure(normalizeStudioError(error));
       });
-    }, 300);
+    }, enabled ? delayMs : 0);
     return () => {
       active = false;
       window.clearTimeout(handle);
     };
-  }, [path, source]);
+  }, [path, source, enabled, delayMs, manual?.token, shouldRun]);
 
-  const visible = inspection?.path === path && inspection.source === source
+  const visible = shouldRun && inspection?.path === path && inspection.source === source
     ? inspection.result
     : null;
   const syntax = visible?.syntax;
@@ -55,6 +62,10 @@ export default function FluentDiagnosticsPanel({ path, source, onRevealLine }: P
       <FileWarning size={16}/>
       <strong>Проверка Fluent</strong>
       <small>Только текущий текст · файл не изменяется</small>
+      {!enabled && <button type="button" className="fluent-check-now"
+        onClick={() => setManual((old) => ({ path, source, token: (old?.token ?? 0) + 1 }))}>
+        Проверить сейчас
+      </button>}
       {syntax && <span>
         {syntax.diagnostic_count === 0
           ? 'Синтаксис: без ошибок'
@@ -83,7 +94,9 @@ export default function FluentDiagnosticsPanel({ path, source, onRevealLine }: P
         <CheckCircle2 size={15}/>
         Синтаксических ошибок не обнаружено · объявлений: {syntax.entry_count}.
       </div>
-      : failure
+      : !shouldRun
+        ? <p className="fluent-diagnostics-loading">Автопроверка отключена. Для проверки нажмите «Проверить сейчас».</p>
+        : failure
         ? <div className="fluent-diagnostics-failure" role="alert">
           <AlertCircle size={15}/>{failure.message} {failure.hint}
           {failure.details && <details><summary>Техническая ошибка</summary>{failure.details}</details>}
@@ -99,19 +112,19 @@ export default function FluentDiagnosticsPanel({ path, source, onRevealLine }: P
         <p className="fluent-locale-warning" key={index}>{warning}</p>)}
       {locale.issues.length ? <div className="fluent-diagnostics-list">
         {locale.issues.map((issue, index) =>
-          <button type="button" className="fluent-diagnostics-item"
-            key={issue.code + ':' + issue.line + ':' + issue.symbol + ':' + index}
-            onClick={() => onRevealLine(issue.line)}>
-            <AlertCircle size={15} className="fluent-diagnostics-error-icon"/>
-            <span className="fluent-diagnostics-pos">{issue.line}</span>
-            <span className="fluent-diagnostics-message">
-              {issue.message}
-              {issue.related_file && <small>
-                Другое объявление: {issue.related_file}
-                {issue.related_line ? ':' + issue.related_line : ''}
-              </small>}
-            </span>
-          </button>)}
+          <div className="fluent-diagnostics-row"
+            key={issue.code + ':' + issue.line + ':' + issue.symbol + ':' + index}>
+            <button type="button" className="fluent-diagnostics-item"
+              onClick={() => onRevealLine(issue.line)}>
+              <AlertCircle size={15} className="fluent-diagnostics-error-icon"/>
+              <span className="fluent-diagnostics-pos">{issue.line}</span>
+              <span className="fluent-diagnostics-message">{issue.message}</span>
+            </button>
+            {issue.related_file && <button type="button" className="fluent-related-source"
+              onClick={() => onRevealSource(issue.related_file!, issue.related_line ?? 1)}>
+              Открыть другое объявление: {issue.related_file}{issue.related_line ? ':' + issue.related_line : ''}
+            </button>}
+          </div>)}
         {locale.truncated && <p className="fluent-diagnostics-more">
           Показаны первые {locale.issues.length} проблем из {locale.issue_count}.
         </p>}
