@@ -111,3 +111,17 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .project-counts .create-proto-open { display:flex; align-items:center; gap:6px; padding:7px 10px; border:1px solid #4774a2; border-radius:6px; background:#244f7c; color:#edf6ff; font-size:12px; white-space:nowrap; }
 .project-counts .create-proto-open:hover:not(:disabled) { background:#366b9e; }
 .project-counts .create-proto-open:disabled { opacity:.55; cursor:not-allowed; }
+
+.project-counts { flex-wrap: wrap; }
+.resource-drift-banner { border-bottom: 1px solid #886634; padding: 10px 22px; background: #31291b; color: #eedbb7; font-size: 12px; }
+.resource-drift-heading { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.resource-drift-heading span { flex: 1; min-width: 220px; }
+.resource-drift-banner button { display: inline-flex; gap: 6px; align-items: center; border: 1px solid #8b734d; border-radius: 5px; padding: 5px 9px; background: #51402a; color: #fff0cb; }
+.resource-drift-item { display: flex; gap: 12px; align-items: center; padding: 6px 0 6px 26px; border-top: 1px solid #51432c; margin-top: 6px; min-width: 0; }
+.resource-drift-item code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.resource-drift-item small { font-size: 10px; color: #c5ad8a; }
+.resource-drift-changed { color: #ffdda0; }
+.resource-drift-unavailable { color: #ffacac; }
+.resource-drift-banner p { margin: 8px 0 0 26px; }
+.resource-drift-warning { display: flex; align-items: center; gap: 8px; padding: 8px 22px; background: #332b20; color: #f1d0aa; font-size: 12px; }
+.resource-drift-warning button { margin-left: auto; border: 0; background: transparent; color: inherit; text-decoration: underline; }
