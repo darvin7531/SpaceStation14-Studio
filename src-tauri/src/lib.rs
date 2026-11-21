@@ -89,12 +89,12 @@ async fn search_prototypes(
 ) -> Result<PrototypePage, StudioError> {
     let index = current_project(&state)?;
     tauri::async_runtime::spawn_blocking(move || {
-        index.prototypes()?.search(
+        Ok(index.prototypes()?.search(
             &query,
             kind.as_deref(),
             offset.unwrap_or(0),
             limit.unwrap_or(100),
-        )
+        ))
     })
     .await
     .map_err(interrupted)?
@@ -108,9 +108,9 @@ async fn list_prototype_diagnostics(
 ) -> Result<DiagnosticPage, StudioError> {
     let index = current_project(&state)?;
     tauri::async_runtime::spawn_blocking(move || {
-        index
+        Ok(index
             .prototypes()?
-            .diagnostics(offset.unwrap_or(0), limit.unwrap_or(100))
+            .diagnostics(offset.unwrap_or(0), limit.unwrap_or(100)))
     })
     .await
     .map_err(interrupted)?

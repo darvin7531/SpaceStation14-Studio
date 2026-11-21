@@ -361,11 +361,12 @@ impl ProjectIndex {
             )
             .with_details(error.to_string())
         })?;
+        let revision = resource_edit::revision(content.as_bytes());
         Ok(ResourceDocument {
             path: item.path.clone(),
             content,
             bytes: bytes_len,
-            revision: resource_edit::revision(content.as_bytes()),
+            revision,
         })
     }
 }
