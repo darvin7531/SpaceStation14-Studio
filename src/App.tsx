@@ -231,6 +231,25 @@ export default function App() {
     setError(null);
     setNotice(null);
     try {
+      // Persist pending unsaved edits before rebuilding the indexed path set.
+      // The new index may no longer contain a file deleted by another editor.
+      for (const file of dirtyPaths) {
+        const loaded = documents.current.get(file);
+        const content = draftsRef.current[file];
+        if (!loaded || content === undefined) continue;
+        const base = draftBases[file] ?? loaded.revision;
+        const key = journalKey(overview.project_root, file);
+        const saved = await journal.current.run(key, () => studio.persistDraft(file, base, content));
+        if (saved.durability_warning) {
+          throw {
+            code: 'REFRESH_DRAFT_DURABILITY',
+            message: 'Обновление остановлено: черновик записан с предупреждением о надёжности хранения.',
+            hint: 'Проверьте доступность диска и повторите обновление индекса.',
+            details: file + ': ' + saved.durability_warning,
+          };
+        }
+        journalSignatures.current.set(key, JSON.stringify([base, content]));
+      }
       const changed = await studio.refreshProject();
       // Any old read that finishes now belongs to the replaced index.
       readVersion.current += 1;
@@ -626,7 +645,7 @@ export default function App() {
     };
     window.addEventListener('keydown', shortcut);
     return () => window.removeEventListener('keydown', shortcut);
-  }, [selected?.path, document?.revision, drafts, saving]);
+  }, [selected?.path, document?.revision, drafts, saving, refreshing]);
 
   function openResource(item: ResourceEntry) {
     if (saving || transitioning || opening || refreshing) return;
@@ -759,8 +778,8 @@ export default function App() {
           <input id="project-path" value={path} spellCheck={false} autoComplete="off"
             placeholder="/home/user/SpaceStation14 или C:\SpaceStation14"
             onChange={(event) => setPath(event.target.value)}/>
-          <button type="button" className="browse-button" disabled={opening || picking || saving} onClick={() => void chooseProjectFolder()}>Обзор…</button>
-          <button type="submit" disabled={opening || picking || saving}><FolderOpen size={16}/>{opening ? 'Проверяю…' : 'Открыть проект'}</button>
+          <button type="button" className="browse-button" disabled={opening || picking || saving || refreshing} onClick={() => void chooseProjectFolder()}>Обзор…</button>
+          <button type="submit" disabled={opening || picking || saving || refreshing}><FolderOpen size={16}/>{opening ? 'Проверяю…' : 'Открыть проект'}</button>
         </div>
       </form>
       {overview && <div className="project-counts">

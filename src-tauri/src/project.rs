@@ -817,10 +817,16 @@ mod tests {
     #[test]
     fn refresh_detects_created_and_removed_resources_without_mutating_old_snapshot() {
         let fx = Fixture::new();
-        fx.write("Resources/Prototypes/one.yml", "- type: entity\n  id: One\n");
+        fx.write(
+            "Resources/Prototypes/one.yml",
+            "- type: entity\n  id: One\n",
+        );
         fx.write("Resources/Locale/en-US/old.ftl", "old = old");
         let old = ProjectIndex::open(fx.root_str()).unwrap();
-        fx.write("Resources/Prototypes/two.yml", "- type: entity\n  id: Two\n");
+        fx.write(
+            "Resources/Prototypes/two.yml",
+            "- type: entity\n  id: Two\n",
+        );
         fx.write("Resources/Textures/item.rsi/meta.json", "{\"version\":1}");
         fs::remove_file(fx.root.join("Resources/Locale/en-US/old.ftl")).unwrap();
 
@@ -839,10 +845,16 @@ mod tests {
     #[test]
     fn failed_refresh_leaves_previous_index_available() {
         let fx = Fixture::new();
-        fx.write("Resources/Prototypes/one.yml", "- type: entity\n  id: One\n");
+        fx.write(
+            "Resources/Prototypes/one.yml",
+            "- type: entity\n  id: One\n",
+        );
         let index = ProjectIndex::open(fx.root_str()).unwrap();
         fs::remove_dir_all(fx.root.join("Resources/Prototypes")).unwrap();
-        assert_eq!(index.refresh().unwrap_err().code, "PROJECT_STRUCTURE_INVALID");
+        assert_eq!(
+            index.refresh().unwrap_err().code,
+            "PROJECT_STRUCTURE_INVALID"
+        );
         assert_eq!(index.search("one.yml", None, 0, 100).total, 1);
     }
 
