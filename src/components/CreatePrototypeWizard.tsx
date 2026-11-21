@@ -41,10 +41,22 @@ export default function CreatePrototypeWizard({ onClose, onCreated }: Props) {
   const [creating, setCreating] = useState(false);
 
   function update<K extends keyof NewPrototypeDraft>(field: K, value: NewPrototypeDraft[K]) {
+    // Do not leave an old valid preview enabled during the debounce window.
+    setChecking(true);
+    setPreview(null);
+    setValidationError(null);
+    setCreateError(null);
     setDraft((current) => {
       const next = { ...current, [field]: value };
       if (field === 'id' && current.file === preferredPath(current.id || 'NewPrototype')) {
         next.file = preferredPath(String(value));
+      }
+      if (field === 'kind' && value !== 'entity') {
+        next.sprite = '';
+        next.sprite_state = '';
+        next.include_item = false;
+        next.include_physics = false;
+        next.include_appearance = false;
       }
       return next;
     });
