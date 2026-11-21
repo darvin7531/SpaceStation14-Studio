@@ -43,6 +43,16 @@ export default function EditorSettingsDialog({ value, onChange, onClose }: Props
         <label>Номера строк<select value={value.lineNumbers} onChange={(event) => patch({ lineNumbers: event.target.value as EditorSettings['lineNumbers'] })}>
           <option value="on">Обычные</option><option value="relative">Относительные</option><option value="off">Скрыть</option></select></label>
         <label className="settings-check"><input type="checkbox" checked={value.minimap} onChange={(event) => patch({ minimap: event.target.checked })}/>Миникарта</label>
+        <label className="settings-check"><input type="checkbox" checked={value.liveValidation}
+          onChange={(event) => patch({ liveValidation: event.target.checked })}/>Автоматическая проверка Fluent</label>
+        <label>Задержка проверки Fluent (100–1500 мс)
+          <input type="number" min={100} max={1500} step={50}
+            disabled={!value.liveValidation} value={value.validationDelay}
+            onChange={(event) => {
+              const next = Number(event.target.value);
+              if (Number.isFinite(next) && next >= 100 && next <= 1500) patch({ validationDelay: Math.round(next) });
+            }}/>
+        </label>
       </div>
       <footer><button type="button" onClick={() => onChange({ ...DEFAULT_EDITOR_SETTINGS })}>Сбросить</button>
       <button type="button" onClick={onClose}>Готово</button></footer>
