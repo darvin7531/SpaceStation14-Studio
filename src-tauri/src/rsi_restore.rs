@@ -337,7 +337,7 @@ fn restored_metadata(current: &[u8], original: &[u8], name: &str) -> Result<Stri
                 "Проверьте meta.json.",
             )
         })?;
-    if states.len() >= MAX_ARCHIVES {
+    if states.len() >= MAX_STATES {
         return Err(issue(
             "RSI_RESTORE_STATES_LIMIT",
             "Слишком много состояний RSI.",
