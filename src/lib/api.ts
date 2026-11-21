@@ -173,6 +173,23 @@ export interface DraftWriteResult {
   durability_warning: string | null;
 }
 
+export interface FluentDiagnostic {
+  code: string;
+  message: string;
+  details: string;
+  line: number;
+  column: number;
+  end_line: number;
+  end_column: number;
+}
+
+export interface FluentAnalysis {
+  entry_count: number;
+  diagnostic_count: number;
+  truncated: boolean;
+  diagnostics: FluentDiagnostic[];
+}
+
 export interface NewFluentDraft {
   file: string;
   starter_key: string;
@@ -276,6 +293,9 @@ export const studio = {
   },
   saveFtlResource(path: string, expectedRevision: string, content: string): Promise<SaveResult> {
     return invoke('save_ftl_resource', { path, expectedRevision, content });
+  },
+  analyzeFluentResource(path: string, content: string): Promise<FluentAnalysis> {
+    return invoke('analyze_fluent_resource', { path, content });
   },
   listDrafts(): Promise<DraftList> {
     return invoke('list_drafts');

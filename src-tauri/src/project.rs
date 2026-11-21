@@ -8,6 +8,7 @@ use serde::Serialize;
 
 use crate::error::{internal_lock, StudioError};
 use crate::fluent_create::{self, CreatedFluent, FluentDraft, FluentPreview};
+use crate::fluent_diagnostics::{self, FluentAnalysis};
 use crate::prototype_append::{self, AppendPreview};
 use crate::prototype_components::{self, ComponentInspection, ComponentOperation};
 use crate::prototype_create::{self, CreatedPrototype, PrototypeDraft, PrototypePreview};
@@ -247,6 +248,24 @@ impl ProjectIndex {
         Ok(cache
             .get_or_insert_with(|| Arc::new(PrototypeCatalog::build(&self.root, &self.resources)))
             .clone())
+    }
+
+    /// Validate live editor text without reading or writing the disk.
+    /// Restrict this action to indexed Fluent resources.
+    pub fn analyze_fluent(&self, rel_path: &str, source: &str) -> Result<FluentAnalysis, StudioError> {
+        let indexed_ftl = self
+            .positions
+            .get(rel_path)
+            .and_then(|index| self.resources.get(*index))
+            .is_some_and(|entry| entry.kind == "ftl");
+        if !indexed_ftl {
+            return Err(StudioError::new(
+                "FTL_NOT_INDEXED",
+                "Файл отсутствует в каталоге Fluent-локализаций проекта.",
+                "Выберите существующий .ftl в списке ресурсов или обновите индекс.",
+            ));
+        }
+        fluent_diagnostics::analyze(source)
     }
 
     pub fn preview_new_fluent(&self, draft: &FluentDraft) -> Result<FluentPreview, StudioError> {
@@ -1015,6 +1034,36 @@ mod tests {
         assert_eq!(
             fresh.create_new_prototype(&draft).unwrap_err().code,
             "PROTOTYPE_ID_EXISTS"
+        );
+    }
+
+    #[test]
+    fn diagnoses_only_indexed_fluent_without_touching_source() {
+        let fx = Fixture::new();
+        let path = "Resources/Locale/en-US/items.ftl";
+        let original = "valid = Hello\n";
+        fx.write(path, original);
+        fx.write("Resources/Prototypes/item.yml", "- type: entity\n  id: Item\n");
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let diagnostics = index
+            .analyze_fluent(path, "valid = Hello\nbad@name = Broken\n")
+            .unwrap();
+        assert!(!diagnostics.diagnostics.is_empty());
+        assert_eq!(diagnostics.diagnostics[0].line, 2);
+        assert_eq!(
+            fs::read_to_string(fx.root.join(path)).unwrap(),
+            original,
+            "Diagnostics must never persist a live editor draft",
+        );
+        assert_eq!(
+            index.analyze_fluent("Resources/Prototypes/item.yml", original)
+                .unwrap_err().code,
+            "FTL_NOT_INDEXED"
+        );
+        assert_eq!(
+            index.analyze_fluent("Resources/Locale/en-US/missing.ftl", original)
+                .unwrap_err().code,
+            "FTL_NOT_INDEXED"
         );
     }
 

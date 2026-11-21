@@ -1,0 +1,89 @@
+.fluent-diagnostics {
+  flex: none;
+  max-height: 242px;
+  overflow-y: auto;
+  background: #101b2a;
+  border-bottom: 1px solid #32475c;
+  color: #c9d8e8;
+  font-size: 12px;
+}
+.fluent-diagnostics-heading {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 17px;
+  background: #152438;
+  border-bottom: 1px solid #2b4058;
+}
+.fluent-diagnostics-heading > small {
+  font-size: 11px;
+  color: #95abc4;
+}
+.fluent-diagnostics-heading > span {
+  margin-left: auto;
+  color: #e9b49a;
+  font-weight: 600;
+}
+.fluent-diagnostics-list {
+  padding: 4px 10px;
+}
+.fluent-diagnostics-item {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-radius: 5px;
+  padding: 7px 8px;
+  background: transparent;
+  color: #ead5cf;
+}
+.fluent-diagnostics-item:hover,
+.fluent-diagnostics-item:focus-visible {
+  background: #2b364a;
+  outline: 1px solid #8caac7;
+}
+.fluent-diagnostics-error-icon {
+  flex: none;
+  color: #eb9b86;
+}
+.fluent-diagnostics-pos {
+  flex: none;
+  font: 11px/1.4 "JetBrains Mono", Consolas, monospace;
+  color: #e7ae8b;
+  min-width: 48px;
+}
+.fluent-diagnostics-message {
+  flex: 1;
+  min-width: 0;
+}
+.fluent-diagnostics-message small {
+  display: block;
+  color: #9aaec7;
+  padding-top: 3px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.fluent-diagnostics-ok,
+.fluent-diagnostics-loading,
+.fluent-diagnostics-failure,
+.fluent-diagnostics-more {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 17px;
+}
+.fluent-diagnostics-ok { color: #a5dec4; }
+.fluent-diagnostics-failure { color: #f1b1a5; }
+.fluent-diagnostics-notice {
+  margin: 0;
+  padding: 8px 17px;
+  font-size: 11px;
+  color: #869eb9;
+}

@@ -10,6 +10,7 @@ import './styles.fields.css';
 import './styles.components.css';
 import './styles.rsi.css';
 import './styles.fluent.css';
+import './styles.fluent-diagnostics.css';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('The Studio root element is missing.');

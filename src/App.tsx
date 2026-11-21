@@ -19,6 +19,7 @@ import PrototypeComponentsPanel from './components/PrototypeComponentsPanel';
 import RecoveryPanel from './components/RecoveryPanel';
 import CreatePrototypeWizard, { type PrototypeDestinationMode } from './components/CreatePrototypeWizard';
 import CreateFluentWizard from './components/CreateFluentWizard';
+import FluentDiagnosticsPanel from './components/FluentDiagnosticsPanel';
 import ConflictReviewPanel from './components/ConflictReviewPanel';
 
 const PAGE_SIZE = 100;
@@ -943,6 +944,11 @@ export default function App() {
               </span>
             </div>
           </div>
+          {selected.kind === 'ftl' && document?.path === selected.path && !reading
+            && <FluentDiagnosticsPanel key={selected.path} path={selected.path} source={activeText}
+              onRevealLine={(line) => setJumpTarget({
+                path: selected.path, line, token: ++jumpCounter.current,
+              })}/>}
           {fieldTarget && selected.kind === 'yaml' && selected.path === fieldTarget.file
             && document?.path === selected.path && !reading && (prototypePanel === 'fields'
               ? <PrototypeFieldsPanel

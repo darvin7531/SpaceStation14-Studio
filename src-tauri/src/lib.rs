@@ -1,6 +1,7 @@
 mod draft_journal;
 mod error;
 mod fluent_create;
+mod fluent_diagnostics;
 mod project;
 mod prototype_append;
 mod prototype_components;
@@ -16,6 +17,7 @@ use std::sync::{Arc, Mutex};
 use draft_journal::{DraftJournal, DraftList, DraftSnapshot, DraftSummary, DraftWriteResult};
 use error::{internal_lock, interrupted, StudioError};
 use fluent_create::{FluentDraft, FluentPreview};
+use fluent_diagnostics::FluentAnalysis;
 use project::{ProjectIndex, ProjectOverview, ProjectRefresh, ResourceDocument, ResourcePage};
 use prototype_append::AppendPreview;
 use prototype_components::{ComponentInspection, ComponentOperation};
@@ -228,6 +230,20 @@ async fn save_yaml_resource(
     })
     .await
     .map_err(interrupted)?
+}
+
+/// Analyze a live Fluent draft without writing it to disk. Parsing runs away
+/// from the UI thread, and only indexed .ftl paths are accepted.
+#[tauri::command]
+async fn analyze_fluent_resource(
+    path: String,
+    content: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<FluentAnalysis, StudioError> {
+    let index = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || index.analyze_fluent(&path, &content))
+        .await
+        .map_err(interrupted)?
 }
 
 /// Native Fluent source save. Preserves user text and refuses stale revisions.
@@ -602,6 +618,7 @@ pub fn run() -> Result<(), tauri::Error> {
             list_rsi_sheets,
             read_rsi_sheet,
             save_yaml_resource,
+            analyze_fluent_resource,
             save_ftl_resource,
             preview_new_fluent,
             create_new_fluent,
