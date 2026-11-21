@@ -35,7 +35,7 @@ test('refresh retains dirty text and its original save revision after external e
   );
   assert.deepEqual(result.conflicting, [file]);
   assert.equal(result.drafts[file], 'unsaved user changes');
-  assert.equal(result.documents.get(file)?.revision, 'base-hash');
+  assert.equal(result.documents.get(file)?.revision, 'external-hash');
   assert.equal(result.draftBases[file], 'base-hash');
   assert.deepEqual(result.reloaded, []);
 });

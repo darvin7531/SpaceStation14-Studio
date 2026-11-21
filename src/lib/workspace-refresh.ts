@@ -54,8 +54,14 @@ export function reconcileWorkspaceRefresh(
     const text = drafts[path] ?? old.content;
     const dirty = text !== old.content;
     if (dirty) {
-      // Do not silently move the optimistic-save baseline for a dirty file.
-      if (changed) conflicting.push(path);
+      if (changed) {
+        // Show the latest disk file in the review UI, but retain the revision
+        // that the user's unsaved text was based on. This activates the
+        // stale-draft guard before Save instead of waiting for a failed write.
+        draftBases[path] ??= old.revision;
+        documents.set(path, incoming);
+        conflicting.push(path);
+      }
       continue;
     }
 
