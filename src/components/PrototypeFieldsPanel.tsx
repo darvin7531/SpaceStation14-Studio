@@ -7,7 +7,7 @@ interface Props {
   locator: PrototypeFieldLocator;
   source: string;
   busy: boolean;
-  onApply: (original: string, changed: string) => boolean;
+  onApply: (locator: PrototypeFieldLocator, original: string, changed: string) => boolean;
   onClose: () => void;
 }
 
@@ -64,7 +64,7 @@ export default function PrototypeFieldsPanel({ locator, source, busy, onApply, o
         setNotice('Изменений нет. Исходный YAML не затронут.');
         return;
       }
-      if (onApply(sourceSnapshot, updated.content)) {
+      if (onApply(locator, sourceSnapshot, updated.content)) {
         setNotice('Поля применены к несохранённому черновику. Нажмите Ctrl+S для записи YAML.');
         setRevisionToken((value) => value + 1);
       } else {

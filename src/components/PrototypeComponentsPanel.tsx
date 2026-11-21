@@ -12,7 +12,7 @@ interface Props {
   locator: PrototypeFieldLocator;
   source: string;
   busy: boolean;
-  onApply: (original: string, changed: string) => boolean;
+  onApply: (locator: PrototypeFieldLocator, original: string, changed: string) => boolean;
   onClose: () => void;
 }
 
@@ -65,7 +65,7 @@ export default function PrototypeComponentsPanel({
         setNotice('Изменений нет.');
         return;
       }
-      if (!onApply(snapshot, result.content)) {
+      if (!onApply(locator, snapshot, result.content)) {
         setError({
           code: 'COMPONENT_EDITOR_CHANGED',
           message: 'Черновик изменился во время редактирования компонентов.',

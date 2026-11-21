@@ -591,9 +591,18 @@ export default function App() {
     });
   }
 
-  function applyPrototypeFields(original: string, changed: string): boolean {
+  function applyPrototypeFields(
+    locator: PrototypeFieldLocator, original: string, changed: string,
+  ): boolean {
     const file = fieldTarget?.file;
     if (!file || selectedPathRef.current !== file || saving || opening || transitioning) return false;
+    // A slow native IPC result must never apply to a different declaration
+    // even when another selected prototype shares the same source file.
+    if (locator.file !== fieldTarget.file || locator.id !== fieldTarget.id
+        || locator.kind !== fieldTarget.kind
+        || locator.document_index !== fieldTarget.document_index
+        || locator.item_index !== fieldTarget.item_index
+        || locator.mode !== fieldTarget.mode) return false;
     const live = draftsRef.current[file] ?? documents.current.get(file)?.content;
     if (live !== original) return false;
     const next = { ...draftsRef.current, [file]: changed };
