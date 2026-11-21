@@ -762,10 +762,9 @@ impl ProjectIndex {
                     result.complete = false;
                     read_failures += 1;
                     if result.warnings.len() < 5 {
-                        result.warnings.push(format!(
-                            "{}: файл пропущен [{}].",
-                            entry.path, error.code
-                        ));
+                        result
+                            .warnings
+                            .push(format!("{}: файл пропущен [{}].", entry.path, error.code));
                     }
                     continue;
                 }
@@ -792,9 +791,9 @@ impl ProjectIndex {
                 }
                 if result.items.len() >= MAX_CONTENT_SEARCH_HITS {
                     result.complete = false;
-                    result.warnings.push(
-                        "Показаны первые 200 совпадений. Уточните поисковую строку.".into(),
-                    );
+                    result
+                        .warnings
+                        .push("Показаны первые 200 совпадений. Уточните поисковую строку.".into());
                     return Ok(result);
                 }
                 let preview: String = line.trim().chars().take(180).collect();
@@ -1344,10 +1343,16 @@ mod tests {
             .iter()
             .any(|item| item.kind == "ftl" && item.line == 1));
         assert!(result.items.iter().any(|item| item.kind == "rsi"));
-        assert!(result.items.iter().all(|item| !item.path.contains("unindexed")));
+        assert!(result
+            .items
+            .iter()
+            .all(|item| !item.path.contains("unindexed")));
         let yaml = index.search_content("testalpha", Some("yaml")).unwrap();
         assert_eq!(yaml.items.len(), 1);
-        assert_eq!(index.search_content("missing", None).unwrap().items.len(), 0);
+        assert_eq!(
+            index.search_content("missing", None).unwrap().items.len(),
+            0
+        );
     }
 
     #[test]
@@ -1360,11 +1365,17 @@ mod tests {
             "CONTENT_SEARCH_QUERY_INVALID"
         );
         assert_eq!(
-            index.search_content("x", Some("../invalid")).unwrap_err().code,
+            index
+                .search_content("x", Some("../invalid"))
+                .unwrap_err()
+                .code,
             "CONTENT_SEARCH_KIND_INVALID"
         );
         assert_eq!(
-            index.search_content(&"x".repeat(129), None).unwrap_err().code,
+            index
+                .search_content(&"x".repeat(129), None)
+                .unwrap_err()
+                .code,
             "CONTENT_SEARCH_QUERY_INVALID"
         );
         let result = index.search_content("match", None).unwrap();
