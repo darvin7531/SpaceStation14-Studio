@@ -1,0 +1,30 @@
+/* Monaco diff. Both models are read-only; diff never writes to SS14 sources. */
+.yaml-diff { min-width: 0; min-height: 0; display: flex; flex-direction: column; border: 1px solid #3a5877; border-radius: 7px; overflow: hidden; background: #0d1726; }
+.yaml-diff-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:11px; padding:9px 12px; background:#172a3f; border-bottom:1px solid #3a5877; font-size:11px; color:#aec6df; }
+.yaml-diff-labels { display:flex; flex:1; flex-wrap:wrap; gap:9px; justify-content:space-between; min-width:165px; color:#d6e6f8; font-weight:600; }
+.yaml-diff-toolbar label { display:flex; align-items:center; gap:5px; white-space:nowrap; cursor:pointer; }
+.yaml-diff-toolbar input { accent-color:#78aee7; }
+.yaml-diff-frame { position:relative; flex:1; min-height:260px; height:310px; overflow:hidden; }
+.yaml-diff-container { width:100%; height:100%; }
+.yaml-diff-loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; margin:0; background:#0d1726; color:#92b4d8; font-size:12px; pointer-events:none; }
+.yaml-diff-fallback { padding:8px; display:grid; gap:8px; min-height:0; overflow:auto; }
+.yaml-diff-fallback > p { display:flex; align-items:center; gap:8px; font-size:11px; color:#edc89a; }
+.yaml-diff-fallback details { color:#c6d5e6; font-size:11px; }
+.yaml-diff-fallback-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.yaml-diff-fallback-grid label { display:grid; gap:6px; color:#b3d1f0; min-width:0; font-size:11px; }
+.yaml-diff-fallback-grid textarea { background:#0b121d; color:#e4edf9; border:1px solid #3b536d; border-radius:5px; font:11px/1.5 monospace; resize:vertical; padding:8px; white-space:pre; min-width:0; }
+@media(max-width:810px) { .yaml-diff-fallback-grid { grid-template-columns:1fr; } }
+
+/* On-demand conflict review occupies editor space without altering sources. */
+.conflict-review { padding:12px 15px; display:flex; flex-direction:column; gap:10px; max-height:58vh; overflow-y:auto; background:#112137; border-bottom:1px solid #456889; }
+.conflict-review-heading { display:flex; align-items:center; gap:9px; color:#d5e9ff; }
+.conflict-review-heading strong { flex:1; font-size:12px; overflow-wrap:anywhere; }
+.conflict-review-heading button { border:0; background:transparent; color:#aec9e5; }
+.conflict-review > p { display:flex; align-items:center; gap:8px; margin:0; font-size:11px; line-height:1.6; color:#c7c099; }
+.conflict-review > p.conflict-review-stale { color:#f0ad94; }
+.conflict-review .yaml-diff-frame { height:335px; }
+.conflict-review-actions { display:flex; flex-wrap:wrap; align-items:center; gap:9px; }
+.conflict-review-actions button { display:flex; align-items:center; gap:6px; padding:7px 9px; border:1px solid #55799b; border-radius:5px; background:#274865; color:#e0ecf9; font-size:11px; }
+.conflict-review-actions button.conflict-review-accept { background:#36583c; border-color:#689b70; }
+.conflict-review-actions button:disabled { opacity:.45; cursor:not-allowed; }
+.conflict-review > small { color:#9ab3cc; line-height:1.5; }

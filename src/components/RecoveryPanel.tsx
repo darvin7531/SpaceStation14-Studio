@@ -7,6 +7,7 @@ import {
   type ResourceDocument,
 } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
+import YamlDiffView from '../editor/YamlDiffView';
 
 interface Preview {
   snapshot: DraftSnapshot;
@@ -116,17 +117,11 @@ export default function RecoveryPanel({
         В редакторе уже открыт другой несохранённый черновик этого файла.
         Восстановление поверх него заблокировано.
       </p>}
-      <div className="recovery-compare">
-        <label>
-          <span>Сохранённый черновик</span>
-          <textarea readOnly spellCheck={false} value={preview.snapshot.content} rows={13}/>
-        </label>
-        <label>
-          <span>Текущий файл на диске</span>
-          <textarea readOnly spellCheck={false} value={preview.current?.content ?? 'Файл недоступен'}
-            rows={13}/>
-        </label>
-      </div>
+      <YamlDiffView original={preview.current?.content ?? ''}
+        modified={preview.snapshot.content}
+        originalLabel={preview.current ? 'Текущий файл на диске' : 'Исходный файл недоступен'}
+        modifiedLabel="Сохранённый черновик"
+        fileLabel={preview.snapshot.path}/>
       <div className="recovery-actions">
         <button type="button" disabled={busyPath !== null || openedDirty || !preview.current}
           onClick={() => {

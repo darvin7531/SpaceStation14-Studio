@@ -9,9 +9,11 @@ import { normalizeStudioError, type StudioError } from './lib/errors';
 import { closeTab, openTab, type TabState } from './lib/tabs';
 import { dirtyDocumentPaths, reconcileSavedDraft } from './lib/draft-state';
 import { DraftWriteQueue, journalKey } from './lib/draft-queue';
+import { reviewDecision } from './lib/review-guard';
 import MonacoPreview from './editor/MonacoPreview';
 import PrototypeExplorer from './components/PrototypeExplorer';
 import RecoveryPanel from './components/RecoveryPanel';
+import ConflictReviewPanel from './components/ConflictReviewPanel';
 
 const PAGE_SIZE = 100;
 const LAST_PROJECT_KEY = 'ss14-studio-rust.last-project-root';
@@ -20,6 +22,12 @@ type PendingAction =
   | { type: 'open'; path: string }
   | { type: 'close'; path: string }
   | { type: 'reload'; path: string };
+
+interface DiskComparison {
+  path: string;
+  disk: ResourceDocument;
+  reviewedDraft: string;
+}
 
 function ResourceIcon({ kind }: { kind: ResourceEntry['kind'] }) {
   if (kind === 'rsi') return <ImageIcon size={15} />;
@@ -71,15 +79,24 @@ export default function App() {
   const journalSignatures = useRef(new Map<string, string>());
   const journalEpoch = useRef(0);
   const [transitioning, setTransitioning] = useState(false);
-  const [rebaseRequested, setRebaseRequested] = useState(false);
+  const [comparison, setComparison] = useState<DiskComparison | null>(null);
+  const [comparing, setComparing] = useState(false);
+  const comparisonVersion = useRef(0);
   const [saving, setSaving] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const draftsRef = useRef(drafts);
+  draftsRef.current = drafts;
+  const selectedPathRef = useRef(selected?.path ?? null);
+  selectedPathRef.current = selected?.path ?? null;
   const dirtyPaths = dirtyDocumentPaths(drafts, documents.current);
   const isDirty = (file: string) => dirtyPaths.includes(file);
   const activeConflict = selected && document?.path === selected.path
     && draftBases[selected.path] !== undefined
     && draftBases[selected.path] !== document.revision;
+  const reviewDirty = Boolean(comparison && selected
+    && comparison.path === selected.path
+    && comparison.reviewedDraft !== (drafts[selected.path] ?? documents.current.get(selected.path)?.content ?? ''));
   const activeText = selected
     ? (drafts[selected.path] ?? document?.content ?? '')
     : '';
@@ -149,6 +166,8 @@ export default function App() {
   }, [overview, drafts, draftBases, document, saving, transitioning, opening]);
 
   async function loadProject(requestedPath: string) {
+    comparisonVersion.current += 1;
+    setComparison(null);
     cancelJournalTimers();
     setOpening(true);
     setNotice(null);
@@ -174,7 +193,7 @@ export default function App() {
       documents.current.clear();
       setDrafts({});
       setDraftBases({});
-      setRebaseRequested(false);
+      setComparison(null);
       setPendingAction(null);
       setOverview(next);
       setResults({ total: 0, items: [] });
@@ -287,6 +306,7 @@ export default function App() {
 
   function restoreRecovery(snapshot: DraftSnapshot): boolean {
     if (!overview || isDirty(snapshot.path)) return false;
+    closeComparison();
     const item: ResourceEntry = { path: snapshot.path, kind: 'yaml' };
     const result = openTab(tabState, item);
     if (!result.ok) {
@@ -341,6 +361,7 @@ export default function App() {
   }
 
   function executeAction(action: PendingAction) {
+    closeComparison();
     setPendingAction(null);
     if (action.type === 'open') {
       void loadProject(action.path);
@@ -386,6 +407,73 @@ export default function App() {
     }
   }
 
+  // Inspect fresh disk contents. This does not update the editor baseline or write.
+  async function compareCurrent() {
+    const file = selectedPathRef.current;
+    if (!file || !overview || opening || transitioning) return;
+    const loaded = documents.current.get(file);
+    if (!loaded) return;
+    const request = ++comparisonVersion.current;
+    const snapshot = draftsRef.current[file] ?? loaded.content;
+    setComparing(true);
+    try {
+      const disk = await studio.readResource(file);
+      if (request !== comparisonVersion.current || selectedPathRef.current !== file) return;
+      setComparison({ path: file, disk, reviewedDraft: snapshot });
+      setError(null);
+    } catch (failure) {
+      if (request === comparisonVersion.current) setError(normalizeStudioError(failure));
+    } finally {
+      if (request === comparisonVersion.current) setComparing(false);
+    }
+  }
+
+  async function acceptComparison() {
+    const review = comparison;
+    if (!review || comparing || saving || opening || transitioning) return;
+    const request = ++comparisonVersion.current;
+    setComparing(true);
+    try {
+      // Re-read the file immediately before accepting the revision. It is still
+      // rechecked by Rust with SHA-256 when the user eventually presses Save.
+      const disk = await studio.readResource(review.path);
+      if (request !== comparisonVersion.current || selectedPathRef.current !== review.path) return;
+      const draft = draftsRef.current[review.path] ?? documents.current.get(review.path)?.content ?? '';
+      const verdict = reviewDecision({
+        path: review.path,
+        reviewedDraft: review.reviewedDraft,
+        reviewedDiskRevision: review.disk.revision,
+      }, review.path, draft, disk.revision);
+      if (verdict !== 'accept') {
+        setComparison({ path: review.path, disk, reviewedDraft: draft });
+        setError({
+          code: 'DIFF_REVIEW_STALE',
+          message: 'Сравнение устарело. Принятие новой версии отменено.',
+          hint: verdict === 'draft-changed'
+            ? 'Черновик был изменён после просмотра. Повторно изучите отличия.'
+            : 'Файл на диске снова изменился. Изучите новое сравнение перед повторным подтверждением.',
+        });
+        return;
+      }
+      documents.current.set(review.path, disk);
+      setDocument((current) => current?.path === review.path ? disk : current);
+      setDraftBases((previous) => ({ ...previous, [review.path]: disk.revision }));
+      setComparison(null);
+      setError(null);
+      setNotice('Текущая версия файла принята как новая основа черновика. Исходный YAML ещё не изменён; проверьте правки и сохраните вручную.');
+    } catch (failure) {
+      if (request === comparisonVersion.current) setError(normalizeStudioError(failure));
+    } finally {
+      if (request === comparisonVersion.current) setComparing(false);
+    }
+  }
+
+  function closeComparison() {
+    comparisonVersion.current += 1;
+    setComparing(false);
+    setComparison(null);
+  }
+
   async function saveCurrent() {
     if (!selected || selected.kind !== 'yaml' || saving) return;
     const file = selected.path;
@@ -398,9 +486,9 @@ export default function App() {
       setError({
         code: 'RECOVERED_DRAFT_CONFLICT',
         message: 'Восстановленный черновик основан на другой версии файла.',
-        hint: 'Сравните копию с текущим YAML. Для явного разрешения конфликта подтвердите принятие новой исходной версии.',
+        hint: 'Изучите различия во встроенном diff. Принятие новой ревизии не сохраняет файл автоматически.',
       });
-      setRebaseRequested(true);
+      void compareCurrent();
       return;
     }
     const key = journalKey(overview!.project_root, file);
@@ -432,6 +520,7 @@ export default function App() {
       } catch (failure) {
         cleanupWarning = 'Старая резервная копия не удалена: ' + normalizeStudioError(failure).message;
       }
+      closeComparison();
       setWorkspaceRevision((previous) => previous + 1);
       setNotice([
         'YAML сохранён. Индекс прототипов будет перестроен при следующем обращении.',
@@ -439,7 +528,9 @@ export default function App() {
         cleanupWarning,
       ].filter(Boolean).join(' '));
     } catch (failure) {
-      setError(normalizeStudioError(failure));
+      const explained = normalizeStudioError(failure);
+      setError(explained);
+      if (explained.code === 'RESOURCE_CHANGED_ON_DISK') void compareCurrent();
     } finally {
       setSaving(false);
     }
@@ -458,6 +549,7 @@ export default function App() {
 
   function openResource(item: ResourceEntry) {
     if (saving || transitioning || opening) return;
+    if (selectedPathRef.current !== item.path) closeComparison();
     const outcome = openTab(tabState, item);
     if (!outcome.ok) {
       setError({
@@ -480,6 +572,7 @@ export default function App() {
 
   function selectTab(path: string) {
     if (saving || transitioning || opening || tabState.active === path) return;
+    closeComparison();
     setTabState((state) => ({ ...state, active: path }));
     void focusResource(path);
   }
@@ -538,23 +631,8 @@ export default function App() {
     </div>}
     {activeConflict && selected && <div className="recovery-conflict-notice" role="alert">
       <AlertTriangle size={16}/>
-      <span>Черновик основан на более старой версии YAML. Прямое сохранение заблокировано.</span>
-      <button type="button" onClick={() => setRebaseRequested(true)}>Разрешить конфликт</button>
-    </div>}
-    {rebaseRequested && activeConflict && selected && document && <div
-      className="discard-confirmation" role="alertdialog" aria-label="Разрешение конфликта восстановления">
-      <AlertTriangle size={18}/>
-      <div><strong>Подтвердить замену текущей версии YAML?</strong>
-        <p>Сначала сравните текст черновика с текущим файлом в панели восстановления.
-          Использование текущей ревизии как основы может затереть внешние правки.
-          Это действие не сохраняет файл автоматически.</p>
-      </div>
-      <button type="button" onClick={() => setRebaseRequested(false)}>Отмена</button>
-      <button type="button" className="danger-button" onClick={() => {
-        setDraftBases((previous) => ({ ...previous, [selected.path]: document.revision }));
-        setRebaseRequested(false);
-        setNotice('Новая ревизия принята как основа. Проверьте текст и сохраните файл вручную.');
-      }}>Принимаю риск, использовать текущую ревизию</button>
+      <span>Восстановленный черновик основан на старой версии YAML. Сохранение заблокировано до проверки diff.</span>
+      <button type="button" disabled={comparing} onClick={() => void compareCurrent()}>Сравнить версии</button>
     </div>}
     {overview && <RecoveryPanel entries={recoveries.items}
       warnings={recoveries.warnings} dirtyPaths={dirtyPaths}
@@ -624,6 +702,11 @@ export default function App() {
               <button type="button" onClick={reloadCurrent} disabled={reading || saving} title="Загрузить содержимое файла с диска">
                 <RotateCcw size={14}/> Перечитать
               </button>
+              {selected.kind === 'yaml' && <button type="button" onClick={() => void compareCurrent()}
+                disabled={saving || reading || comparing || !isDirty(selected.path)}
+                title="Сравнить черновик с актуальным YAML на диске">
+                <FileCode2 size={14}/>{comparing ? 'Сравниваю…' : 'Сравнить'}
+              </button>}
               {selected.kind === 'yaml' && <button type="button" onClick={() => void saveCurrent()}
                 disabled={saving || reading || !isDirty(selected.path)} title="Сохранить YAML (Ctrl+S)">
                 <Save size={14}/>{saving ? 'Сохраняю…' : 'Сохранить'}
@@ -633,6 +716,11 @@ export default function App() {
               </span>
             </div>
           </div>
+          {comparison && comparison.path === selected.path && <ConflictReviewPanel
+            file={comparison.path} disk={comparison.disk} draft={comparison.reviewedDraft}
+            draftChanged={Boolean(reviewDirty)} busy={comparing}
+            onAccept={() => void acceptComparison()} onRefresh={() => void compareCurrent()}
+            onClose={closeComparison}/>}
           {reading ? <div className="placeholder">Чтение ресурса…</div> :
             document ? <MonacoPreview key={document.path} resource={selected} document={document}
               value={activeText} editable={selected.kind === 'yaml' && !saving}

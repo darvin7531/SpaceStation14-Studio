@@ -4,6 +4,7 @@ import App from './App';
 import './styles.css';
 import './styles.prototypes.css';
 import './styles.recovery.css';
+import './styles.diff.css';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('The Studio root element is missing.');
