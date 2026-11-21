@@ -8,6 +8,7 @@ import RsiImportPanel from './RsiImportPanel';
 import RsiTimingPanel from './RsiTimingPanel';
 import RsiDeletePanel from './RsiDeletePanel';
 import RsiRestorePanel from './RsiRestorePanel';
+import RsiCreditsPanel from './RsiCreditsPanel';
 
 function Failure({ error }: { error: StudioError }) {
   return <div className="rsi-error" role="alert"><AlertCircle size={16}/>
@@ -18,13 +19,14 @@ function Failure({ error }: { error: StudioError }) {
 
 /** Load one PNG at a time; do not expose project paths to the webview filesystem. */
 export default function RsiPreview({
-  path, metadata, revision, onImported, onTimingUpdated, onDeleted, onRestored,
+  path, metadata, revision, onImported, onTimingUpdated, onCreditsUpdated, onDeleted, onRestored,
 }: {
   path: string;
   metadata: string;
   revision: string;
   onImported: (updated: ImportedRsiState) => void;
   onTimingUpdated: (updated: ImportedRsiState) => void;
+  onCreditsUpdated: (updated: ImportedRsiState) => void;
   onDeleted: (result: DeletedRsiState) => void;
   onRestored: (result: RestoredRsiState) => void;
 }) {
@@ -125,6 +127,8 @@ export default function RsiPreview({
     {frameLayout?.warnings.map((warning, index) =>
       <p className="rsi-warning" key={'layout-' + index}>{warning}</p>)}
     {imageError && <Failure error={imageError}/>}
+    <RsiCreditsPanel key={'credits:' + path + ':' + revision}
+      path={path} revision={revision} metadata={metadata} onSaved={onCreditsUpdated}/>
     <RsiImportPanel path={path} revision={revision} onImported={onImported}/>
     {frameLayout && selectedState && <RsiTimingPanel
       key={path + ':' + selectedState.name + ':' + revision}
