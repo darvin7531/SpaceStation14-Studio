@@ -69,6 +69,18 @@ pub fn save_ftl(
     save_text(root, relative_path, expected_revision, content, false)
 }
 
+/// Save already validated RSI JSON using the same revision-checked,
+/// same-directory atomic text replacement as YAML/Fluent. The caller must
+/// validate the RSI structure and ensure the resource is indexed.
+pub fn save_rsi_metadata(
+    root: &Path,
+    relative_path: &str,
+    expected_revision: &str,
+    content: String,
+) -> Result<SaveResult, StudioError> {
+    save_text(root, relative_path, expected_revision, content, false)
+}
+
 fn save_text(
     root: &Path,
     relative_path: &str,

@@ -199,8 +199,8 @@ fn updated_metadata(
 }
 
 /// Keep metadata source conflict-aware and PNG bytes untouched.
-/// save_ftl is a generic byte-preserving text writer with two revision
-/// checks, temp file, fsync, and atomic same-directory rename.
+/// The dedicated save_rsi_metadata writer checks revisions twice, stages a
+/// temp file, fsyncs, and atomically replaces the same-directory metadata.
 pub fn update(root: &Path, request: &RsiTimingUpdate) -> Result<ImportedRsiState, StudioError> {
     if request.expected_revision.len() != 64
         || !request
@@ -246,7 +246,7 @@ pub fn update(root: &Path, request: &RsiTimingUpdate) -> Result<ImportedRsiState
             warning: None,
         });
     };
-    let result = resource_edit::save_ftl(
+    let result = resource_edit::save_rsi_metadata(
         root,
         &format!("{}/meta.json", request.path),
         &request.expected_revision,

@@ -1617,6 +1617,41 @@ mod tests {
     }
 
     #[test]
+    fn timing_edit_requires_index_and_preserves_loaded_resource_revision() {
+        let fx = Fixture::new();
+        let path = "Resources/Textures/Animated.rsi";
+        fx.write(
+            &format!("{path}/meta.json"),
+            r#"{"version":1,"size":{"x":32,"y":32},"states":[{"name":"walk","directions":1,"delays":[[0.1,0.2]]}]}"#,
+        );
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let first = index.read_resource(path).unwrap();
+        let update = RsiTimingUpdate {
+            path: path.into(),
+            expected_revision: first.revision,
+            name: "walk".into(),
+            delays: vec![vec![0.5, 0.6]],
+        };
+        let result = index.update_rsi_timing(&update).unwrap();
+        let refreshed = index.read_resource(path).unwrap();
+        assert_eq!(result.revision, refreshed.revision);
+        assert_eq!(result.content, refreshed.content);
+        assert!(refreshed.content.contains("0.5"));
+        assert_eq!(
+            index.update_rsi_timing(&update).unwrap_err().code,
+            "RSI_TIMING_CONFLICT"
+        );
+        let outside = RsiTimingUpdate {
+            path: "Resources/Textures/Other.rsi".into(),
+            ..update
+        };
+        assert_eq!(
+            index.update_rsi_timing(&outside).unwrap_err().code,
+            "RSI_NOT_INDEXED"
+        );
+    }
+
+    #[test]
     fn rsi_png_is_read_only_indexed_and_bounded() {
         let fx = Fixture::new();
         let path = "Resources/Textures/Test.rsi";
