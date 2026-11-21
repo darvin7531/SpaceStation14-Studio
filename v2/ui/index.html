@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>SS14 Studio 2.0 Preview</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <main class="layout">
+    <header class="header">
+      <span class="symbol" aria-hidden="true">S</span>
+      <div>
+        <h1>SS14 Studio <span class="version">2.0 Preview</span></h1>
+        <p>Новый движок проекта на Rust + Tauri</p>
+      </div>
+    </header>
+    <section class="card" aria-labelledby="workspace-title">
+      <p class="eyebrow">WORKSPACE</p>
+      <h2 id="workspace-title">Открыть исходники SS14</h2>
+      <p class="description">Укажите корневую папку репозитория, содержащую Resources/Prototypes. На этом этапе Studio проверяет структуру и подсчитывает файлы — семантический индексатор появится позже.</p>
+      <form id="project-form">
+        <label for="project-path">Путь к проекту</label>
+        <div class="form-row">
+          <input id="project-path" name="path" type="text" placeholder="/home/user/SpaceStation14" spellcheck="false" autocomplete="off" required>
+          <button id="open-button" type="submit">Открыть проект</button>
+        </div>
+      </form>
+      <p id="status" class="status" role="status">Готово к работе</p>
+    </section>
+    <section id="error-panel" class="card error-panel" role="alert" hidden>
+      <div class="error-heading">Не удалось открыть проект <code id="error-code"></code></div>
+      <p id="error-message"></p>
+      <p class="hint" id="error-hint"></p>
+      <details>
+        <summary>Технические подробности</summary>
+        <pre id="error-details"></pre>
+      </details>
+    </section>
+    <section id="result" class="card" aria-labelledby="result-title" hidden>
+      <p class="eyebrow">PROJECT OVERVIEW</p>
+      <h2 id="result-title">Папка проверена</h2>
+      <p id="project-root" class="path"></p>
+      <div class="stats">
+        <div><strong id="prototype-files">0</strong><span>YAML-файлов</span></div>
+        <div><strong id="rsi-directories">0</strong><span>RSI-каталогов</span></div>
+        <div><strong id="locale-files">0</strong><span>FTL-файлов</span></div>
+      </div>
+      <ul id="warnings" class="warnings" hidden></ul>
+    </section>
+    <footer>Экспериментальная ветка. Исходные файлы не изменяются при проверке.</footer>
+  </main>
+</body>
+</html>

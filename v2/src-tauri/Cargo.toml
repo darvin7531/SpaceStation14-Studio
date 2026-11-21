@@ -1,0 +1,22 @@
+[package]
+name = "ss14-studio-v2"
+version = "0.2.0-alpha.1"
+description = "Experimental Rust + Tauri foundation for SS14 Studio"
+authors = ["darvin7531"]
+edition = "2021"
+license = "AGPL-3.0-or-later"
+
+[lib]
+name = "ss14_studio_v2_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[[bin]]
+name = "ss14-studio-v2"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = "2"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+tauri = "2"

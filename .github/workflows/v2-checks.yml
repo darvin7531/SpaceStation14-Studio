@@ -1,0 +1,57 @@
+name: V2 Tauri foundation checks
+
+on:
+  push:
+    branches:
+      - rework/tauri-rust-v2
+    paths:
+      - 'v2/**'
+      - '.github/workflows/v2-checks.yml'
+  pull_request:
+    paths:
+      - 'v2/**'
+      - '.github/workflows/v2-checks.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend checks (Node 22)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check preview JavaScript syntax
+        run: |
+          node --check v2/ui/app.js
+          node --check v2/ui/error-utils.mjs
+      - name: Test user-facing error handling
+        run: node --test v2/tests/*.test.mjs
+
+  rust:
+    name: Rust format, unit tests and clippy (Ubuntu)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: v2/src-tauri
+      - name: Install Tauri 2 Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev build-essential libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf
+      - name: Check formatting
+        run: cargo fmt --manifest-path v2/src-tauri/Cargo.toml --all -- --check
+      - name: Test Rust backend
+        run: cargo test --manifest-path v2/src-tauri/Cargo.toml --all-targets
+      - name: Check Rust warnings
+        run: cargo clippy --manifest-path v2/src-tauri/Cargo.toml --all-targets -- -D warnings
