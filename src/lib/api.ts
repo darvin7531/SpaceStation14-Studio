@@ -441,6 +441,21 @@ export interface SaveResult {
   durability_warning?: string;
 }
 
+export interface OpenRevision {
+  path: string;
+  expected_revision: string;
+}
+export interface ResourceDrift {
+  path: string;
+  status: 'changed' | 'unavailable';
+  error_code: string | null;
+}
+export interface ResourceDriftReport {
+  checked: number;
+  skipped: number;
+  items: ResourceDrift[];
+}
+
 export interface ResourceDocument {
   path: string;
   content: string;
@@ -452,6 +467,9 @@ export interface ResourceDocument {
 export const studio = {
   openProject(path: string): Promise<ProjectOverview> {
     return invoke('open_project', { path });
+  },
+  probeOpenRevisions(opened: OpenRevision[]): Promise<ResourceDriftReport> {
+    return invoke('probe_open_revisions', { opened });
   },
   refreshProject(): Promise<ProjectRefresh> {
     return invoke('refresh_project');
