@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use serde::Serialize;
 
 use crate::error::{internal_lock, StudioError};
+use crate::prototype_append::{self, AppendPreview};
 use crate::prototype_create::{self, CreatedPrototype, PrototypeDraft, PrototypePreview};
 use crate::prototypes::PrototypeCatalog;
 use crate::resource_edit::{self, SaveResult};
@@ -232,6 +233,68 @@ impl ProjectIndex {
         let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;
         self.preview_new_prototype(draft)?;
         prototype_create::create(&self.root, draft)
+    }
+
+    pub fn preview_append_prototype(
+        &self,
+        draft: &PrototypeDraft,
+    ) -> Result<AppendPreview, StudioError> {
+        if !self.is_yaml_indexed(&draft.file) {
+            return Err(StudioError::new(
+                "APPEND_NOT_INDEXED",
+                "Файл для добавления отсутствует в индексе прототипов.",
+                "Выберите существующий YAML-файл через список ресурсов проекта.",
+            ));
+        }
+        let catalog = self.prototypes()?;
+        if catalog.has_partial_declarations(&draft.file) {
+            return Err(StudioError::new(
+                "APPEND_PARTIAL_UNSUPPORTED",
+                "Добавление в Partial Prototypes пока не поддерживается.",
+                "Для такого файла используйте ручной YAML-редактор.",
+            ));
+        }
+        let generated = self.preview_new_prototype(draft)?;
+        let original = self.read_resource(&draft.file)?;
+        prototype_append::preview_append(&original.content, generated)
+    }
+
+    pub fn append_prototype(
+        &self,
+        draft: &PrototypeDraft,
+        expected_revision: &str,
+    ) -> Result<CreatedPrototype, StudioError> {
+        let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;
+        let prepared = self.preview_append_prototype(draft)?;
+        if prepared.expected_revision != expected_revision {
+            return Err(StudioError::new(
+                "RESOURCE_CHANGED_ON_DISK",
+                "YAML изменился после предпросмотра добавления.",
+                "Обновите предпросмотр и проверьте изменения. Файл не перезаписан.",
+            ));
+        }
+        let original = self.read_resource(&draft.file)?;
+        let combined = prototype_append::prepare_append(&original.content, &prepared.yaml)?;
+        let saved = resource_edit::save_yaml(
+            &self.root,
+            &draft.file,
+            expected_revision,
+            combined,
+        )?;
+        let mut warning = saved.durability_warning;
+        match self.prototype_catalog.lock() {
+            Ok(mut cache) => *cache = None,
+            Err(_) => warning = Some(
+                "YAML записан, но индекс прототипов не обновился. Переоткройте проект.".into(),
+            ),
+        };
+        Ok(CreatedPrototype {
+            file: prepared.file,
+            kind: prepared.kind,
+            id: prepared.id,
+            yaml: prepared.yaml,
+            warning,
+        })
     }
 
     /// Only indexed YAML resources may be edited. A mutex serializes saves
