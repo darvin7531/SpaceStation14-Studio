@@ -129,7 +129,7 @@ export default function RsiPreview({
       path={path} revision={revision} state={selectedState} onUpdated={onTimingUpdated}/>}
     {selectedState && <RsiDeletePanel
       key={'delete:' + path + ':' + selectedState.name + ':' + revision}
-      path={path} revision={revision} name={selectedState.name} onDeleted={onDeleted}/>
+      path={path} revision={revision} name={selectedState.name} onDeleted={onDeleted}/>}
 
     <div className="rsi-stage">
       {listing ? <p>Чтение каталога RSI…</p>

@@ -1,6 +1,6 @@
 //! Archive an RSI state's PNG and metadata before removing its declaration.
 //! Archive snapshots are intentionally retained for manual restoration.
- //! Changes to the two files are not one filesystem transaction.
+//! Changes to the two files are not one filesystem transaction.
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::path::Path;
@@ -41,7 +41,10 @@ fn issue(code: &'static str, message: &str, hint: &str) -> StudioError {
 
 fn validate(request: &RsiDeleteRequest) -> Result<(), StudioError> {
     if request.expected_revision.len() != 64
-        || !request.expected_revision.bytes().all(|byte| byte.is_ascii_hexdigit())
+        || !request
+            .expected_revision
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
     {
         return Err(issue(
             "RSI_DELETE_REVISION_INVALID",
@@ -70,7 +73,8 @@ fn metadata_after_deletion(original: &[u8], state_name: &str) -> Result<String, 
             "RSI_DELETE_META_INVALID",
             "meta.json содержит некорректный JSON.",
             "Проверьте файл перед удалением состояния.",
-        ).with_details(error.to_string())
+        )
+        .with_details(error.to_string())
     })?;
     if metadata.get("version").and_then(Value::as_u64) != Some(1) {
         return Err(issue(
@@ -79,13 +83,16 @@ fn metadata_after_deletion(original: &[u8], state_name: &str) -> Result<String, 
             "Откройте RSI с поддерживаемой версией meta.json.",
         ));
     }
-    let states = metadata.get_mut("states").and_then(Value::as_array_mut).ok_or_else(|| {
-        issue(
-            "RSI_DELETE_META_INVALID",
-            "В meta.json отсутствует массив states.",
-            "Проверьте структуру ресурса.",
-        )
-    })?;
+    let states = metadata
+        .get_mut("states")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| {
+            issue(
+                "RSI_DELETE_META_INVALID",
+                "В meta.json отсутствует массив states.",
+                "Проверьте структуру ресурса.",
+            )
+        })?;
     if states.len() > MAX_STATES {
         return Err(issue(
             "RSI_DELETE_STATES_LIMIT",
@@ -93,29 +100,39 @@ fn metadata_after_deletion(original: &[u8], state_name: &str) -> Result<String, 
             "Исправьте meta.json во внешнем редакторе.",
         ));
     }
-    let matches: Vec<usize> = states.iter().enumerate()
+    let matches: Vec<usize> = states
+        .iter()
+        .enumerate()
         .filter_map(|(index, state)| {
             (state.get("name").and_then(Value::as_str) == Some(state_name)).then_some(index)
-        }).collect();
+        })
+        .collect();
     match matches.as_slice() {
-        [] => return Err(issue(
-            "RSI_DELETE_NOT_FOUND",
-            "Состояние уже отсутствует в meta.json.",
-            "Обновите RSI перед повторением операции.",
-        )),
-        [index] => { states.remove(*index); },
-        _ => return Err(issue(
-            "RSI_DELETE_AMBIGUOUS",
-            "Имя состояния повторяется в meta.json.",
-            "Исправьте дубликаты вручную, прежде чем удалять состояние.",
-        )),
+        [] => {
+            return Err(issue(
+                "RSI_DELETE_NOT_FOUND",
+                "Состояние уже отсутствует в meta.json.",
+                "Обновите RSI перед повторением операции.",
+            ))
+        }
+        [index] => {
+            states.remove(*index);
+        }
+        _ => {
+            return Err(issue(
+                "RSI_DELETE_AMBIGUOUS",
+                "Имя состояния повторяется в meta.json.",
+                "Исправьте дубликаты вручную, прежде чем удалять состояние.",
+            ))
+        }
     }
     let content = serde_json::to_string_pretty(&metadata).map_err(|error| {
         issue(
             "RSI_DELETE_SERIALIZE_FAILED",
             "Не удалось сформировать новый meta.json.",
             "Проверьте структуру JSON.",
-        ).with_details(error.to_string())
+        )
+        .with_details(error.to_string())
     })? + "\n";
     if content.len() > MAX_META_BYTES {
         return Err(issue(
@@ -133,7 +150,8 @@ fn read_png(path: &Path) -> Result<Vec<u8>, StudioError> {
             "RSI_DELETE_PNG_MISSING",
             "PNG выбранного состояния отсутствует.",
             "Восстановите файл или обновите RSI.",
-        ).with_details(error.to_string())
+        )
+        .with_details(error.to_string())
     })?;
     if stat.file_type().is_symlink() || !stat.is_file() || stat.len() > MAX_PNG_BYTES {
         return Err(issue(
@@ -150,7 +168,8 @@ fn read_png(path: &Path) -> Result<Vec<u8>, StudioError> {
                 "RSI_DELETE_PNG_READ_FAILED",
                 "Не удалось прочитать PNG для резервной копии.",
                 "Проверьте права и состояние диска.",
-            ).with_details(error.to_string())
+            )
+            .with_details(error.to_string())
         })?;
     if png.len() as u64 > MAX_PNG_BYTES {
         return Err(issue(
@@ -163,36 +182,51 @@ fn read_png(path: &Path) -> Result<Vec<u8>, StudioError> {
 }
 
 fn write_backup_file(path: &Path, bytes: &[u8]) -> Result<(), StudioError> {
-    let mut file = OpenOptions::new().write(true).create_new(true).open(path).map_err(|error| {
-        issue(
-            "RSI_DELETE_ARCHIVE_FAILED",
-            "Не удалось создать файл резервной копии.",
-            "Проверьте права доступа и свободное место.",
-        ).with_details(error.to_string())
-    })?;
-    file.write_all(bytes).and_then(|_| file.sync_all()).map_err(|error| {
-        issue(
-            "RSI_DELETE_ARCHIVE_FAILED",
-            "Резервная копия записана не полностью. Оригинал не изменён.",
-            "Проверьте диск и удалите неполную архивную папку вручную.",
-        ).with_details(error.to_string())
-    })
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|error| {
+            issue(
+                "RSI_DELETE_ARCHIVE_FAILED",
+                "Не удалось создать файл резервной копии.",
+                "Проверьте права доступа и свободное место.",
+            )
+            .with_details(error.to_string())
+        })?;
+    file.write_all(bytes)
+        .and_then(|_| file.sync_all())
+        .map_err(|error| {
+            issue(
+                "RSI_DELETE_ARCHIVE_FAILED",
+                "Резервная копия записана не полностью. Оригинал не изменён.",
+                "Проверьте диск и удалите неполную архивную папку вручную.",
+            )
+            .with_details(error.to_string())
+        })
 }
 
 fn archive_dir(folder: &Path, name: &str) -> Result<std::path::PathBuf, StudioError> {
     let archive_root = folder.join(ARCHIVE_DIRECTORY);
     match fs::create_dir(&archive_root) {
-        Ok(()) => {},
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {},
-        Err(error) => return Err(issue(
-            "RSI_DELETE_ARCHIVE_FAILED",
-            "Невозможно создать архив RSI.",
-            "Проверьте права на папку спрайта.",
-        ).with_details(error.to_string())),
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(error) => {
+            return Err(issue(
+                "RSI_DELETE_ARCHIVE_FAILED",
+                "Невозможно создать архив RSI.",
+                "Проверьте права на папку спрайта.",
+            )
+            .with_details(error.to_string()))
+        }
     }
     let stat = fs::symlink_metadata(&archive_root).map_err(|error| {
-        issue("RSI_DELETE_ARCHIVE_FAILED", "Архив RSI недоступен.", "Проверьте папку архива.")
-            .with_details(error.to_string())
+        issue(
+            "RSI_DELETE_ARCHIVE_FAILED",
+            "Архив RSI недоступен.",
+            "Проверьте папку архива.",
+        )
+        .with_details(error.to_string())
     })?;
     if stat.file_type().is_symlink() || !stat.is_dir() {
         return Err(issue(
@@ -203,15 +237,19 @@ fn archive_dir(folder: &Path, name: &str) -> Result<std::path::PathBuf, StudioEr
     }
     for _ in 0..32 {
         let sequence = NEXT_ARCHIVE.fetch_add(1, Ordering::Relaxed);
-        let candidate = archive_root.join(format!("deleted-{name}-{}-{sequence}", std::process::id()));
+        let candidate =
+            archive_root.join(format!("deleted-{name}-{}-{sequence}", std::process::id()));
         match fs::create_dir(&candidate) {
             Ok(()) => return Ok(candidate),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(error) => return Err(issue(
-                "RSI_DELETE_ARCHIVE_FAILED",
-                "Не удалось создать новую версию архива.",
-                "Проверьте права на каталог RSI.",
-            ).with_details(error.to_string())),
+            Err(error) => {
+                return Err(issue(
+                    "RSI_DELETE_ARCHIVE_FAILED",
+                    "Не удалось создать новую версию архива.",
+                    "Проверьте права на каталог RSI.",
+                )
+                .with_details(error.to_string()))
+            }
         }
     }
     Err(issue(
@@ -226,7 +264,9 @@ fn sync_directory(path: &Path) -> std::io::Result<()> {
     fs::File::open(path)?.sync_all()
 }
 #[cfg(not(unix))]
-fn sync_directory(_path: &Path) -> std::io::Result<()> { Ok(()) }
+fn sync_directory(_path: &Path) -> std::io::Result<()> {
+    Ok(())
+}
 
 /// Write a verified backup before changing metadata. Once the metadata
 /// replacement succeeds, remove only the same PNG snapshot. On crash or
@@ -270,20 +310,24 @@ pub fn delete(root: &Path, request: &RsiDeleteRequest) -> Result<DeletedRsiState
             "RSI_DELETE_ARCHIVE_FAILED",
             "Не удалось синхронизировать резервную копию.",
             "Исходные данные не изменены, проверьте файловую систему.",
-        ).with_details(error.to_string())
+        )
+        .with_details(error.to_string())
     })?;
     sync_directory(backup_path.parent().unwrap_or(&folder)).map_err(|error| {
         issue(
             "RSI_DELETE_ARCHIVE_FAILED",
             "Не удалось подтвердить запись папки архива.",
             "Исходные данные не изменены, проверьте файловую систему.",
-        ).with_details(error.to_string())
+        )
+        .with_details(error.to_string())
     })?;
 
     // Reuse the existing double-SHA-256 conflict check and atomic JSON save.
     let result = resource_edit::save_rsi_metadata(
-        root, &format!("{}/meta.json", request.path),
-        &request.expected_revision, updated,
+        root,
+        &format!("{}/meta.json", request.path),
+        &request.expected_revision,
+        updated,
     )?;
 
     // Best effort removal of the now-unreferenced file. If another process
@@ -292,31 +336,39 @@ pub fn delete(root: &Path, request: &RsiDeleteRequest) -> Result<DeletedRsiState
     if let Some(warning) = result.durability_warning {
         warnings.push(warning);
     }
-    let directory_still_safe = safe_import_directory(root, &request.path)
-        .is_ok_and(|current| current == folder);
-    let png_still_safe = directory_still_safe && fs::symlink_metadata(&png_path)
-        .is_ok_and(|stat| !stat.file_type().is_symlink() && stat.is_file()
-            && stat.len() <= MAX_PNG_BYTES);
+    let directory_still_safe =
+        safe_import_directory(root, &request.path).is_ok_and(|current| current == folder);
+    let png_still_safe = directory_still_safe
+        && fs::symlink_metadata(&png_path).is_ok_and(|stat| {
+            !stat.file_type().is_symlink() && stat.is_file() && stat.len() <= MAX_PNG_BYTES
+        });
     if !png_still_safe {
-        warnings.push("Исходный PNG изменился или исчез: файл не удалён. Резервная копия сохранена.".to_string());
+        warnings.push(
+            "Исходный PNG изменился или исчез: файл не удалён. Резервная копия сохранена."
+                .to_string(),
+        );
     } else {
         match read_png(&png_path) {
             Ok(current) if revision(&current) == png_revision => {
                 if let Err(error) = fs::remove_file(&png_path) {
-                    warnings.push(format!("Состояние удалено из meta.json, но PNG остался: {error}"));
+                    warnings.push(format!(
+                        "Состояние удалено из meta.json, но PNG остался: {error}"
+                    ));
                 }
-            },
-            _ => warnings.push(
-                "Исходный PNG изменился во время операции: он оставлен на месте.".into(),
-            ),
+            }
+            _ => warnings
+                .push("Исходный PNG изменился во время операции: он оставлен на месте.".into()),
         }
     }
     if let Err(error) = sync_directory(&folder) {
         warnings.push(format!("Синхронизация папки RSI не подтверждена: {error}"));
     }
 
-    let archive_relative = backup_path.strip_prefix(root).unwrap_or(&backup_path)
-        .to_string_lossy().replace('\\', "/");
+    let archive_relative = backup_path
+        .strip_prefix(root)
+        .unwrap_or(&backup_path)
+        .to_string_lossy()
+        .replace('\\', "/");
     Ok(DeletedRsiState {
         name: request.name.clone(),
         content: result.document.content,
@@ -332,11 +384,15 @@ mod tests {
     use std::path::PathBuf;
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
-    struct Fixture { root: PathBuf, path: String }
+    struct Fixture {
+        root: PathBuf,
+        path: String,
+    }
     impl Fixture {
         fn new() -> Self {
             let seq = NEXT_TEST.fetch_add(1, Ordering::Relaxed);
-            let root = std::env::temp_dir().join(format!("ss14-rsi-delete-{}-{seq}", std::process::id()));
+            let root =
+                std::env::temp_dir().join(format!("ss14-rsi-delete-{}-{seq}", std::process::id()));
             fs::create_dir_all(root.join("Resources/Textures/test.rsi")).unwrap();
             let root = fs::canonicalize(root).unwrap();
             let path = "Resources/Textures/test.rsi".to_string();
@@ -356,7 +412,9 @@ mod tests {
         }
     }
     impl Drop for Fixture {
-        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.root); }
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
     }
 
     #[test]
@@ -371,12 +429,20 @@ mod tests {
         assert_eq!(content["states"][0]["customState"], "keep");
         assert_eq!(content["custom"]["preserve"], 7);
         assert!(!fixture.root.join(&fixture.path).join("idle.png").exists());
-        assert_eq!(fs::read(fixture.root.join(&fixture.path).join("walk.png")).unwrap(), b"other sprite");
+        assert_eq!(
+            fs::read(fixture.root.join(&fixture.path).join("walk.png")).unwrap(),
+            b"other sprite"
+        );
         let archive = fixture.root.join(&deleted.archive_path);
-        assert_eq!(fs::read(archive.join("idle.png")).unwrap(), b"original sprite");
-        let original: Value = serde_json::from_slice(&fs::read(archive.join("meta.json.before")).unwrap()).unwrap();
+        assert_eq!(
+            fs::read(archive.join("idle.png")).unwrap(),
+            b"original sprite"
+        );
+        let original: Value =
+            serde_json::from_slice(&fs::read(archive.join("meta.json.before")).unwrap()).unwrap();
         assert_eq!(original["states"].as_array().unwrap().len(), 2);
-        let manifest: Value = serde_json::from_slice(&fs::read(archive.join("manifest.json")).unwrap()).unwrap();
+        let manifest: Value =
+            serde_json::from_slice(&fs::read(archive.join("manifest.json")).unwrap()).unwrap();
         assert_eq!(manifest["state"], "idle");
         assert_eq!(deleted.revision, revision(deleted.content.as_bytes()));
     }
@@ -385,10 +451,24 @@ mod tests {
     fn stale_revision_never_mutates_files() {
         let fixture = Fixture::new();
         let request = fixture.request();
-        fs::write(fixture.root.join(&fixture.path).join("meta.json"), b"external change").unwrap();
-        assert_eq!(delete(&fixture.root, &request).unwrap_err().code, "RSI_DELETE_CONFLICT");
-        assert_eq!(fs::read(fixture.root.join(&fixture.path).join("idle.png")).unwrap(), b"original sprite");
-        assert!(!fixture.root.join(&fixture.path).join(ARCHIVE_DIRECTORY).exists());
+        fs::write(
+            fixture.root.join(&fixture.path).join("meta.json"),
+            b"external change",
+        )
+        .unwrap();
+        assert_eq!(
+            delete(&fixture.root, &request).unwrap_err().code,
+            "RSI_DELETE_CONFLICT"
+        );
+        assert_eq!(
+            fs::read(fixture.root.join(&fixture.path).join("idle.png")).unwrap(),
+            b"original sprite"
+        );
+        assert!(!fixture
+            .root
+            .join(&fixture.path)
+            .join(ARCHIVE_DIRECTORY)
+            .exists());
     }
 
     #[test]
@@ -396,17 +476,31 @@ mod tests {
         let fixture = Fixture::new();
         let mut request = fixture.request();
         request.name = "missing".into();
-        assert_eq!(delete(&fixture.root, &request).unwrap_err().code, "RSI_DELETE_NOT_FOUND");
+        assert_eq!(
+            delete(&fixture.root, &request).unwrap_err().code,
+            "RSI_DELETE_NOT_FOUND"
+        );
         request.name = "../idle".into();
-        assert_eq!(delete(&fixture.root, &request).unwrap_err().code, "RSI_DELETE_NAME_INVALID");
+        assert_eq!(
+            delete(&fixture.root, &request).unwrap_err().code,
+            "RSI_DELETE_NAME_INVALID"
+        );
         let mut meta: Value = serde_json::from_slice(
-            &fs::read(fixture.root.join(&fixture.path).join("meta.json")).unwrap()).unwrap();
+            &fs::read(fixture.root.join(&fixture.path).join("meta.json")).unwrap(),
+        )
+        .unwrap();
         let duplicate = meta["states"][0].clone();
         meta["states"].as_array_mut().unwrap().push(duplicate);
-        fs::write(fixture.root.join(&fixture.path).join("meta.json"),
-            serde_json::to_vec(&meta).unwrap()).unwrap();
+        fs::write(
+            fixture.root.join(&fixture.path).join("meta.json"),
+            serde_json::to_vec(&meta).unwrap(),
+        )
+        .unwrap();
         request = fixture.request();
-        assert_eq!(delete(&fixture.root, &request).unwrap_err().code, "RSI_DELETE_AMBIGUOUS");
+        assert_eq!(
+            delete(&fixture.root, &request).unwrap_err().code,
+            "RSI_DELETE_AMBIGUOUS"
+        );
         assert!(fixture.root.join(&fixture.path).join("idle.png").exists());
     }
 
@@ -418,12 +512,21 @@ mod tests {
         let png = fixture.root.join(&fixture.path).join("idle.png");
         fs::remove_file(&png).unwrap();
         symlink(fixture.root.join(&fixture.path).join("walk.png"), &png).unwrap();
-        assert_eq!(delete(&fixture.root, &fixture.request()).unwrap_err().code, "RSI_DELETE_PNG_UNSAFE");
+        assert_eq!(
+            delete(&fixture.root, &fixture.request()).unwrap_err().code,
+            "RSI_DELETE_PNG_UNSAFE"
+        );
         fs::remove_file(png).unwrap();
         fs::write(fixture.root.join(&fixture.path).join("idle.png"), b"sprite").unwrap();
-        symlink(fixture.root.join(&fixture.path).join("walk.png"),
-            fixture.root.join(&fixture.path).join(ARCHIVE_DIRECTORY)).unwrap();
-        assert_eq!(delete(&fixture.root, &fixture.request()).unwrap_err().code, "RSI_DELETE_ARCHIVE_UNSAFE");
+        symlink(
+            fixture.root.join(&fixture.path).join("walk.png"),
+            fixture.root.join(&fixture.path).join(ARCHIVE_DIRECTORY),
+        )
+        .unwrap();
+        assert_eq!(
+            delete(&fixture.root, &fixture.request()).unwrap_err().code,
+            "RSI_DELETE_ARCHIVE_UNSAFE"
+        );
     }
 
     #[test]
@@ -431,7 +534,13 @@ mod tests {
         let fixture = Fixture::new();
         let metadata = fs::read(fixture.root.join(&fixture.path).join("meta.json")).unwrap();
         fs::remove_file(fixture.root.join(&fixture.path).join("idle.png")).unwrap();
-        assert_eq!(delete(&fixture.root, &fixture.request()).unwrap_err().code, "RSI_DELETE_PNG_MISSING");
-        assert_eq!(fs::read(fixture.root.join(&fixture.path).join("meta.json")).unwrap(), metadata);
+        assert_eq!(
+            delete(&fixture.root, &fixture.request()).unwrap_err().code,
+            "RSI_DELETE_PNG_MISSING"
+        );
+        assert_eq!(
+            fs::read(fixture.root.join(&fixture.path).join("meta.json")).unwrap(),
+            metadata
+        );
     }
 }
