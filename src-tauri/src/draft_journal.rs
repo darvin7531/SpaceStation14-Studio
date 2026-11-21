@@ -130,11 +130,14 @@ impl DraftJournal {
 
     pub fn read(&self, path: &str) -> Result<Option<DraftSnapshot>, StudioError> {
         validate_path(path)?;
+        if !self.existing_folder_is_safe()? {
+            return Ok(None);
+        }
         self.read_file(&self.entry_path(path), Some(path))
     }
 
     pub fn list(&self) -> Result<(Vec<DraftSnapshot>, Vec<String>), StudioError> {
-        if !self.folder.exists() {
+        if !self.existing_folder_is_safe()? {
             return Ok((Vec::new(), Vec::new()));
         }
         let mut entries = Vec::new();
@@ -157,12 +160,15 @@ impl DraftJournal {
                 Err(error) => warnings.push(format!("{name}: {}", error.message)),
             }
         }
-        entries.sort_by(|a, b| b.saved_at_ms.cmp(&a.saved_at_ms));
+        entries.sort_by_key(|entry| std::cmp::Reverse(entry.saved_at_ms));
         Ok((entries, warnings))
     }
 
     pub fn delete(&self, path: &str) -> Result<(), StudioError> {
         validate_path(path)?;
+        if !self.existing_folder_is_safe()? {
+            return Ok(());
+        }
         let file = self.entry_path(path);
         match fs::symlink_metadata(&file) {
             Ok(metadata) if !metadata.is_file() || metadata.file_type().is_symlink() => {
@@ -176,6 +182,18 @@ impl DraftJournal {
             _ => {}
         }
         fs::remove_file(&file).map_err(|error| issue("DRAFT_DELETE_FAILED", error))
+    }
+
+    fn existing_folder_is_safe(&self) -> Result<bool, StudioError> {
+        match fs::symlink_metadata(&self.folder) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(issue("DRAFT_STORAGE_FAILED", error)),
+            Ok(meta) if meta.is_dir() && !meta.file_type().is_symlink() => Ok(true),
+            Ok(_) => Err(problem(
+                "DRAFT_STORAGE_INVALID",
+                "Каталог восстановления заменён символической ссылкой или файлом.",
+            )),
+        }
     }
 
     fn read_file(
