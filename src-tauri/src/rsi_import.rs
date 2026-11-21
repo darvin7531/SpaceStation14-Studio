@@ -287,13 +287,13 @@ fn updated_metadata(
         ));
     }
     let total_frames = request.directions * request.frames_per_direction;
-    let cells_wide = u32::try_from(total_frames).unwrap_or(0);
+    let expected_cells = total_frames;
     // Accept row-major sheets containing exactly total_frames cells, not an
     // arbitrary pack with unused padding. Rows and columns can vary.
     let (png_width, png_height) = png_dimensions(png)?;
     if png_width % width != 0
         || png_height % height != 0
-        || u64::from(png_width / width) * u64::from(png_height / height) != u64::from(cells_wide)
+        || u64::from(png_width / width) * u64::from(png_height / height) != u64::from(expected_cells)
     {
         return Err(issue(
             "RSI_IMPORT_PNG_SIZE_MISMATCH",
