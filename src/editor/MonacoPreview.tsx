@@ -7,16 +7,38 @@ interface Props {
   document: ResourceDocument;
   revealLine?: number;
   jumpToken?: number;
+  value: string;
+  editable: boolean;
+  onChange?: (value: string) => void;
 }
 
 /**
  * Lazy-loads Monaco only when a resource is opened, and disposes the model,
  * workers' consumers and editor on tab switch/unmount.
  */
-export default function MonacoPreview({ resource, document, revealLine, jumpToken }: Props) {
+export default function MonacoPreview({ resource, document, revealLine, jumpToken, value, editable, onChange }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<{ revealLineInCenter(line: number): void; setPosition(position: { lineNumber: number; column: number }): void } | null>(null);
   const latestJump = useRef(revealLine);
+  const contentRef = useRef<{ getValue(): string; setValue(value: string): void } | null>(null);
+  const updateOptionsRef = useRef<{ updateOptions(value: { readOnly?: boolean; domReadOnly?: boolean }): void } | null>(null);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  // A new disk revision or a discarded draft updates Monaco without losing
+  // text typed before a React rerender. Ordinary keystrokes do not reset undo.
+  useEffect(() => {
+    if (contentRef.current && contentRef.current.getValue() !== value) {
+      contentRef.current.setValue(value);
+    }
+  }, [value]);
+
+  useEffect(() => {
+    updateOptionsRef.current?.updateOptions({
+      readOnly: !editable,
+      domReadOnly: !editable,
+    });
+  }, [editable]);
   const [failure, setFailure] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -39,13 +61,13 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
         const { monaco, resourceLanguage } = await import('./monaco');
         if (cancelled || !containerRef.current) return;
 
-        const model = monaco.editor.createModel(document.content, resourceLanguage(resource.kind));
+        const model = monaco.editor.createModel(value, resourceLanguage(resource.kind));
         try {
           const editor = monaco.editor.create(containerRef.current, {
             model,
             theme: 'ss14-dark',
-            readOnly: true,
-            domReadOnly: true,
+            readOnly: !editable,
+            domReadOnly: !editable,
             automaticLayout: true,
             minimap: { enabled: false },
             fontSize: 13,
@@ -58,11 +80,19 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
             overviewRulerBorder: false,
           });
           editorRef.current = editor;
+          contentRef.current = model;
+          updateOptionsRef.current = editor;
+          const subscription = editor.onDidChangeModelContent(() => {
+            onChangeRef.current?.(editor.getValue());
+          });
           if (latestJump.current) {
             editor.revealLineInCenter(latestJump.current);
             editor.setPosition({ lineNumber: latestJump.current, column: 1 });
           }
           dispose = () => {
+            subscription.dispose();
+            contentRef.current = null;
+            updateOptionsRef.current = null;
             editorRef.current = null;
             editor.dispose();
             model.dispose();
@@ -85,21 +115,21 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
       cancelled = true;
       dispose?.();
     };
-  }, [document.content, document.path, resource.kind]);
+  }, [document.path, resource.kind]);
 
   if (failure) {
     return <div className="monaco-fallback" role="alert">
       <AlertCircle size={18} />
       <div>
         <strong>Не удалось загрузить редактор Monaco.</strong>
-        <p>Текст ресурса доступен ниже. Перезапустите Studio, если проблема повторяется.</p>
+        <p>Предпросмотр содержимого доступен ниже. Редактирование через Monaco недоступно, если компонент не загрузился.</p>
         <details><summary>Техническая ошибка</summary><pre>{failure}</pre></details>
       </div>
       <pre className="fallback-content"><code>{document.content}</code></pre>
     </div>;
   }
   return <div className="monaco-shell">
-    <div ref={containerRef} className="monaco-container" aria-label={'Только чтение: ' + document.path}/>
+    <div ref={containerRef} className="monaco-container" aria-label={(editable ? 'Редактирование: ' : 'Только чтение: ') + document.path}/>
     {loading && <div className="monaco-loading" role="status">Загрузка редактора…</div>}
   </div>;
 }

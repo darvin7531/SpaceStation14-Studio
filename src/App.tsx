@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { open as openDirectoryDialog } from '@tauri-apps/plugin-dialog';
 import {
   AlertCircle, AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight,
-  FileCode2, FileText, FolderOpen, Image as ImageIcon, Search, X, RotateCcw,
+  FileCode2, FileText, FolderOpen, Image as ImageIcon, Search, X, RotateCcw, Save,
 } from 'lucide-react';
 import { studio, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage } from './lib/api';
 import { normalizeStudioError, type StudioError } from './lib/errors';
@@ -13,6 +13,10 @@ import PrototypeExplorer from './components/PrototypeExplorer';
 const PAGE_SIZE = 100;
 const LAST_PROJECT_KEY = 'ss14-studio-rust.last-project-root';
 const kinds: ResourceKind[] = ['all', 'yaml', 'rsi', 'ftl'];
+type PendingAction =
+  | { type: 'open'; path: string }
+  | { type: 'close'; path: string }
+  | { type: 'reload'; path: string };
 
 function ResourceIcon({ kind }: { kind: ResourceEntry['kind'] }) {
   if (kind === 'rsi') return <ImageIcon size={15} />;
@@ -56,12 +60,34 @@ export default function App() {
   const selected = tabState.tabs.find((tab) => tab.path === tabState.active) ?? null;
   const documents = useRef(new Map<string, ResourceDocument>());
   const [document, setDocument] = useState<ResourceDocument | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const dirtyPaths = Object.entries(drafts)
+    .filter(([file, text]) => documents.current.get(file)?.content !== text)
+    .map(([file]) => file);
+  const isDirty = (file: string) => dirtyPaths.includes(file);
+  const activeText = selected
+    ? (drafts[selected.path] ?? document?.content ?? '')
+    : '';
   const [reading, setReading] = useState(false);
   const [error, setError] = useState<StudioError | null>(null);
   const readVersion = useRef(0);
 
+  useEffect(() => {
+    if (dirtyPaths.length === 0) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirtyPaths.length]);
+
   async function loadProject(requestedPath: string) {
     setOpening(true);
+    setNotice(null);
     setError(null);
     try {
       const next = await studio.openProject(requestedPath);
@@ -74,6 +100,8 @@ export default function App() {
       setWorkspaceRevision((value) => value + 1);
       setJumpTarget(null);
       documents.current.clear();
+      setDrafts({});
+      setPendingAction(null);
       setOverview(next);
       setResults({ total: 0, items: [] });
       setTabState({ tabs: [], active: null });
@@ -120,7 +148,7 @@ export default function App() {
       });
       if (typeof selected === 'string') {
         setPath(selected);
-        await loadProject(selected);
+        requestAction({ type: 'open', path: selected });
       }
     } catch (failure) {
       const normalized = normalizeStudioError(failure);
@@ -150,6 +178,7 @@ export default function App() {
       const loaded = await studio.readResource(path);
       if (version === readVersion.current) {
         documents.current.set(path, loaded);
+        setDrafts((previous) => previous[path] === undefined ? { ...previous, [path]: loaded.content } : previous);
         setDocument(loaded);
       }
     } catch (failure) {
@@ -158,6 +187,84 @@ export default function App() {
       }
     } finally {
       if (version === readVersion.current) setReading(false);
+    }
+  }
+
+  function requestAction(action: PendingAction) {
+    if (saving) return;
+    const needsConfirmation = action.type === 'open'
+      ? dirtyPaths.length > 0
+      : isDirty(action.path);
+    if (needsConfirmation) {
+      setPendingAction(action);
+    } else {
+      executeAction(action);
+    }
+  }
+
+  function executeAction(action: PendingAction) {
+    setPendingAction(null);
+    if (action.type === 'open') {
+      void loadProject(action.path);
+      return;
+    }
+    if (action.type === 'reload') {
+      documents.current.delete(action.path);
+      setDrafts((previous) => {
+        const next = { ...previous };
+        delete next[action.path];
+        return next;
+      });
+      void focusResource(action.path);
+      return;
+    }
+    const next = closeTab(tabState, action.path);
+    setTabState(next);
+    documents.current.delete(action.path);
+    setDrafts((previous) => {
+      const updated = { ...previous };
+      delete updated[action.path];
+      return updated;
+    });
+    if (next.active !== tabState.active) {
+      if (next.active) {
+        void focusResource(next.active);
+      } else {
+        readVersion.current += 1;
+        setDocument(null);
+        setReading(false);
+        setError(null);
+      }
+    }
+  }
+
+  async function saveCurrent() {
+    if (!selected || selected.kind !== 'yaml' || saving) return;
+    const file = selected.path;
+    const baseline = documents.current.get(file);
+    if (!baseline) return;
+    const submitted = drafts[file] ?? baseline.content;
+    if (submitted === baseline.content) return;
+
+    setSaving(true);
+    setNotice(null);
+    setError(null);
+    try {
+      const result = await studio.saveYamlResource(file, baseline.revision, submitted);
+      documents.current.set(file, result.document);
+      setDrafts((previous) => ({
+        ...previous,
+        [file]: previous[file] === submitted ? result.document.content : previous[file],
+      }));
+      setDocument((current) => current?.path === file ? result.document : current);
+      setWorkspaceRevision((previous) => previous + 1);
+      setNotice(result.durability_warning
+        ? 'Файл записан. ' + result.durability_warning
+        : 'YAML сохранён. Индекс прототипов будет перестроен при следующем обращении.');
+    } catch (failure) {
+      setError(normalizeStudioError(failure));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -189,25 +296,11 @@ export default function App() {
   }
 
   function removeTab(path: string) {
-    const next = closeTab(tabState, path);
-    setTabState(next);
-    documents.current.delete(path);
-    if (next.active !== tabState.active) {
-      if (next.active) {
-        void focusResource(next.active);
-      } else {
-        readVersion.current += 1;
-        setDocument(null);
-        setReading(false);
-        setError(null);
-      }
-    }
+    requestAction({ type: 'close', path });
   }
 
   function reloadCurrent() {
-    if (!tabState.active) return;
-    documents.current.delete(tabState.active);
-    void focusResource(tabState.active);
+    if (tabState.active) requestAction({ type: 'reload', path: tabState.active });
   }
 
   return <div className="app">
@@ -217,14 +310,14 @@ export default function App() {
     </header>
 
     <section className="project-bar">
-      <form onSubmit={(event: FormEvent<HTMLFormElement>) => { event.preventDefault(); void loadProject(path); }}>
+      <form onSubmit={(event: FormEvent<HTMLFormElement>) => { event.preventDefault(); requestAction({ type: 'open', path }); }}>
         <label htmlFor="project-path"><FolderOpen size={16}/> Папка исходников SS14</label>
         <div className="path-control">
           <input id="project-path" value={path} spellCheck={false} autoComplete="off"
             placeholder="/home/user/SpaceStation14 или C:\SpaceStation14"
             onChange={(event) => setPath(event.target.value)}/>
-          <button type="button" className="browse-button" disabled={opening || picking} onClick={() => void chooseProjectFolder()}>Обзор…</button>
-          <button type="submit" disabled={opening || picking}><FolderOpen size={16}/>{opening ? 'Проверяю…' : 'Открыть проект'}</button>
+          <button type="button" className="browse-button" disabled={opening || picking || saving} onClick={() => void chooseProjectFolder()}>Обзор…</button>
+          <button type="submit" disabled={opening || picking || saving}><FolderOpen size={16}/>{opening ? 'Проверяю…' : 'Открыть проект'}</button>
         </div>
       </form>
       {overview && <div className="project-counts">
@@ -235,6 +328,24 @@ export default function App() {
     </section>
 
     {error && <ErrorPanel error={error} close={() => setError(null)}/>}
+    {notice && <div className="save-notice" role="status">
+      <CheckCircle2 size={16}/><span>{notice}</span>
+      <button type="button" onClick={() => setNotice(null)}>Закрыть</button>
+    </div>}
+    {pendingAction && <div className="discard-confirmation" role="alertdialog"
+      aria-label="Подтверждение удаления черновика">
+      <AlertTriangle size={18}/>
+      <div>
+        <strong>Есть несохранённые изменения.</strong>
+        <p>{pendingAction.type === 'open'
+          ? 'Открытие другого проекта удалит все несохранённые черновики.'
+          : 'Это действие удалит несохранённые изменения выбранного файла.'}</p>
+      </div>
+      <button type="button" onClick={() => setPendingAction(null)}>Отмена</button>
+      <button type="button" className="danger-button" onClick={() => executeAction(pendingAction)}>
+        Удалить черновик и продолжить
+      </button>
+    </div>}
     {overview?.warnings.map((message) =>
       <div key={message} className="warning"><AlertTriangle size={15}/>{message}</div>)}
 
@@ -242,7 +353,7 @@ export default function App() {
       <FolderOpen size={46} strokeWidth={1.2}/>
       <h1>Открыть проект SS14</h1>
       <p>Rust-ядро безопасно проверит структуру репозитория, построит индекс ресурсов и откроет их для просмотра.</p>
-      <small>Это первая стадия переноса: изменения исходников пока отключены.</small>
+      <small>YAML-файлы прототипов можно редактировать с проверкой конфликта; RSI и FTL пока доступны только для просмотра.</small>
     </main> :
     <main className="workspace">
       <aside className="explorer">
@@ -283,12 +394,12 @@ export default function App() {
           {tabState.tabs.map((tab) => <div className={'tab' + (tabState.active === tab.path ? ' active' : '')} key={tab.path}>
             <button type="button" role="tab" title={tab.path}
               aria-selected={tabState.active === tab.path}
-              className="tab-focus" onClick={() => selectTab(tab.path)}>
+              className="tab-focus" disabled={saving} onClick={() => selectTab(tab.path)}>
               <ResourceIcon kind={tab.kind}/>
-              <span>{tab.path.split('/').at(-1)}</span>
+              <span>{tab.path.split('/').at(-1)}{isDirty(tab.path) ? ' ●' : ''}</span>
             </button>
             <button className="tab-close" type="button"
-              aria-label={'Закрыть вкладку ' + tab.path} onClick={() => removeTab(tab.path)}>
+              aria-label={'Закрыть вкладку ' + tab.path} disabled={saving} onClick={() => removeTab(tab.path)}>
               <X size={13}/>
             </button>
           </div>)}
@@ -297,20 +408,28 @@ export default function App() {
           <div className="editor-heading">
             <div><ResourceIcon kind={selected.kind}/><span>{selected.path}</span></div>
             <div className="editor-tools">
-              <button type="button" onClick={reloadCurrent} disabled={reading} title="Загрузить содержимое файла с диска">
+              <button type="button" onClick={reloadCurrent} disabled={reading || saving} title="Загрузить содержимое файла с диска">
                 <RotateCcw size={14}/> Перечитать
               </button>
-              <span className="readonly"><CheckCircle2 size={14}/> Только чтение</span>
+              {selected.kind === 'yaml' && <button type="button" onClick={() => void saveCurrent()}
+                disabled={saving || reading || !isDirty(selected.path)} title="Сохранить YAML (Ctrl+S)">
+                <Save size={14}/>{saving ? 'Сохраняю…' : 'Сохранить'}
+              </button>}
+              <span className="readonly"><CheckCircle2 size={14}/>
+                {selected.kind === 'yaml' ? (isDirty(selected.path) ? 'Черновик изменён' : 'YAML · редактирование') : 'Только чтение'}
+              </span>
             </div>
           </div>
           {reading ? <div className="placeholder">Чтение ресурса…</div> :
             document ? <MonacoPreview key={document.path} resource={selected} document={document}
+              value={activeText} editable={selected.kind === 'yaml' && !saving}
+              onChange={selected.kind === 'yaml' ? (value) => setDrafts((previous) => ({ ...previous, [selected.path]: value })) : undefined}
               revealLine={jumpTarget?.path === selected.path ? jumpTarget.line : undefined}
               jumpToken={jumpTarget?.path === selected.path ? jumpTarget.token : 0}/> :
               <div className="placeholder">Не удалось открыть ресурс. Объяснение ошибки показано выше.</div>}
         </> : <div className="placeholder"><FileCode2 size={44} strokeWidth={1.2}/><h2>Выбери ресурс слева</h2><p>Здесь откроется его исходный текст.</p></div>}
       </section>
     </main>}
-    <footer className="statusbar"><span>● {overview ? 'Проект открыт · режим чтения' : 'Ожидание проекта'}</span><span>Rust Core · Tauri 2 · без Electron</span></footer>
+    <footer className="statusbar"><span>● {overview ? ('Проект открыт · ' + dirtyPaths.length + ' несохранённых') : 'Ожидание проекта'}</span><span>Rust Core · Tauri 2 · без Electron</span></footer>
   </div>;
 }

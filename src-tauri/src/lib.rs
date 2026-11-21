@@ -2,6 +2,7 @@ mod error;
 mod project;
 mod prototype_graph;
 mod prototypes;
+mod resource_edit;
 
 use std::sync::{Arc, Mutex};
 
@@ -9,6 +10,7 @@ use error::{internal_lock, interrupted, StudioError};
 use project::{ProjectIndex, ProjectOverview, ResourceDocument, ResourcePage};
 use prototype_graph::PrototypeRelations;
 use prototypes::{DiagnosticPage, PrototypePage};
+use resource_edit::SaveResult;
 use tauri::State;
 
 #[derive(Default)]
@@ -87,7 +89,7 @@ async fn search_prototypes(
 ) -> Result<PrototypePage, StudioError> {
     let index = current_project(&state)?;
     tauri::async_runtime::spawn_blocking(move || {
-        index.prototypes().search(
+        index.prototypes()?.search(
             &query,
             kind.as_deref(),
             offset.unwrap_or(0),
@@ -95,7 +97,7 @@ async fn search_prototypes(
         )
     })
     .await
-    .map_err(interrupted)
+    .map_err(interrupted)?
 }
 
 #[tauri::command]
@@ -107,11 +109,11 @@ async fn list_prototype_diagnostics(
     let index = current_project(&state)?;
     tauri::async_runtime::spawn_blocking(move || {
         index
-            .prototypes()
+            .prototypes()?
             .diagnostics(offset.unwrap_or(0), limit.unwrap_or(100))
     })
     .await
-    .map_err(interrupted)
+    .map_err(interrupted)?
 }
 
 /// Source relationships are informational and do not perform YAML inheritance.
@@ -123,13 +125,29 @@ async fn prototype_relations(
 ) -> Result<PrototypeRelations, StudioError> {
     let index = current_project(&state)?;
     tauri::async_runtime::spawn_blocking(move || {
-        index.prototypes().relations(&kind, &id).ok_or_else(|| {
+        index.prototypes()?.relations(&kind, &id).ok_or_else(|| {
             StudioError::new(
                 "PROTOTYPE_NOT_INDEXED",
                 "Прототип не найден в каталоге открытого проекта.",
                 "Повторите поиск по точному типу и ID либо заново откройте проект.",
             )
         })
+    })
+    .await
+    .map_err(interrupted)?
+}
+
+/// A text-only operation: no YAML reserialization or unreviewed graph edits.
+#[tauri::command]
+async fn save_yaml_resource(
+    path: String,
+    expected_revision: String,
+    content: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<SaveResult, StudioError> {
+    let index = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        index.save_yaml(&path, &expected_revision, content)
     })
     .await
     .map_err(interrupted)?
@@ -145,7 +163,8 @@ pub fn run() -> Result<(), tauri::Error> {
             search_prototypes,
             prototype_relations,
             list_prototype_diagnostics,
-            read_resource
+            read_resource,
+            save_yaml_resource
         ])
         .run(tauri::generate_context!())
 }

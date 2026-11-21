@@ -2,11 +2,12 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 
-use crate::error::StudioError;
+use crate::error::{internal_lock, StudioError};
+use crate::resource_edit::{self, SaveResult};
 use crate::prototypes::PrototypeCatalog;
 
 const MAX_SCAN_ENTRIES: usize = 250_000;
@@ -42,6 +43,7 @@ pub struct ResourceDocument {
     pub path: String,
     pub content: String,
     pub bytes: usize,
+    pub revision: String,
 }
 
 #[derive(Debug)]
@@ -50,7 +52,8 @@ pub struct ProjectIndex {
     overview: ProjectOverview,
     resources: Vec<ResourceEntry>,
     positions: HashMap<String, usize>,
-    prototype_catalog: OnceLock<PrototypeCatalog>,
+    prototype_catalog: Mutex<Option<Arc<PrototypeCatalog>>>,
+    edit_lock: Mutex<()>,
 }
 
 #[derive(Copy, Clone)]
@@ -181,7 +184,8 @@ impl ProjectIndex {
             overview,
             resources,
             positions,
-            prototype_catalog: OnceLock::new(),
+            prototype_catalog: Mutex::new(None),
+            edit_lock: Mutex::new(()),
         })
     }
 
@@ -189,9 +193,40 @@ impl ProjectIndex {
         &self.overview
     }
 
-    pub fn prototypes(&self) -> &PrototypeCatalog {
-        self.prototype_catalog
-            .get_or_init(|| PrototypeCatalog::build(&self.root, &self.resources))
+    pub fn prototypes(&self) -> Result<Arc<PrototypeCatalog>, StudioError> {
+        let mut cache = self.prototype_catalog.lock().map_err(|_| internal_lock())?;
+        Ok(cache
+            .get_or_insert_with(|| Arc::new(PrototypeCatalog::build(&self.root, &self.resources)))
+            .clone())
+    }
+
+    /// Only indexed YAML resources may be edited. A mutex serializes saves
+    /// performed by this Studio process. External writers are detected via
+    /// optimistic revision checks, not silently overwritten.
+    pub fn save_yaml(
+        &self,
+        rel_path: &str,
+        expected_revision: &str,
+        content: String,
+    ) -> Result<SaveResult, StudioError> {
+        let item = self.positions.get(rel_path)
+            .and_then(|index| self.resources.get(*index))
+            .ok_or_else(|| StudioError::new(
+                "RESOURCE_NOT_INDEXED",
+                "Этот файл отсутствует в индексе проекта.",
+                "Сначала откройте YAML из списка ресурсов Studio.",
+            ))?;
+        if item.kind != "yaml" {
+            return Err(StudioError::new(
+                "RESOURCE_EDIT_NOT_SUPPORTED",
+                "Запись доступна только для исходных YAML-файлов прототипов.",
+                "RSI и FTL пока доступны для просмотра без изменений.",
+            ));
+        }
+        let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;
+        let result = resource_edit::save_yaml(&self.root, rel_path, expected_revision, content)?;
+        *self.prototype_catalog.lock().map_err(|_| internal_lock())? = None;
+        Ok(result)
     }
 
     pub fn search(
@@ -318,6 +353,7 @@ impl ProjectIndex {
             path: item.path.clone(),
             content,
             bytes: bytes_len,
+            revision: resource_edit::revision(&content.as_bytes()[..]),
         })
     }
 }

@@ -780,7 +780,7 @@ mod tests {
         .unwrap();
 
         let workspace = crate::project::ProjectIndex::open(root.to_str().unwrap()).unwrap();
-        let catalog = workspace.prototypes();
+        let catalog = workspace.prototypes().unwrap();
         let page = catalog.search("Example", Some("entity"), 0, 100);
 
         assert_eq!(page.total, 2);

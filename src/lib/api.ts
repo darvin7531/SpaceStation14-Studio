@@ -70,10 +70,16 @@ export interface PrototypeDiagnosticPage {
   items: PrototypeDiagnostic[];
 }
 
+export interface SaveResult {
+  document: ResourceDocument;
+  durability_warning?: string;
+}
+
 export interface ResourceDocument {
   path: string;
   content: string;
   bytes: number;
+  revision: string;
 }
 
 /** The only UI boundary to the filesystem: all operations execute in Rust. */
@@ -92,6 +98,9 @@ export const studio = {
   },
   listPrototypeDiagnostics(offset = 0, limit = 100): Promise<PrototypeDiagnosticPage> {
     return invoke('list_prototype_diagnostics', { offset, limit });
+  },
+  saveYamlResource(path: string, expectedRevision: string, content: string): Promise<SaveResult> {
+    return invoke('save_yaml_resource', { path, expectedRevision, content });
   },
   readResource(path: string): Promise<ResourceDocument> {
     return invoke('read_resource', { path });

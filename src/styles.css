@@ -89,3 +89,16 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   .path-control { flex-wrap: wrap; }
   .path-control input { flex-basis: 100%; }
 }
+
+
+/* Explicit discard protection and optimistic YAML editing */
+.save-notice { display:flex; align-items:center; gap:12px; padding:10px 24px; color:#b8edd4; border-bottom:1px solid #3c705b; background:#153c32; font-size:12px; }
+.save-notice span { flex: 1; }
+.save-notice button { background:transparent; border:0; color:#d2ffe9; text-decoration:underline; }
+.discard-confirmation { display:flex; gap:12px; align-items:center; padding:12px 24px; background:#36291d; border-bottom:1px solid #8d6541; color:#f1d6bc; }
+.discard-confirmation > div { flex:1; min-width:0; }
+.discard-confirmation strong { font-size:13px; }
+.discard-confirmation p { font-size:12px; margin:5px 0 0; }
+.discard-confirmation button { border:1px solid #776b5a; border-radius:5px; background:#282d35; color:#e3e8f0; padding:7px 10px; font-size:12px; }
+.discard-confirmation button.danger-button { background:#62352e; border-color:#a4695b; color:#fff; }
+.tab.active .tab-focus span { font-weight:600; }
