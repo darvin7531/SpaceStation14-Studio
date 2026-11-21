@@ -29,3 +29,7 @@ test('save response must not overwrite edits made after submission', () => {
 test('saved text resets dirty state when nothing changed during request', () => {
   assert.equal(reconcileSavedDraft('submitted', 'submitted', 'submitted'), 'submitted');
 });
+
+test('a recovered draft cannot appear clean or dirty until its source is loaded', () => {
+  assert.deepEqual(dirtyDocumentPaths({ 'new.yml': 'recovered text' }, new Map()), []);
+});

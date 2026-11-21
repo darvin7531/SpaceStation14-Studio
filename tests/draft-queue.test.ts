@@ -7,15 +7,18 @@ test('serialization prevents old autosave from resurrecting discarded draft', as
   const sequence: string[] = [];
   let finishWrite: (() => void) | undefined;
   const pause = new Promise<void>((resolve) => { finishWrite = resolve; });
+  let markStarted: (() => void) | undefined;
+  const started = new Promise<void>((resolve) => { markStarted = resolve; });
   const write = queue.run('project:A', async () => {
     sequence.push('save started');
+    markStarted?.();
     await pause;
     sequence.push('save finished');
   });
   const remove = queue.run('project:A', async () => {
     sequence.push('delete');
   });
-  await Promise.resolve();
+  await started;
   assert.deepEqual(sequence, ['save started']);
   finishWrite?.();
   await Promise.all([write, remove]);

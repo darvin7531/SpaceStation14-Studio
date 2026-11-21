@@ -4,7 +4,7 @@ export function dirtyDocumentPaths(
   loaded: ReadonlyMap<string, { content: string }>,
 ): string[] {
   return Object.entries(drafts)
-    .filter(([path, text]) => loaded.get(path)?.content !== text)
+    .filter(([path, text]) => loaded.has(path) && loaded.get(path)?.content !== text)
     .map(([path]) => path);
 }
 

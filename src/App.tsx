@@ -4,12 +4,14 @@ import {
   AlertCircle, AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight,
   FileCode2, FileText, FolderOpen, Image as ImageIcon, Search, X, RotateCcw, Save,
 } from 'lucide-react';
-import { studio, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage } from './lib/api';
+import { studio, type DraftList, type DraftSnapshot, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage } from './lib/api';
 import { normalizeStudioError, type StudioError } from './lib/errors';
 import { closeTab, openTab, type TabState } from './lib/tabs';
 import { dirtyDocumentPaths, reconcileSavedDraft } from './lib/draft-state';
+import { DraftWriteQueue, journalKey } from './lib/draft-queue';
 import MonacoPreview from './editor/MonacoPreview';
 import PrototypeExplorer from './components/PrototypeExplorer';
+import RecoveryPanel from './components/RecoveryPanel';
 
 const PAGE_SIZE = 100;
 const LAST_PROJECT_KEY = 'ss14-studio-rust.last-project-root';
@@ -62,11 +64,22 @@ export default function App() {
   const documents = useRef(new Map<string, ResourceDocument>());
   const [document, setDocument] = useState<ResourceDocument | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [draftBases, setDraftBases] = useState<Record<string, string>>({});
+  const [recoveries, setRecoveries] = useState<DraftList>({ items: [], warnings: [] });
+  const journal = useRef(new DraftWriteQueue());
+  const journalTimers = useRef(new Map<string, number>());
+  const journalSignatures = useRef(new Map<string, string>());
+  const journalEpoch = useRef(0);
+  const [transitioning, setTransitioning] = useState(false);
+  const [rebaseRequested, setRebaseRequested] = useState(false);
   const [saving, setSaving] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const dirtyPaths = dirtyDocumentPaths(drafts, documents.current);
   const isDirty = (file: string) => dirtyPaths.includes(file);
+  const activeConflict = selected && document?.path === selected.path
+    && draftBases[selected.path] !== undefined
+    && draftBases[selected.path] !== document.revision;
   const activeText = selected
     ? (drafts[selected.path] ?? document?.content ?? '')
     : '';
@@ -84,7 +97,59 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', warn);
   }, [dirtyPaths.length]);
 
+  function cancelJournalTimers() {
+    journalEpoch.current += 1;
+    for (const timer of journalTimers.current.values()) window.clearTimeout(timer);
+    journalTimers.current.clear();
+  }
+
+  useEffect(() => {
+    return () => {
+      journalEpoch.current += 1;
+      for (const timer of journalTimers.current.values()) window.clearTimeout(timer);
+    };
+  }, []);
+
+  // Per-file debounce. Switching tabs must not cancel a different file's draft.
+  useEffect(() => {
+    if (!overview || opening || saving || transitioning) return;
+    const active = new Set<string>();
+    const epoch = journalEpoch.current;
+    for (const file of dirtyPaths) {
+      const loaded = documents.current.get(file);
+      const content = drafts[file];
+      if (!loaded || content === undefined) continue;
+      const base = draftBases[file] ?? loaded.revision;
+      const key = journalKey(overview.project_root, file);
+      active.add(key);
+      const signature = JSON.stringify([base, content]);
+      if (journalSignatures.current.get(key) === signature) continue;
+      const previous = journalTimers.current.get(key);
+      if (previous !== undefined) window.clearTimeout(previous);
+      journalTimers.current.set(key, window.setTimeout(() => {
+        journalTimers.current.delete(key);
+        if (epoch !== journalEpoch.current) return;
+        journalSignatures.current.set(key, signature);
+        void journal.current.run(key, () => studio.persistDraft(file, base, content))
+          .then((saved) => {
+            if (saved.durability_warning) setNotice(saved.durability_warning);
+          })
+          .catch((failure) => {
+            journalSignatures.current.delete(key);
+            setError(normalizeStudioError(failure));
+          });
+      }, 750));
+    }
+    for (const [key, timer] of journalTimers.current) {
+      if (!active.has(key)) {
+        window.clearTimeout(timer);
+        journalTimers.current.delete(key);
+      }
+    }
+  }, [overview, drafts, draftBases, document, saving, transitioning, opening]);
+
   async function loadProject(requestedPath: string) {
+    cancelJournalTimers();
     setOpening(true);
     setNotice(null);
     setError(null);
@@ -95,11 +160,21 @@ export default function App() {
       } catch {
         // Saving a recent path is optional and must not block opening.
       }
+      let available: DraftList = { items: [], warnings: [] };
+      try {
+        available = await studio.listDrafts();
+      } catch (failure) {
+        const explained = normalizeStudioError(failure);
+        available.warnings.push(explained.message + ' ' + explained.hint);
+      }
       readVersion.current += 1;
       setWorkspaceRevision((value) => value + 1);
+      setRecoveries(available);
       setJumpTarget(null);
       documents.current.clear();
       setDrafts({});
+      setDraftBases({});
+      setRebaseRequested(false);
       setPendingAction(null);
       setOverview(next);
       setResults({ total: 0, items: [] });
@@ -189,8 +264,72 @@ export default function App() {
     }
   }
 
+  async function clearRecoveryCopy(file: string) {
+    if (!overview) return;
+    const key = journalKey(overview.project_root, file);
+    const timer = journalTimers.current.get(key);
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      journalTimers.current.delete(key);
+    }
+    await journal.current.run(key, () => studio.deleteDraft(file));
+    journalSignatures.current.delete(key);
+    setRecoveries((previous) => ({
+      ...previous,
+      items: previous.items.filter((item) => item.path !== file),
+    }));
+  }
+
+  async function discardRecoveryCopy(file: string) {
+    await clearRecoveryCopy(file);
+    setNotice('Сохранённая копия черновика удалена. Исходный YAML не изменён.');
+  }
+
+  function restoreRecovery(snapshot: DraftSnapshot): boolean {
+    if (!overview || isDirty(snapshot.path)) return false;
+    const item: ResourceEntry = { path: snapshot.path, kind: 'yaml' };
+    const result = openTab(tabState, item);
+    if (!result.ok) {
+      setError({
+        code: 'TAB_LIMIT_REACHED',
+        message: 'Нельзя восстановить черновик: достигнут лимит вкладок.',
+        hint: 'Закройте ненужную вкладку и повторите восстановление.',
+      });
+      return false;
+    }
+    setDraftBases((previous) => ({
+      ...previous, [snapshot.path]: snapshot.base_revision,
+    }));
+    setDrafts((previous) => ({
+      ...previous, [snapshot.path]: snapshot.content,
+    }));
+    setTabState(result.state);
+    void focusResource(snapshot.path);
+    setNotice('Черновик восстановлен в редактор. Исходный YAML пока не изменён.');
+    return true;
+  }
+
+  async function confirmPendingAction() {
+    const action = pendingAction;
+    if (!action || !overview) return;
+    setTransitioning(true);
+    cancelJournalTimers();
+    setError(null);
+    try {
+      const paths = action.type === 'open' ? dirtyPaths : [action.path];
+      for (const file of paths) {
+        await clearRecoveryCopy(file);
+      }
+      executeAction(action);
+    } catch (failure) {
+      setError(normalizeStudioError(failure));
+    } finally {
+      setTransitioning(false);
+    }
+  }
+
   function requestAction(action: PendingAction) {
-    if (saving) return;
+    if (saving || transitioning || opening) return;
     const needsConfirmation = action.type === 'open'
       ? dirtyPaths.length > 0
       : isDirty(action.path);
@@ -202,7 +341,6 @@ export default function App() {
   }
 
   function executeAction(action: PendingAction) {
-    if (saving) return;
     setPendingAction(null);
     if (action.type === 'open') {
       void loadProject(action.path);
@@ -215,12 +353,22 @@ export default function App() {
         delete next[action.path];
         return next;
       });
+      setDraftBases((previous) => {
+        const next = { ...previous };
+        delete next[action.path];
+        return next;
+      });
       void focusResource(action.path);
       return;
     }
     const next = closeTab(tabState, action.path);
     setTabState(next);
     documents.current.delete(action.path);
+    setDraftBases((previous) => {
+      const updated = { ...previous };
+      delete updated[action.path];
+      return updated;
+    });
     setDrafts((previous) => {
       const updated = { ...previous };
       delete updated[action.path];
@@ -245,22 +393,51 @@ export default function App() {
     if (!baseline) return;
     const submitted = drafts[file] ?? baseline.content;
     if (submitted === baseline.content) return;
+    const sourceRevision = draftBases[file] ?? baseline.revision;
+    if (sourceRevision !== baseline.revision) {
+      setError({
+        code: 'RECOVERED_DRAFT_CONFLICT',
+        message: 'Восстановленный черновик основан на другой версии файла.',
+        hint: 'Сравните копию с текущим YAML. Для явного разрешения конфликта подтвердите принятие новой исходной версии.',
+      });
+      setRebaseRequested(true);
+      return;
+    }
+    const key = journalKey(overview!.project_root, file);
+    const timer = journalTimers.current.get(key);
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      journalTimers.current.delete(key);
+    }
 
     setSaving(true);
     setNotice(null);
     setError(null);
     try {
-      const result = await studio.saveYamlResource(file, baseline.revision, submitted);
+      const result = await studio.saveYamlResource(file, sourceRevision, submitted);
       documents.current.set(file, result.document);
       setDrafts((previous) => ({
         ...previous,
         [file]: reconcileSavedDraft(previous[file], submitted, result.document.content),
       }));
       setDocument((current) => current?.path === file ? result.document : current);
+      setDraftBases((previous) => {
+        const next = { ...previous };
+        delete next[file];
+        return next;
+      });
+      let cleanupWarning: string | null = null;
+      try {
+        await clearRecoveryCopy(file);
+      } catch (failure) {
+        cleanupWarning = 'Старая резервная копия не удалена: ' + normalizeStudioError(failure).message;
+      }
       setWorkspaceRevision((previous) => previous + 1);
-      setNotice(result.durability_warning
-        ? 'Файл записан. ' + result.durability_warning
-        : 'YAML сохранён. Индекс прототипов будет перестроен при следующем обращении.');
+      setNotice([
+        'YAML сохранён. Индекс прототипов будет перестроен при следующем обращении.',
+        result.durability_warning,
+        cleanupWarning,
+      ].filter(Boolean).join(' '));
     } catch (failure) {
       setError(normalizeStudioError(failure));
     } finally {
@@ -280,6 +457,7 @@ export default function App() {
   }, [selected?.path, document?.revision, drafts, saving]);
 
   function openResource(item: ResourceEntry) {
+    if (saving || transitioning || opening) return;
     const outcome = openTab(tabState, item);
     if (!outcome.ok) {
       setError({
@@ -301,7 +479,7 @@ export default function App() {
   }
 
   function selectTab(path: string) {
-    if (tabState.active === path) return;
+    if (saving || transitioning || opening || tabState.active === path) return;
     setTabState((state) => ({ ...state, active: path }));
     void focusResource(path);
   }
@@ -352,11 +530,35 @@ export default function App() {
           ? 'Открытие другого проекта удалит все несохранённые черновики.'
           : 'Это действие удалит несохранённые изменения выбранного файла.'}</p>
       </div>
-      <button type="button" onClick={() => setPendingAction(null)}>Отмена</button>
-      <button type="button" className="danger-button" onClick={() => executeAction(pendingAction)}>
+      <button type="button" disabled={transitioning} onClick={() => setPendingAction(null)}>Отмена</button>
+      <button type="button" className="danger-button" disabled={transitioning}
+        onClick={() => void confirmPendingAction()}>
         Удалить черновик и продолжить
       </button>
     </div>}
+    {activeConflict && selected && <div className="recovery-conflict-notice" role="alert">
+      <AlertTriangle size={16}/>
+      <span>Черновик основан на более старой версии YAML. Прямое сохранение заблокировано.</span>
+      <button type="button" onClick={() => setRebaseRequested(true)}>Разрешить конфликт</button>
+    </div>}
+    {rebaseRequested && activeConflict && selected && document && <div
+      className="discard-confirmation" role="alertdialog" aria-label="Разрешение конфликта восстановления">
+      <AlertTriangle size={18}/>
+      <div><strong>Подтвердить замену текущей версии YAML?</strong>
+        <p>Сначала сравните текст черновика с текущим файлом в панели восстановления.
+          Использование текущей ревизии как основы может затереть внешние правки.
+          Это действие не сохраняет файл автоматически.</p>
+      </div>
+      <button type="button" onClick={() => setRebaseRequested(false)}>Отмена</button>
+      <button type="button" className="danger-button" onClick={() => {
+        setDraftBases((previous) => ({ ...previous, [selected.path]: document.revision }));
+        setRebaseRequested(false);
+        setNotice('Новая ревизия принята как основа. Проверьте текст и сохраните файл вручную.');
+      }}>Принимаю риск, использовать текущую ревизию</button>
+    </div>}
+    {overview && <RecoveryPanel entries={recoveries.items}
+      warnings={recoveries.warnings} dirtyPaths={dirtyPaths}
+      onRestore={restoreRecovery} onDiscard={discardRecoveryCopy}/>}
     {overview?.warnings.map((message) =>
       <div key={message} className="warning"><AlertTriangle size={15}/>{message}</div>)}
 
@@ -441,6 +643,6 @@ export default function App() {
         </> : <div className="placeholder"><FileCode2 size={44} strokeWidth={1.2}/><h2>Выбери ресурс слева</h2><p>Здесь откроется его исходный текст.</p></div>}
       </section>
     </main>}
-    <footer className="statusbar"><span>● {overview ? ('Проект открыт · ' + dirtyPaths.length + ' несохранённых') : 'Ожидание проекта'}</span><span>Rust Core · Tauri 2 · без Electron</span></footer>
+    <footer className="statusbar"><span>● {overview ? ('Проект открыт · ' + dirtyPaths.length + ' несохранённых черновиков') : 'Ожидание проекта'}</span><span>Rust Core · Tauri 2 · без Electron</span></footer>
   </div>;
 }

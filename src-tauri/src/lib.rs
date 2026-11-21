@@ -28,7 +28,8 @@ fn draft_storage_root(app: &tauri::AppHandle) -> Result<std::path::PathBuf, Stud
             "DRAFT_STORAGE_UNAVAILABLE",
             "Не удалось определить каталог восстановления черновиков.",
             "Проверьте права пользовательского профиля и папку данных приложения.",
-        ).with_details(error.to_string())
+        )
+        .with_details(error.to_string())
     })
 }
 
@@ -183,13 +184,18 @@ async fn list_drafts(
         let _guard = lock.lock().map_err(|_| internal_lock())?;
         let journal = DraftJournal::new(&root, &project.overview().project_root);
         let (entries, warnings) = journal.list()?;
-        let items = entries.into_iter().map(|entry| DraftSummary {
-            source_indexed: project.is_yaml_indexed(&entry.path),
-            path: entry.path,
-            saved_at_ms: entry.saved_at_ms,
-        }).collect();
+        let items = entries
+            .into_iter()
+            .map(|entry| DraftSummary {
+                source_indexed: project.is_yaml_indexed(&entry.path),
+                path: entry.path,
+                saved_at_ms: entry.saved_at_ms,
+            })
+            .collect();
         Ok(DraftList { items, warnings })
-    }).await.map_err(interrupted)?
+    })
+    .await
+    .map_err(interrupted)?
 }
 
 #[tauri::command]
@@ -205,7 +211,9 @@ async fn read_draft(
     tauri::async_runtime::spawn_blocking(move || {
         let _guard = lock.lock().map_err(|_| internal_lock())?;
         DraftJournal::new(&root, &project.overview().project_root).read(&path)
-    }).await.map_err(interrupted)?
+    })
+    .await
+    .map_err(interrupted)?
 }
 
 #[tauri::command]
@@ -229,9 +237,14 @@ async fn persist_draft(
     let lock = drafts.0.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let _guard = lock.lock().map_err(|_| internal_lock())?;
-        DraftJournal::new(&root, &project.overview().project_root)
-            .write(&path, &base_revision, &content)
-    }).await.map_err(interrupted)?
+        DraftJournal::new(&root, &project.overview().project_root).write(
+            &path,
+            &base_revision,
+            &content,
+        )
+    })
+    .await
+    .map_err(interrupted)?
 }
 
 #[tauri::command]
@@ -247,7 +260,9 @@ async fn delete_draft(
     tauri::async_runtime::spawn_blocking(move || {
         let _guard = lock.lock().map_err(|_| internal_lock())?;
         DraftJournal::new(&root, &project.overview().project_root).delete(&path)
-    }).await.map_err(interrupted)?
+    })
+    .await
+    .map_err(interrupted)?
 }
 
 pub fn run() -> Result<(), tauri::Error> {
