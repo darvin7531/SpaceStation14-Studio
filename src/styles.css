@@ -58,3 +58,23 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .placeholder p { margin: 0; }
 .muted { color: #889bb3; padding: 12px; font-size: 12px; }
 .statusbar { height: 30px; display: flex; justify-content: space-between; align-items: center; padding: 6px 18px; background: #13283e; border-top: 1px solid #385b7d; font-size: 11px; color: #a7c8ed; }
+
+
+/* Tabs and local Monaco editor: model instances are disposed on tab switches. */
+.tab-strip { display: flex; gap: 0; width: 100%; overflow-x: auto; overflow-y: hidden; flex: none; border-bottom: 1px solid #2c4057; background: #111a26; scrollbar-width: thin; }
+.tab { display: flex; align-items: center; min-width: 112px; max-width: 220px; border-right: 1px solid #2c4057; border-top: 2px solid transparent; }
+.tab.active { background: #1d2e43; border-top-color: #7eacdf; }
+.tab-focus { min-width: 0; flex: 1; display: flex; gap: 7px; align-items: center; background: none; border: 0; padding: 9px 7px 9px 11px; color: #a7b8ce; text-align: left; }
+.tab.active .tab-focus { color: #e8f3ff; }
+.tab-focus span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.tab-close { flex: none; background: none; border: 0; color: #8094af; padding: 7px 8px; display: grid; place-items: center; }
+.tab-close:hover { color: #f2f6fe; background: #36516d; }
+.editor-tools { display: flex; gap: 13px; align-items: center; }
+.editor-tools button { display: flex; align-items: center; gap: 6px; padding: 4px 7px; background: #24374c; color: #aac5e4; border: 1px solid #405671; border-radius: 5px; font-size: 11px; }
+.editor-tools button:hover:not(:disabled) { background: #32506b; }
+.monaco-container { flex: 1; min-width: 0; min-height: 120px; overflow: hidden; }
+.monaco-fallback { display: flex; flex-direction: column; gap: 14px; padding: 16px; overflow: auto; flex: 1; color: #ffbcc1; font-size: 13px; }
+.monaco-fallback > div { overflow-wrap: anywhere; }
+.monaco-fallback p { color: #cdd8e7; }
+.monaco-fallback pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.fallback-content { color: #d7e5f5; background: #0a131e; border: 1px solid #304157; padding: 16px; }

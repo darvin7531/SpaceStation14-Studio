@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   AlertCircle, AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight,
-  FileCode2, FileText, FolderOpen, Image as ImageIcon, Search,
+  FileCode2, FileText, FolderOpen, Image as ImageIcon, Search, X, RotateCcw,
 } from 'lucide-react';
 import { studio, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage } from './lib/api';
 import { normalizeStudioError, type StudioError } from './lib/errors';
+import { closeTab, openTab, type TabState } from './lib/tabs';
+import MonacoPreview from './editor/MonacoPreview';
 
 const PAGE_SIZE = 100;
 const kinds: ResourceKind[] = ['all', 'yaml', 'rsi', 'ftl'];
@@ -36,7 +38,9 @@ export default function App() {
   const [page, setPage] = useState(0);
   const [results, setResults] = useState<ResourcePage>({ total: 0, items: [] });
   const [searching, setSearching] = useState(false);
-  const [selected, setSelected] = useState<ResourceEntry | null>(null);
+  const [tabState, setTabState] = useState<TabState>({ tabs: [], active: null });
+  const selected = tabState.tabs.find((tab) => tab.path === tabState.active) ?? null;
+  const documents = useRef(new Map<string, ResourceDocument>());
   const [document, setDocument] = useState<ResourceDocument | null>(null);
   const [reading, setReading] = useState(false);
   const [error, setError] = useState<StudioError | null>(null);
@@ -49,10 +53,12 @@ export default function App() {
     try {
       const next = await studio.openProject(path);
       readVersion.current += 1;
+      documents.current.clear();
       setOverview(next);
       setResults({ total: 0, items: [] });
-      setSelected(null);
+      setTabState({ tabs: [], active: null });
       setDocument(null);
+      setReading(false);
       setQuery('');
       setKind('all');
       setPage(0);
@@ -83,20 +89,74 @@ export default function App() {
     };
   }, [overview, query, kind, page]);
 
-  async function openResource(item: ResourceEntry) {
+  /** A late IPC response must never replace the content of a newer tab. */
+  async function focusResource(path: string) {
     const version = ++readVersion.current;
-    setSelected(item);
-    setDocument(null);
     setError(null);
+    const cached = documents.current.get(path);
+    setDocument(cached ?? null);
+    if (cached) {
+      setReading(false);
+      return;
+    }
     setReading(true);
     try {
-      const loaded = await studio.readResource(item.path);
-      if (version === readVersion.current) setDocument(loaded);
+      const loaded = await studio.readResource(path);
+      if (version === readVersion.current) {
+        documents.current.set(path, loaded);
+        setDocument(loaded);
+      }
     } catch (failure) {
-      if (version === readVersion.current) setError(normalizeStudioError(failure));
+      if (version === readVersion.current) {
+        setError(normalizeStudioError(failure));
+      }
     } finally {
       if (version === readVersion.current) setReading(false);
     }
+  }
+
+  function openResource(item: ResourceEntry) {
+    const outcome = openTab(tabState, item);
+    if (!outcome.ok) {
+      setError({
+        code: 'TAB_LIMIT_REACHED',
+        message: 'Достигнут лимит открытых вкладок.',
+        hint: 'Закройте ненужную вкладку перед открытием следующего файла.',
+      });
+      return;
+    }
+    setTabState(outcome.state);
+    if (tabState.active !== item.path || (!document && !reading)) {
+      void focusResource(item.path);
+    }
+  }
+
+  function selectTab(path: string) {
+    if (tabState.active === path) return;
+    setTabState((state) => ({ ...state, active: path }));
+    void focusResource(path);
+  }
+
+  function removeTab(path: string) {
+    const next = closeTab(tabState, path);
+    setTabState(next);
+    documents.current.delete(path);
+    if (next.active !== tabState.active) {
+      if (next.active) {
+        void focusResource(next.active);
+      } else {
+        readVersion.current += 1;
+        setDocument(null);
+        setReading(false);
+        setError(null);
+      }
+    }
+  }
+
+  function reloadCurrent() {
+    if (!tabState.active) return;
+    documents.current.delete(tabState.active);
+    void focusResource(tabState.active);
   }
 
   return <div className="app">
@@ -158,13 +218,32 @@ export default function App() {
         </div>
       </aside>
       <section className="editor">
+        {tabState.tabs.length > 0 && <div className="tab-strip" role="tablist" aria-label="Открытые файлы">
+          {tabState.tabs.map((tab) => <div className={'tab' + (tabState.active === tab.path ? ' active' : '')} key={tab.path}>
+            <button type="button" role="tab" title={tab.path}
+              aria-selected={tabState.active === tab.path}
+              className="tab-focus" onClick={() => selectTab(tab.path)}>
+              <ResourceIcon kind={tab.kind}/>
+              <span>{tab.path.split('/').at(-1)}</span>
+            </button>
+            <button className="tab-close" type="button"
+              aria-label={'Закрыть вкладку ' + tab.path} onClick={() => removeTab(tab.path)}>
+              <X size={13}/>
+            </button>
+          </div>)}
+        </div>}
         {selected ? <>
           <div className="editor-heading">
             <div><ResourceIcon kind={selected.kind}/><span>{selected.path}</span></div>
-            <span className="readonly"><CheckCircle2 size={14}/> Только чтение</span>
+            <div className="editor-tools">
+              <button type="button" onClick={reloadCurrent} disabled={reading} title="Загрузить содержимое файла с диска">
+                <RotateCcw size={14}/> Перечитать
+              </button>
+              <span className="readonly"><CheckCircle2 size={14}/> Только чтение</span>
+            </div>
           </div>
           {reading ? <div className="placeholder">Чтение ресурса…</div> :
-            document ? <pre className="code-preview" tabIndex={0} aria-label={'Содержимое ' + document.path}><code>{document.content}</code></pre> :
+            document ? <MonacoPreview key={document.path} resource={selected} document={document}/> :
               <div className="placeholder">Не удалось открыть ресурс. Объяснение ошибки показано выше.</div>}
         </> : <div className="placeholder"><FileCode2 size={44} strokeWidth={1.2}/><h2>Выбери ресурс слева</h2><p>Здесь откроется его исходный текст.</p></div>}
       </section>
