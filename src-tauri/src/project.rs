@@ -193,6 +193,13 @@ impl ProjectIndex {
         &self.overview
     }
 
+    pub fn is_yaml_indexed(&self, path: &str) -> bool {
+        self.positions
+            .get(path)
+            .and_then(|index| self.resources.get(*index))
+            .is_some_and(|entry| entry.kind == "yaml")
+    }
+
     pub fn prototypes(&self) -> Result<Arc<PrototypeCatalog>, StudioError> {
         let mut cache = self.prototype_catalog.lock().map_err(|_| internal_lock())?;
         Ok(cache

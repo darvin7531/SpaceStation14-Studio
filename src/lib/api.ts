@@ -70,6 +70,31 @@ export interface PrototypeDiagnosticPage {
   items: PrototypeDiagnostic[];
 }
 
+export interface DraftSnapshot {
+  schema_version: number;
+  project_root: string;
+  path: string;
+  base_revision: string;
+  content: string;
+  saved_at_ms: number;
+}
+
+export interface DraftSummary {
+  path: string;
+  saved_at_ms: number;
+  source_indexed: boolean;
+}
+
+export interface DraftList {
+  items: DraftSummary[];
+  warnings: string[];
+}
+
+export interface DraftWriteResult {
+  saved_at_ms: number;
+  durability_warning: string | null;
+}
+
 export interface SaveResult {
   document: ResourceDocument;
   durability_warning?: string;
@@ -101,6 +126,18 @@ export const studio = {
   },
   saveYamlResource(path: string, expectedRevision: string, content: string): Promise<SaveResult> {
     return invoke('save_yaml_resource', { path, expectedRevision, content });
+  },
+  listDrafts(): Promise<DraftList> {
+    return invoke('list_drafts');
+  },
+  readDraft(path: string): Promise<DraftSnapshot | null> {
+    return invoke('read_draft', { path });
+  },
+  persistDraft(path: string, baseRevision: string, content: string): Promise<DraftWriteResult> {
+    return invoke('persist_draft', { path, baseRevision, content });
+  },
+  deleteDraft(path: string): Promise<void> {
+    return invoke('delete_draft', { path });
   },
   readResource(path: string): Promise<ResourceDocument> {
     return invoke('read_resource', { path });
