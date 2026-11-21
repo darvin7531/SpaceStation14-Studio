@@ -50,9 +50,9 @@ pub fn preview(draft: &RsiDraft) -> Result<RsiCreationPreview, StudioError> {
     if directory.is_empty()
         || directory.len() > MAX_PATH_BYTES
         || directory.contains('\\')
-        || directory.chars().any(|ch| {
-            ch.is_control() || matches!(ch, ':' | '<' | '>' | '|' | '?' | '*' | '"')
-        })
+        || directory
+            .chars()
+            .any(|ch| ch.is_control() || matches!(ch, ':' | '<' | '>' | '|' | '?' | '*' | '"'))
         || directory
             .split('/')
             .any(|part| part.is_empty() || part.ends_with('.') || part.ends_with(' '))
@@ -300,7 +300,8 @@ mod tests {
     impl Fixture {
         fn new() -> Self {
             let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-            let root = std::env::temp_dir().join(format!("ss14-new-rsi-{}-{id}", std::process::id()));
+            let root =
+                std::env::temp_dir().join(format!("ss14-new-rsi-{}-{id}", std::process::id()));
             fs::create_dir_all(root.join("Resources/Textures/Objects")).unwrap();
             Self {
                 root: fs::canonicalize(root).unwrap(),
@@ -334,8 +335,14 @@ mod tests {
         assert_eq!(parsed["size"]["x"], 32);
         assert_eq!(parsed["license"], "CC-BY-SA-3.0");
         assert_eq!(parsed["states"].as_array().unwrap().len(), 0);
-        assert_eq!(create(&fx.root, &draft).unwrap_err().code, "RSI_CREATE_EXISTS");
-        assert_eq!(fs::read_to_string(fx.root.join(&created.path).join("meta.json")).unwrap(), meta);
+        assert_eq!(
+            create(&fx.root, &draft).unwrap_err().code,
+            "RSI_CREATE_EXISTS"
+        );
+        assert_eq!(
+            fs::read_to_string(fx.root.join(&created.path).join("meta.json")).unwrap(),
+            meta
+        );
     }
 
     #[test]
@@ -350,23 +357,49 @@ mod tests {
             "Resources/Textures//Objects",
             "Resources/Textures/Objects/",
         ] {
-            let draft = RsiDraft { directory: directory.into(), ..fx.draft() };
-            assert_eq!(preview(&draft).unwrap_err().code, "RSI_CREATE_PATH_INVALID", "{directory}");
+            let draft = RsiDraft {
+                directory: directory.into(),
+                ..fx.draft()
+            };
+            assert_eq!(
+                preview(&draft).unwrap_err().code,
+                "RSI_CREATE_PATH_INVALID",
+                "{directory}"
+            );
         }
         for name in ["", "../evil", "invalid.rsi", "hello world", "ä"] {
-            let draft = RsiDraft { name: name.into(), ..fx.draft() };
-            assert_eq!(preview(&draft).unwrap_err().code, "RSI_CREATE_NAME_INVALID", "{name}");
+            let draft = RsiDraft {
+                name: name.into(),
+                ..fx.draft()
+            };
+            assert_eq!(
+                preview(&draft).unwrap_err().code,
+                "RSI_CREATE_NAME_INVALID",
+                "{name}"
+            );
         }
-        let draft = RsiDraft { size_x: 0, ..fx.draft() };
+        let draft = RsiDraft {
+            size_x: 0,
+            ..fx.draft()
+        };
         assert_eq!(preview(&draft).unwrap_err().code, "RSI_CREATE_SIZE_INVALID");
     }
 
     #[test]
     fn rejects_nonexistent_parent_and_does_not_create_anything() {
         let fx = Fixture::new();
-        let draft = RsiDraft { directory: "Resources/Textures/NotHere".into(), ..fx.draft() };
-        assert_eq!(create(&fx.root, &draft).unwrap_err().code, "RSI_CREATE_PARENT_MISSING");
-        assert!(!fx.root.join("Resources/Textures/NotHere/example.rsi").exists());
+        let draft = RsiDraft {
+            directory: "Resources/Textures/NotHere".into(),
+            ..fx.draft()
+        };
+        assert_eq!(
+            create(&fx.root, &draft).unwrap_err().code,
+            "RSI_CREATE_PARENT_MISSING"
+        );
+        assert!(!fx
+            .root
+            .join("Resources/Textures/NotHere/example.rsi")
+            .exists());
     }
 
     #[cfg(unix)]
@@ -377,8 +410,15 @@ mod tests {
         symlink(
             fx.root.join("Resources/Textures/Objects"),
             fx.root.join("Resources/Textures/Linked"),
-        ).unwrap();
-        let draft = RsiDraft { directory: "Resources/Textures/Linked".into(), ..fx.draft() };
-        assert_eq!(create(&fx.root, &draft).unwrap_err().code, "RSI_CREATE_PARENT_INVALID");
+        )
+        .unwrap();
+        let draft = RsiDraft {
+            directory: "Resources/Textures/Linked".into(),
+            ..fx.draft()
+        };
+        assert_eq!(
+            create(&fx.root, &draft).unwrap_err().code,
+            "RSI_CREATE_PARENT_INVALID"
+        );
     }
 }
