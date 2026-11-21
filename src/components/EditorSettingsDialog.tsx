@@ -44,8 +44,8 @@ export default function EditorSettingsDialog({ value, onChange, onClose }: Props
           <option value="on">Обычные</option><option value="relative">Относительные</option><option value="off">Скрыть</option></select></label>
         <label className="settings-check"><input type="checkbox" checked={value.minimap} onChange={(event) => patch({ minimap: event.target.checked })}/>Миникарта</label>
         <label className="settings-check"><input type="checkbox" checked={value.liveValidation}
-          onChange={(event) => patch({ liveValidation: event.target.checked })}/>Автоматическая проверка Fluent</label>
-        <label>Задержка проверки Fluent (100–1500 мс)
+          onChange={(event) => patch({ liveValidation: event.target.checked })}/>Автоматическая проверка YAML и Fluent</label>
+        <label>Задержка проверки YAML/Fluent (100–1500 мс)
           <input type="number" min={100} max={1500} step={50}
             disabled={!value.liveValidation} value={value.validationDelay}
             onChange={(event) => {
