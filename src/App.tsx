@@ -798,8 +798,10 @@ export default function App() {
     setDrafts((previous) => ({ ...previous, [path]: result.content }));
     setNotice(result.warning
       ? 'RSI обновлён: ' + result.name + '. ' + result.warning
-      : action === 'timing'
-        ? 'Сохранены задержки RSI: ' + result.name + '. PNG не изменены.'
+      : action === 'credits'
+        ? 'Лицензия и авторство RSI сохранены. PNG не изменены.'
+        : action === 'timing'
+          ? 'Сохранены задержки RSI: ' + result.name + '. PNG не изменены.'
         : 'Добавлено состояние RSI: ' + result.name + '. PNG и meta.json записаны.');
   }
 
@@ -1057,6 +1059,7 @@ export default function App() {
                 path={selected.path} metadata={document.content} revision={document.revision}
                 onImported={(result) => onRsiImported(selected.path, result)}
                 onTimingUpdated={(result) => onRsiImported(selected.path, result, 'timing')}
+                onCreditsUpdated={(result) => onRsiImported(selected.path, result, 'credits')}
                 onDeleted={(result) => onRsiDeleted(selected.path, result)}
                 onRestored={(result) => onRsiRestored(selected.path, result)}/>
               : document ? <MonacoPreview settings={editorSettings} key={document.path} resource={selected} document={document}
