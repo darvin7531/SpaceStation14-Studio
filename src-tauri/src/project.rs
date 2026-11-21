@@ -353,7 +353,7 @@ impl ProjectIndex {
             path: item.path.clone(),
             content,
             bytes: bytes_len,
-            revision: resource_edit::revision(&content.as_bytes()[..]),
+            revision: resource_edit::revision(content.as_bytes()),
         })
     }
 }

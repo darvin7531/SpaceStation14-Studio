@@ -7,6 +7,7 @@ import {
 import { studio, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage } from './lib/api';
 import { normalizeStudioError, type StudioError } from './lib/errors';
 import { closeTab, openTab, type TabState } from './lib/tabs';
+import { dirtyDocumentPaths, reconcileSavedDraft } from './lib/draft-state';
 import MonacoPreview from './editor/MonacoPreview';
 import PrototypeExplorer from './components/PrototypeExplorer';
 
@@ -64,9 +65,7 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const dirtyPaths = Object.entries(drafts)
-    .filter(([file, text]) => documents.current.get(file)?.content !== text)
-    .map(([file]) => file);
+  const dirtyPaths = dirtyDocumentPaths(drafts, documents.current);
   const isDirty = (file: string) => dirtyPaths.includes(file);
   const activeText = selected
     ? (drafts[selected.path] ?? document?.content ?? '')
@@ -203,6 +202,7 @@ export default function App() {
   }
 
   function executeAction(action: PendingAction) {
+    if (saving) return;
     setPendingAction(null);
     if (action.type === 'open') {
       void loadProject(action.path);
@@ -254,7 +254,7 @@ export default function App() {
       documents.current.set(file, result.document);
       setDrafts((previous) => ({
         ...previous,
-        [file]: previous[file] === submitted ? result.document.content : previous[file],
+        [file]: reconcileSavedDraft(previous[file], submitted, result.document.content),
       }));
       setDocument((current) => current?.path === file ? result.document : current);
       setWorkspaceRevision((previous) => previous + 1);
@@ -267,6 +267,17 @@ export default function App() {
       setSaving(false);
     }
   }
+
+  useEffect(() => {
+    const shortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        void saveCurrent();
+      }
+    };
+    window.addEventListener('keydown', shortcut);
+    return () => window.removeEventListener('keydown', shortcut);
+  }, [selected?.path, document?.revision, drafts, saving]);
 
   function openResource(item: ResourceEntry) {
     const outcome = openTab(tabState, item);
