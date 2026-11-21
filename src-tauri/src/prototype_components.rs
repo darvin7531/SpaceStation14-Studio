@@ -619,19 +619,30 @@ pub fn patch(
             value,
         } => {
             let existing = original.get(*index).ok_or_else(|| {
-                issue("COMPONENT_NOT_FOUND", "Компонент больше не находится на прежней позиции.")
+                issue(
+                    "COMPONENT_NOT_FOUND",
+                    "Компонент больше не находится на прежней позиции.",
+                )
             })?;
             if existing["type"].as_str() != Some(expected_type) {
-                return Err(issue("COMPONENT_STALE_SELECTION", "Тип или порядок компонента изменился."));
+                return Err(issue(
+                    "COMPONENT_STALE_SELECTION",
+                    "Тип или порядок компонента изменился.",
+                ));
             }
             if key == "type" || !key_allowed(key) {
                 return Err(issue(
-                    "COMPONENT_FIELD_INVALID", "Имя нового поля должно быть простым YAML-ключом, отличным от type.",
+                    "COMPONENT_FIELD_INVALID",
+                    "Имя нового поля должно быть простым YAML-ключом, отличным от type.",
                 ));
             }
-            if existing.as_hash().is_some_and(|map| map.contains_key(&Yaml::String(key.clone()))) {
+            if existing
+                .as_hash()
+                .is_some_and(|map| map.contains_key(&Yaml::String(key.clone())))
+            {
                 return Err(issue(
-                    "COMPONENT_FIELD_EXISTS", "Поле с таким именем уже объявлено в компоненте.",
+                    "COMPONENT_FIELD_EXISTS",
+                    "Поле с таким именем уже объявлено в компоненте.",
                 ));
             }
             let (encoded, parsed) = encode_scalar(kind, value)?;
@@ -664,38 +675,60 @@ pub fn patch(
             expected_value,
         } => {
             let existing = original.get(*index).ok_or_else(|| {
-                issue("COMPONENT_NOT_FOUND", "Компонент больше не находится на прежней позиции.")
+                issue(
+                    "COMPONENT_NOT_FOUND",
+                    "Компонент больше не находится на прежней позиции.",
+                )
             })?;
             if existing["type"].as_str() != Some(expected_type) {
-                return Err(issue("COMPONENT_STALE_SELECTION", "Тип или порядок компонента изменился."));
+                return Err(issue(
+                    "COMPONENT_STALE_SELECTION",
+                    "Тип или порядок компонента изменился.",
+                ));
             }
             if key == "type" || !key_allowed(key) {
-                return Err(issue("COMPONENT_FIELD_INVALID", "Поле type и нестандартные ключи не удаляются через форму."));
+                return Err(issue(
+                    "COMPONENT_FIELD_INVALID",
+                    "Поле type и нестандартные ключи не удаляются через форму.",
+                ));
             }
             let field = scalar_field(&Yaml::String(key.clone()), &existing[key.as_str()])
                 .ok_or_else(|| issue("COMPONENT_FIELD_NOT_FOUND", "Поле уже отсутствует."))?;
             if !field.editable || field.kind != *expected_kind || field.value != *expected_value {
                 return Err(issue(
-                    "COMPONENT_FIELD_STALE", "Поле изменилось после открытия формы. Обновите список.",
+                    "COMPONENT_FIELD_STALE",
+                    "Поле изменилось после открытия формы. Обновите список.",
                 ));
             }
             let start = positions.starts[*index] + 1;
-            let end = positions.starts.get(index + 1).copied().unwrap_or(positions.section_end);
+            let end = positions
+                .starts
+                .get(index + 1)
+                .copied()
+                .unwrap_or(positions.section_end);
             let prefix = format!("    {key}:");
-            let matched: Vec<usize> = (start..end).filter(|&i| {
-                positions.lines[i].strip_prefix(&prefix).is_some_and(|tail| {
-                    tail.is_empty() || tail.starts_with([' ', '\t', '\r', '\n'])
+            let matched: Vec<usize> = (start..end)
+                .filter(|&i| {
+                    positions.lines[i]
+                        .strip_prefix(&prefix)
+                        .is_some_and(|tail| {
+                            tail.is_empty() || tail.starts_with([' ', '\t', '\r', '\n'])
+                        })
                 })
-            }).collect();
+                .collect();
             if matched.len() != 1 {
                 return Err(issue(
-                    "COMPONENT_FIELD_LAYOUT", "Поле отсутствует в прямых строках компонента или встречается несколько раз.",
+                    "COMPONENT_FIELD_LAYOUT",
+                    "Поле отсутствует в прямых строках компонента или встречается несколько раз.",
                 ));
             }
             let n = matched[0];
             let line = &positions.lines[n];
-            let raw = line.strip_prefix(&prefix).expect("line was matched")
-                .trim_start_matches([' ', '\t']).trim_end_matches(['\r', '\n']);
+            let raw = line
+                .strip_prefix(&prefix)
+                .expect("line was matched")
+                .trim_start_matches([' ', '\t'])
+                .trim_end_matches(['\r', '\n']);
             if raw.is_empty()
                 || raw.starts_with(['|', '>', '!', '&', '*', '[', '{'])
                 || inline_comment(raw).is_some()
@@ -706,11 +739,14 @@ pub fn patch(
             }
             // A following more-indented line (including a comment) might be
             // owned by this field. Do not risk leaving orphaned content.
-            if positions.lines.get(n + 1).is_some_and(|line| {
-                line.starts_with("      ") || line.starts_with("    \t")
-            }) {
+            if positions
+                .lines
+                .get(n + 1)
+                .is_some_and(|line| line.starts_with("      ") || line.starts_with("    \t"))
+            {
                 return Err(issue(
-                    "COMPONENT_FIELD_COMPLEX", "За полем находится вложенный блок; автоматическое удаление недоступно.",
+                    "COMPONENT_FIELD_COMPLEX",
+                    "За полем находится вложенный блок; автоматическое удаление недоступно.",
                 ));
             }
             for (i, line) in positions.lines.iter().enumerate() {
@@ -848,9 +884,9 @@ pub fn patch(
                     Some(value) => new.as_hash().is_some_and(|map| {
                         map.contains_key(&Yaml::String(key.clone())) && &new[key.as_str()] == value
                     }),
-                    None => new.as_hash().is_some_and(|map| {
-                        !map.contains_key(&Yaml::String(key.clone()))
-                    }),
+                    None => new
+                        .as_hash()
+                        .is_some_and(|map| !map.contains_key(&Yaml::String(key.clone()))),
                 };
                 if old_hash != new_hash || !exact_value {
                     return Err(issue(
@@ -1296,88 +1332,206 @@ mod tests {
             ("count", "int", "14"),
             ("scale", "float", "1.25"),
         ] {
-            text = patch(&text, &loc(1, "First"), &ComponentOperation::AddField {
-                index: 0, expected_type: "Sprite".into(), key: key.into(), kind: kind.into(),
-                value: value.into(),
-            }).unwrap().content;
+            text = patch(
+                &text,
+                &loc(1, "First"),
+                &ComponentOperation::AddField {
+                    index: 0,
+                    expected_type: "Sprite".into(),
+                    key: key.into(),
+                    kind: kind.into(),
+                    value: value.into(),
+                },
+            )
+            .unwrap()
+            .content;
         }
-        assert!(text.starts_with("# preserved header\n- type: entity\n  id: First\n  components:\n  - type: Sprite\n"));
+        assert!(text.starts_with(
+            "# preserved header\n- type: entity\n  id: First\n  components:\n  - type: Sprite\n"
+        ));
         assert!(text.contains("    sprite: \"Objects/Tools/sword.rsi\"\n"));
         assert!(text.contains("    visible: true\n"));
         assert!(text.contains("    count: 14\n"));
         assert!(text.contains("    scale: 1.25\n"));
         assert!(text.contains("    layers:\n    - state: icon\n  - type: Item\n    size: Normal\n"));
         assert!(text.ends_with("- type: entity\n  id: Second\n  name: untouched\n"));
-        assert_eq!(inspect(&text, &loc(1, "First")).unwrap().components[0].fields.len(), 5);
+        assert_eq!(
+            inspect(&text, &loc(1, "First")).unwrap().components[0]
+                .fields
+                .len(),
+            5
+        );
     }
 
     #[test]
     fn add_field_handles_crlf_and_missing_terminal_newline() {
         let source = "- type: entity\r\n  id: First\r\n  components:\r\n  - type: Item";
-        let result = patch(source, &loc(1, "First"), &ComponentOperation::AddField {
-            index: 0, expected_type: "Item".into(), key: "count".into(),
-            kind: "int".into(), value: "42".into(),
-        }).unwrap();
-        assert_eq!(result.content,
-            "- type: entity\r\n  id: First\r\n  components:\r\n  - type: Item\r\n    count: 42\r\n");
+        let result = patch(
+            source,
+            &loc(1, "First"),
+            &ComponentOperation::AddField {
+                index: 0,
+                expected_type: "Item".into(),
+                key: "count".into(),
+                kind: "int".into(),
+                value: "42".into(),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            result.content,
+            "- type: entity\r\n  id: First\r\n  components:\r\n  - type: Item\r\n    count: 42\r\n"
+        );
     }
 
     #[test]
     fn remove_scalar_field_leaves_other_properties_and_commentary_untouched() {
         let original = "- type: entity\r\n  id: First\r\n  components:\r\n  - type: Sprite\r\n    sprite: old.rsi\r\n    visible: true\r\n    layers:\r\n    - state: icon\r\n  - type: Item\r\n    size: Normal\r\n- type: entity\r\n  id: Second\r\n";
-        let result = patch(original, &loc(1, "First"), &ComponentOperation::RemoveField {
-            index: 0, expected_type: "Sprite".into(), key: "visible".into(),
-            expected_kind: "bool".into(), expected_value: "true".into(),
-        }).unwrap();
+        let result = patch(
+            original,
+            &loc(1, "First"),
+            &ComponentOperation::RemoveField {
+                index: 0,
+                expected_type: "Sprite".into(),
+                key: "visible".into(),
+                expected_kind: "bool".into(),
+                expected_value: "true".into(),
+            },
+        )
+        .unwrap();
         assert!(!result.content.contains("visible:"));
-        assert!(result.content.contains("    sprite: old.rsi\r\n    layers:\r\n    - state: icon\r\n"));
-        assert!(result.content.ends_with("  - type: Item\r\n    size: Normal\r\n- type: entity\r\n  id: Second\r\n"));
+        assert!(result
+            .content
+            .contains("    sprite: old.rsi\r\n    layers:\r\n    - state: icon\r\n"));
+        assert!(result
+            .content
+            .ends_with("  - type: Item\r\n    size: Normal\r\n- type: entity\r\n  id: Second\r\n"));
         assert!(!result.content.replace("\r\n", "").contains('\n'));
     }
 
     #[test]
     fn reject_field_deletion_that_could_discard_comments_or_nested_yaml() {
         let source = "- type: entity\n  id: X\n  components:\n  - type: Sprite\n    sprite: old.rsi # author's note\n";
-        let err = patch(source, &loc(1, "X"), &ComponentOperation::RemoveField {
-            index: 0, expected_type: "Sprite".into(), key: "sprite".into(),
-            expected_kind: "string".into(), expected_value: "old.rsi".into(),
-        }).unwrap_err();
+        let err = patch(
+            source,
+            &loc(1, "X"),
+            &ComponentOperation::RemoveField {
+                index: 0,
+                expected_type: "Sprite".into(),
+                key: "sprite".into(),
+                expected_kind: "string".into(),
+                expected_value: "old.rsi".into(),
+            },
+        )
+        .unwrap_err();
         assert_eq!(err.code, "COMPONENT_FIELD_COMMENTS");
         let complex = "- type: entity\n  id: X\n  components:\n  - type: Sprite\n    layers:\n    - state: icon\n";
-        assert_eq!(patch(complex, &loc(1, "X"), &ComponentOperation::RemoveField {
-            index: 0, expected_type: "Sprite".into(), key: "layers".into(),
-            expected_kind: "complex".into(), expected_value: "anything".into(),
-        }).unwrap_err().code, "COMPONENT_FIELD_STALE");
+        assert_eq!(
+            patch(
+                complex,
+                &loc(1, "X"),
+                &ComponentOperation::RemoveField {
+                    index: 0,
+                    expected_type: "Sprite".into(),
+                    key: "layers".into(),
+                    expected_kind: "complex".into(),
+                    expected_value: "anything".into(),
+                }
+            )
+            .unwrap_err()
+            .code,
+            "COMPONENT_FIELD_STALE"
+        );
     }
 
     #[test]
     fn reject_duplicate_key_and_invalid_field_values() {
-        let original = "- type: entity\n  id: X\n  components:\n  - type: Sprite\n    sprite: old.rsi\n";
-        assert_eq!(patch(original, &loc(1, "X"), &ComponentOperation::AddField {
-            index: 0, expected_type: "Sprite".into(), key: "sprite".into(),
-            kind: "string".into(), value: "new".into(),
-        }).unwrap_err().code, "COMPONENT_FIELD_EXISTS");
-        assert_eq!(patch(original, &loc(1, "X"), &ComponentOperation::AddField {
-            index: 0, expected_type: "Sprite".into(), key: "type".into(),
-            kind: "string".into(), value: "bogus".into(),
-        }).unwrap_err().code, "COMPONENT_FIELD_INVALID");
-        assert_eq!(patch(original, &loc(1, "X"), &ComponentOperation::AddField {
-            index: 0, expected_type: "Sprite".into(), key: "flags".into(),
-            kind: "bool".into(), value: "enabled".into(),
-        }).unwrap_err().code, "COMPONENT_KIND_INVALID");
+        let original =
+            "- type: entity\n  id: X\n  components:\n  - type: Sprite\n    sprite: old.rsi\n";
+        assert_eq!(
+            patch(
+                original,
+                &loc(1, "X"),
+                &ComponentOperation::AddField {
+                    index: 0,
+                    expected_type: "Sprite".into(),
+                    key: "sprite".into(),
+                    kind: "string".into(),
+                    value: "new".into(),
+                }
+            )
+            .unwrap_err()
+            .code,
+            "COMPONENT_FIELD_EXISTS"
+        );
+        assert_eq!(
+            patch(
+                original,
+                &loc(1, "X"),
+                &ComponentOperation::AddField {
+                    index: 0,
+                    expected_type: "Sprite".into(),
+                    key: "type".into(),
+                    kind: "string".into(),
+                    value: "bogus".into(),
+                }
+            )
+            .unwrap_err()
+            .code,
+            "COMPONENT_FIELD_INVALID"
+        );
+        assert_eq!(
+            patch(
+                original,
+                &loc(1, "X"),
+                &ComponentOperation::AddField {
+                    index: 0,
+                    expected_type: "Sprite".into(),
+                    key: "flags".into(),
+                    kind: "bool".into(),
+                    value: "enabled".into(),
+                }
+            )
+            .unwrap_err()
+            .code,
+            "COMPONENT_KIND_INVALID"
+        );
     }
 
     #[test]
     fn reject_stale_field_deletion_without_mutating_draft() {
         let original = "- type: entity\n  id: X\n  components:\n  - type: Sprite\n    count: 2\n";
-        assert_eq!(patch(original, &loc(1, "X"), &ComponentOperation::RemoveField {
-            index: 0, expected_type: "Sprite".into(), key: "count".into(),
-            expected_kind: "int".into(), expected_value: "3".into(),
-        }).unwrap_err().code, "COMPONENT_FIELD_STALE");
-        assert_eq!(patch(original, &loc(1, "X"), &ComponentOperation::RemoveField {
-            index: 0, expected_type: "Other".into(), key: "count".into(),
-            expected_kind: "int".into(), expected_value: "2".into(),
-        }).unwrap_err().code, "COMPONENT_STALE_SELECTION");
+        assert_eq!(
+            patch(
+                original,
+                &loc(1, "X"),
+                &ComponentOperation::RemoveField {
+                    index: 0,
+                    expected_type: "Sprite".into(),
+                    key: "count".into(),
+                    expected_kind: "int".into(),
+                    expected_value: "3".into(),
+                }
+            )
+            .unwrap_err()
+            .code,
+            "COMPONENT_FIELD_STALE"
+        );
+        assert_eq!(
+            patch(
+                original,
+                &loc(1, "X"),
+                &ComponentOperation::RemoveField {
+                    index: 0,
+                    expected_type: "Other".into(),
+                    key: "count".into(),
+                    expected_kind: "int".into(),
+                    expected_value: "2".into(),
+                }
+            )
+            .unwrap_err()
+            .code,
+            "COMPONENT_STALE_SELECTION"
+        );
     }
-
 }
