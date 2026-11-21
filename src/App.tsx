@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { open as openDirectoryDialog } from '@tauri-apps/plugin-dialog';
 import {
   AlertCircle, AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight,
-  FileCode2, FileText, FolderOpen, Image as ImageIcon, Search, X, RotateCcw, Save, FilePlus2,
+  FileCode2, FileText, FolderOpen, Image as ImageIcon, Search, X, RotateCcw, Save, FilePlus2, Settings2,
 } from 'lucide-react';
 import { studio, type DraftList, type DraftSnapshot, type CreatedPrototype, type CreatedFluent, type CreatedRsi, type DeletedRsiState, type ImportedRsiState, type RestoredRsiState, type PrototypeDeclaration, type PrototypeFieldLocator, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage } from './lib/api';
 import { normalizeStudioError, type StudioError } from './lib/errors';
@@ -23,6 +23,8 @@ import CreateFluentWizard from './components/CreateFluentWizard';
 import FluentDiagnosticsPanel from './components/FluentDiagnosticsPanel';
 import CSharpCatalogPanel from './components/CSharpCatalogPanel';
 import ConflictReviewPanel from './components/ConflictReviewPanel';
+import EditorSettingsDialog from './components/EditorSettingsDialog';
+import { readEditorSettings, sanitizeEditorSettings, SETTINGS_KEY } from './lib/editor-settings';
 
 const PAGE_SIZE = 100;
 const LAST_PROJECT_KEY = 'ss14-studio-rust.last-project-root';
@@ -67,6 +69,11 @@ export default function App() {
   });
   const [overview, setOverview] = useState<ProjectOverview | null>(null);
   const [opening, setOpening] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [editorSettings, setEditorSettings] = useState(() => readEditorSettings(window.localStorage));
+  useEffect(() => {
+    try { window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(editorSettings)); } catch { /* storage may be blocked */ }
+  }, [editorSettings]);
   const [refreshing, setRefreshing] = useState(false);
   const [creatingPrototype, setCreatingPrototype] = useState(false);
   const [creatingFluent, setCreatingFluent] = useState(false);
@@ -847,6 +854,9 @@ export default function App() {
   }
 
   return <div className="app">
+    {settingsOpen && <EditorSettingsDialog value={editorSettings}
+      onChange={(settings) => setEditorSettings(sanitizeEditorSettings(settings))}
+      onClose={() => setSettingsOpen(false)}/>}
     {showingCSharp && overview && <CSharpCatalogPanel
       projectKey={overview.project_root + ':' + workspaceRevision}
       onClose={() => setShowingCSharp(false)}/>}
@@ -864,7 +874,9 @@ export default function App() {
       preferredExistingFile={selected?.kind === 'yaml' ? selected.path : undefined}/>}
     <header className="titlebar">
       <div className="brand"><span className="logo">S</span><div><strong>SS14 Studio</strong><small>RUST REWORK</small></div></div>
-      <span className="version">0.1.5 alpha · Rust + Tauri</span>
+      <div className="titlebar-actions"><button type="button" className="settings-trigger"
+        onClick={() => setSettingsOpen(true)}><Settings2 size={15}/> Настройки</button>
+        <span className="version">0.1.5 alpha · Rust + Tauri</span></div>
     </header>
 
     <section className="project-bar">
@@ -1047,7 +1059,7 @@ export default function App() {
                 onTimingUpdated={(result) => onRsiImported(selected.path, result, 'timing')}
                 onDeleted={(result) => onRsiDeleted(selected.path, result)}
                 onRestored={(result) => onRsiRestored(selected.path, result)}/>
-              : document ? <MonacoPreview key={document.path} resource={selected} document={document}
+              : document ? <MonacoPreview settings={editorSettings} key={document.path} resource={selected} document={document}
               value={activeText} editable={isEditableText(selected.kind) && !saving && !refreshing}
               onChange={isEditableText(selected.kind) ? (value) => {
                 const next = { ...draftsRef.current, [selected.path]: value };
