@@ -65,7 +65,7 @@ fn component_type(raw: &str) -> Result<(), StudioError> {
     Ok(())
 }
 
-fn components<'a>(row: &'a Yaml) -> Result<&'a [Yaml], StudioError> {
+fn components(row: &Yaml) -> Result<&[Yaml], StudioError> {
     match &row["components"] {
         Yaml::BadValue => Ok(&[]),
         Yaml::Array(items) => Ok(items.as_slice()),
