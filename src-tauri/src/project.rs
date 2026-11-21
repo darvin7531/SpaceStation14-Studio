@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
@@ -101,6 +102,10 @@ impl ProjectIndex {
             )
             .with_details(prototypes.display().to_string()));
         }
+
+        validate_scope(&root, &prototypes)?;
+        validate_scope(&root, &resources_root.join("Textures"))?;
+        validate_scope(&root, &resources_root.join("Locale"))?;
 
         let mut resources = Vec::new();
         let mut traversed = 0;
@@ -249,14 +254,26 @@ impl ProjectIndex {
         }
 
         // Re-check the read size: the file may have grown after metadata().
-        let bytes = fs::read(&canonical).map_err(|error| {
+        let handle = fs::File::open(&canonical).map_err(|error| {
             StudioError::new(
                 "RESOURCE_READ_FAILED",
-                "Не удалось прочитать ресурс.",
-                "Проверьте доступность файла и повторите действие.",
+                "Не удалось открыть ресурс для чтения.",
+                "Проверьте права доступа к выбранному файлу.",
             )
             .with_details(error.to_string())
         })?;
+        let mut bytes = Vec::new();
+        handle
+            .take(MAX_READ_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|error| {
+                StudioError::new(
+                    "RESOURCE_READ_FAILED",
+                    "Не удалось прочитать ресурс.",
+                    "Проверьте доступность файла и повторите действие.",
+                )
+                .with_details(error.to_string())
+            })?;
         if bytes.len() as u64 > MAX_READ_BYTES {
             return Err(StudioError::new(
                 "RESOURCE_TOO_LARGE",
@@ -279,6 +296,43 @@ impl ProjectIndex {
             bytes: bytes_len,
         })
     }
+}
+
+fn validate_scope(root: &Path, scope: &Path) -> Result<(), StudioError> {
+    if !scope.exists() {
+        return Ok(());
+    }
+    let relative = scope.strip_prefix(root).map_err(|error| {
+        StudioError::new(
+            "PROJECT_PATH_INVALID",
+            "Внутренний путь проекта оказался некорректным.",
+            "Проверьте структуру папок исходников.",
+        )
+        .with_details(error.to_string())
+    })?;
+    let mut current = root.to_path_buf();
+    for part in relative.components() {
+        current.push(part);
+        let metadata = fs::symlink_metadata(&current).map_err(|error| walk_error(&current, error))?;
+        if metadata.file_type().is_symlink() {
+            return Err(StudioError::new(
+                "PROJECT_SYMLINKED_SCOPE",
+                "Каталог ресурсов проекта использует символическую ссылку.",
+                "Для начального сканера используйте обычную папку. Поддержка внешних каталогов появится отдельно.",
+            )
+            .with_details(current.display().to_string()));
+        }
+    }
+    let canonical = fs::canonicalize(scope).map_err(|error| walk_error(scope, error))?;
+    if !canonical.starts_with(root) {
+        return Err(StudioError::new(
+            "PROJECT_SCOPE_OUTSIDE_ROOT",
+            "Каталог ресурсов находится за пределами проекта.",
+            "Используйте проект с ресурсами внутри выбранного корня.",
+        )
+        .with_details(canonical.display().to_string()));
+    }
+    Ok(())
 }
 
 fn scan(
@@ -512,6 +566,19 @@ mod tests {
         let index = ProjectIndex::open(fx.root_str()).unwrap();
         let err = index.read_resource("secret.txt").unwrap_err();
         assert_eq!(err.code, "RESOURCE_NOT_INDEXED");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlinked_scope_with_explained_error() {
+        use std::os::unix::fs::symlink;
+        let fixture = Fixture::new();
+        let folder = fixture.root.join("Resources/Prototypes");
+        fs::remove_dir(&folder).unwrap();
+        symlink(std::env::temp_dir(), &folder).unwrap();
+        let error = ProjectIndex::open(fixture.root_str()).unwrap_err();
+        assert_eq!(error.code, "PROJECT_SYMLINKED_SCOPE");
+        assert!(!error.hint.is_empty());
     }
 
     #[test]

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   AlertCircle, AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight,
   FileCode2, FileText, FolderOpen, Image as ImageIcon, Search,
@@ -40,6 +40,7 @@ export default function App() {
   const [document, setDocument] = useState<ResourceDocument | null>(null);
   const [reading, setReading] = useState(false);
   const [error, setError] = useState<StudioError | null>(null);
+  const readVersion = useRef(0);
 
   async function openProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -47,6 +48,7 @@ export default function App() {
     setError(null);
     try {
       const next = await studio.openProject(path);
+      readVersion.current += 1;
       setOverview(next);
       setResults({ total: 0, items: [] });
       setSelected(null);
@@ -82,16 +84,18 @@ export default function App() {
   }, [overview, query, kind, page]);
 
   async function openResource(item: ResourceEntry) {
+    const version = ++readVersion.current;
     setSelected(item);
     setDocument(null);
     setError(null);
     setReading(true);
     try {
-      setDocument(await studio.readResource(item.path));
+      const loaded = await studio.readResource(item.path);
+      if (version === readVersion.current) setDocument(loaded);
     } catch (failure) {
-      setError(normalizeStudioError(failure));
+      if (version === readVersion.current) setError(normalizeStudioError(failure));
     } finally {
-      setReading(false);
+      if (version === readVersion.current) setReading(false);
     }
   }
 
