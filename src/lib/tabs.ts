@@ -35,3 +35,12 @@ export function closeTab(state: TabState, path: string): TabState {
     : state.active;
   return { tabs, active };
 }
+
+/** Select the next or previous visible tab without discarding any draft. */
+export function nextTabPath(state: TabState, backwards = false): string | null {
+  const count = state.tabs.length;
+  if (count === 0) return null;
+  const current = state.tabs.findIndex((tab) => tab.path === state.active);
+  const next = current < 0 ? 0 : (current + (backwards ? count - 1 : 1)) % count;
+  return state.tabs[next].path;
+}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { closeTab, MAX_OPEN_TABS, openTab, type TabState } from '../src/lib/tabs';
+import {closeTab, MAX_OPEN_TABS, openTab, type TabState, nextTabPath, type TabState } from '../src/lib/tabs';
 import type { ResourceEntry } from '../src/lib/api';
 
 const resource = (path: string): ResourceEntry => ({ path, kind: 'yaml' });
@@ -48,4 +48,20 @@ test('closing last tab clears active selection', () => {
 test('closing an inactive tab preserves the current selection', () => {
   const state: TabState = { tabs: [resource('a'), resource('b')], active: 'b' };
   assert.equal(closeTab(state, 'a').active, 'b');
+});
+
+test('nextTabPath cycles forward and backward without changing tabs', () => {
+  const state: TabState = {
+    tabs: [
+      { path: 'Resources/Prototypes/a.yml', kind: 'yaml' },
+      { path: 'Resources/Locale/en-US/a.ftl', kind: 'ftl' },
+      { path: 'Resources/Textures/a.rsi', kind: 'rsi' },
+    ],
+    active: 'Resources/Locale/en-US/a.ftl',
+  };
+  assert.equal(nextTabPath(state), state.tabs[2].path);
+  assert.equal(nextTabPath(state, true), state.tabs[0].path);
+  assert.equal(nextTabPath({ ...state, active: state.tabs[2].path }), state.tabs[0].path);
+  assert.equal(nextTabPath({ tabs: [], active: null }), null);
+  assert.equal(nextTabPath({ tabs: state.tabs, active: null }), state.tabs[0].path);
 });

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { studio, type DraftList, type DraftSnapshot, type CreatedPrototype, type CreatedFluent, type CreatedRsi, type DeletedRsiState, type ImportedRsiState, type RestoredRsiState, type PrototypeDeclaration, type PrototypeFieldLocator, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage } from './lib/api';
 import { normalizeStudioError, type StudioError } from './lib/errors';
-import { closeTab, openTab, type TabState } from './lib/tabs';
+import { closeTab, openTab, nextTabPath, type TabState } from './lib/tabs';
 import { dirtyDocumentPaths, reconcileSavedDraft } from './lib/draft-state';
 import { DraftWriteQueue, journalKey } from './lib/draft-queue';
 import { reviewDecision } from './lib/review-guard';
@@ -24,6 +24,7 @@ import FluentDiagnosticsPanel from './components/FluentDiagnosticsPanel';
 import CSharpCatalogPanel from './components/CSharpCatalogPanel';
 import ConflictReviewPanel from './components/ConflictReviewPanel';
 import EditorSettingsDialog from './components/EditorSettingsDialog';
+import QuickOpenPanel from './components/QuickOpenPanel';
 import { readEditorSettings, sanitizeEditorSettings, SETTINGS_KEY } from './lib/editor-settings';
 
 const PAGE_SIZE = 100;
@@ -70,6 +71,7 @@ export default function App() {
   const [overview, setOverview] = useState<ProjectOverview | null>(null);
   const [opening, setOpening] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
   const [editorSettings, setEditorSettings] = useState(() => readEditorSettings(window.localStorage));
   useEffect(() => {
     try { window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(editorSettings)); } catch { /* storage may be blocked */ }
@@ -194,6 +196,7 @@ export default function App() {
     setCreatingFluent(false);
     setCreatingRsi(false);
     setShowingCSharp(false);
+    setQuickOpen(false);
     setFieldTarget(null);
     comparisonVersion.current += 1;
     setComparison(null);
@@ -740,6 +743,28 @@ export default function App() {
     requestAction({ type: 'close', path });
   }
 
+  useEffect(() => {
+    function shortcut(event: KeyboardEvent) {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      const key = event.key.toLowerCase();
+      if (key === 'p' && !event.shiftKey && overview && !settingsOpen) {
+        event.preventDefault();
+        if (!opening && !refreshing && !transitioning) setQuickOpen(true);
+        return;
+      }
+      if (!overview || settingsOpen || quickOpen || opening || refreshing || transitioning || saving) return;
+      if (key === 'tab') {
+        const next = nextTabPath(tabState, event.shiftKey);
+        if (next) { event.preventDefault(); selectTab(next); }
+      } else if (key === 'w' && !event.shiftKey && selected) {
+        event.preventDefault();
+        removeTab(selected.path);
+      }
+    }
+    window.addEventListener('keydown', shortcut, true);
+    return () => window.removeEventListener('keydown', shortcut, true);
+  }, [overview, settingsOpen, quickOpen, opening, refreshing, transitioning, saving, tabState]);
+
   function reloadCurrent() {
     if (tabState.active) requestAction({ type: 'reload', path: tabState.active });
   }
@@ -856,6 +881,8 @@ export default function App() {
   }
 
   return <div className="app">
+    {quickOpen && overview && <QuickOpenPanel onClose={() => setQuickOpen(false)}
+      onOpen={(resource) => { setQuickOpen(false); openResource(resource); }}/>}
     {settingsOpen && <EditorSettingsDialog value={editorSettings}
       onChange={(settings) => setEditorSettings(sanitizeEditorSettings(settings))}
       onClose={() => setSettingsOpen(false)}/>}
@@ -876,7 +903,12 @@ export default function App() {
       preferredExistingFile={selected?.kind === 'yaml' ? selected.path : undefined}/>}
     <header className="titlebar">
       <div className="brand"><span className="logo">S</span><div><strong>SS14 Studio</strong><small>RUST REWORK</small></div></div>
-      <div className="titlebar-actions"><button type="button" className="settings-trigger"
+      <div className="titlebar-actions">
+        <button type="button" className="settings-trigger" disabled={!overview || opening || refreshing}
+          title="Быстро открыть файл (Ctrl+P)" onClick={() => setQuickOpen(true)}>
+          <Search size={15}/> Быстро открыть
+        </button>
+        <button type="button" className="settings-trigger"
         onClick={() => setSettingsOpen(true)}><Settings2 size={15}/> Настройки</button>
         <span className="version">0.1.5 alpha · Rust + Tauri</span></div>
     </header>
@@ -958,7 +990,7 @@ export default function App() {
       <FolderOpen size={46} strokeWidth={1.2}/>
       <h1>Открыть проект SS14</h1>
       <p>Rust-ядро безопасно проверит структуру репозитория, построит индекс ресурсов и откроет их для просмотра.</p>
-      <small>YAML и Fluent можно редактировать с проверкой конфликта; RSI пока доступны для просмотра.</small>
+      <small>YAML и Fluent можно редактировать с проверкой конфликта; RSI поддерживают просмотр, импорт состояний и ограниченное редактирование метаданных.</small>
     </main> :
     <main className="workspace">
       <aside className="explorer">

@@ -73,3 +73,20 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Compile integrated Tauri desktop executable
         run: npm run build -- --no-bundle
+
+  windows-compile:
+    name: Compile Windows Tauri executable
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Install frontend
+        run: npm install --no-audit --no-fund
+      - name: Compile desktop app without installer
+        run: npm run build -- --no-bundle
