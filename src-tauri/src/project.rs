@@ -694,7 +694,10 @@ impl ProjectIndex {
         rsi_preview::read(&self.root, rel_path, name)
     }
 
-    pub fn import_rsi_state(&self, request: &RsiStateImport) -> Result<ImportedRsiState, StudioError> {
+    pub fn import_rsi_state(
+        &self,
+        request: &RsiStateImport,
+    ) -> Result<ImportedRsiState, StudioError> {
         self.verify_indexed_rsi(&request.path)?;
         let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;
         rsi_import::import(&self.root, request)
