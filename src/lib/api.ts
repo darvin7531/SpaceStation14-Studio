@@ -118,6 +118,10 @@ export interface NewPrototypePreview {
   warnings: string[];
 }
 
+export interface AppendPrototypePreview extends NewPrototypePreview {
+  expected_revision: string;
+}
+
 export interface CreatedPrototype {
   file: string;
   kind: string;
@@ -176,6 +180,12 @@ export const studio = {
   },
   createNewPrototype(draft: NewPrototypeDraft): Promise<CreatedPrototype> {
     return invoke('create_new_prototype', { draft });
+  },
+  previewAppendPrototype(draft: NewPrototypeDraft): Promise<AppendPrototypePreview> {
+    return invoke('preview_append_prototype', { draft });
+  },
+  appendPrototype(draft: NewPrototypeDraft, expectedRevision: string): Promise<CreatedPrototype> {
+    return invoke('append_prototype', { draft, expectedRevision });
   },
   readResource(path: string): Promise<ResourceDocument> {
     return invoke('read_resource', { path });

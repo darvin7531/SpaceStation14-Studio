@@ -1,6 +1,7 @@
 mod draft_journal;
 mod error;
 mod project;
+mod prototype_append;
 mod prototype_create;
 mod prototype_graph;
 mod prototypes;
@@ -11,6 +12,7 @@ use std::sync::{Arc, Mutex};
 use draft_journal::{DraftJournal, DraftList, DraftSnapshot, DraftSummary, DraftWriteResult};
 use error::{internal_lock, interrupted, StudioError};
 use project::{ProjectIndex, ProjectOverview, ResourceDocument, ResourcePage};
+use prototype_append::AppendPreview;
 use prototype_create::{PrototypeDraft, PrototypePreview};
 use prototype_graph::PrototypeRelations;
 use prototypes::{DiagnosticPage, PrototypePage};
@@ -339,6 +341,57 @@ async fn create_new_prototype(
     })
 }
 
+#[tauri::command]
+async fn preview_append_prototype(
+    draft: PrototypeDraft,
+    state: State<'_, WorkspaceState>,
+) -> Result<AppendPreview, StudioError> {
+    let project = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || project.preview_append_prototype(&draft))
+        .await
+        .map_err(interrupted)?
+}
+
+#[tauri::command]
+async fn append_prototype(
+    draft: PrototypeDraft,
+    expected_revision: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<CreatePrototypeResult, StudioError> {
+    let original = current_project(&state)?;
+    let project = original.clone();
+    let created = tauri::async_runtime::spawn_blocking(move || {
+        project.append_prototype(&draft, &expected_revision)
+    })
+    .await
+    .map_err(interrupted)??;
+
+    let mut warning = created.warning;
+    let overview = {
+        let active = state.0.lock().map_err(|_| internal_lock())?;
+        if active
+            .as_ref()
+            .is_some_and(|existing| Arc::ptr_eq(existing, &original))
+        {
+            Some(original.overview().clone())
+        } else {
+            warning = Some(
+                "YAML изменён, но активный проект уже переключён. Откройте исходный проект, чтобы увидеть изменения.".into(),
+            );
+            None
+        }
+    };
+
+    Ok(CreatePrototypeResult {
+        file: created.file,
+        kind: created.kind,
+        id: created.id,
+        yaml: created.yaml,
+        warning,
+        overview,
+    })
+}
+
 pub fn run() -> Result<(), tauri::Error> {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -354,6 +407,8 @@ pub fn run() -> Result<(), tauri::Error> {
             save_yaml_resource,
             preview_new_prototype,
             create_new_prototype,
+            preview_append_prototype,
+            append_prototype,
             list_drafts,
             read_draft,
             persist_draft,

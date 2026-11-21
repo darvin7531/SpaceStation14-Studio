@@ -743,6 +743,92 @@ mod tests {
     }
 
     #[test]
+    fn appends_to_existing_yaml_without_replacing_comments() {
+        let fx = Fixture::new();
+        let file = "Resources/Prototypes/fixture.yml";
+        let original = "# Existing comment\r\n- type: entity\r\n  id: Existing\r\n";
+        fx.write(file, original);
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let draft = crate::prototype_create::PrototypeDraft {
+            kind: "entity".into(),
+            id: "NewEntity".into(),
+            parent: "Existing".into(),
+            name: "Generated".into(),
+            description: String::new(),
+            abstract_prototype: false,
+            sprite: String::new(),
+            sprite_state: String::new(),
+            include_item: false,
+            include_physics: false,
+            include_appearance: false,
+            file: file.into(),
+        };
+        let preview = index.preview_append_prototype(&draft).unwrap();
+        assert!(preview.yaml.contains("NewEntity"));
+        let saved = index.append_prototype(&draft, &preview.expected_revision).unwrap();
+        assert_eq!(saved.id, "NewEntity");
+        let bytes = fs::read_to_string(fx.root.join(file)).unwrap();
+        assert!(bytes.starts_with(original));
+        assert!(!bytes.replace("\r\n", "").contains('\n'));
+        assert_eq!(
+            index.prototypes().unwrap().search("NewEntity", None, 0, 10).total,
+            1
+        );
+    }
+
+    #[test]
+    fn append_detects_external_changes_after_preview() {
+        let fx = Fixture::new();
+        let file = "Resources/Prototypes/fixture.yml";
+        fx.write(file, "- type: entity\n  id: Existing\n");
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let draft = crate::prototype_create::PrototypeDraft {
+            kind: "entity".into(),
+            id: "Other".into(),
+            parent: String::new(),
+            name: String::new(),
+            description: String::new(),
+            abstract_prototype: false,
+            sprite: String::new(),
+            sprite_state: String::new(),
+            include_item: false,
+            include_physics: false,
+            include_appearance: false,
+            file: file.into(),
+        };
+        let preview = index.preview_append_prototype(&draft).unwrap();
+        fx.write(file, "- type: entity\n  id: External\n");
+        let error = index.append_prototype(&draft, &preview.expected_revision).unwrap_err();
+        assert_eq!(error.code, "RESOURCE_CHANGED_ON_DISK");
+        let content = fs::read_to_string(fx.root.join(file)).unwrap();
+        assert!(content.contains("External"));
+        assert!(!content.contains("Other"));
+    }
+
+    #[test]
+    fn refuses_append_to_non_indexed_file() {
+        let fx = Fixture::new();
+        fx.write("Resources/Prototypes/in_source.yml", "- type: entity\n  id: A\n");
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let draft = crate::prototype_create::PrototypeDraft {
+            kind: "entity".into(),
+            id: "Other".into(),
+            parent: String::new(),
+            name: String::new(),
+            description: String::new(),
+            abstract_prototype: false,
+            sprite: String::new(),
+            sprite_state: String::new(),
+            include_item: false,
+            include_physics: false,
+            include_appearance: false,
+            file: "Resources/Prototypes/missing.yml".into(),
+        };
+        let error = index.preview_append_prototype(&draft).unwrap_err();
+        assert_eq!(error.code, "APPEND_NOT_INDEXED");
+    }
+
+    #[test]
     fn saving_yaml_invalidates_prototype_catalog_without_reopening_project() {
         let fx = Fixture::new();
         fx.write(

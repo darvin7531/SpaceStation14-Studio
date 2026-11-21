@@ -3,14 +3,19 @@ import { AlertCircle, AlertTriangle, CheckCircle2, FilePlus2, X } from 'lucide-r
 import {
   studio,
   type CreatedPrototype,
+  type AppendPrototypePreview,
   type NewPrototypeDraft,
   type NewPrototypePreview,
 } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 
+export type PrototypeDestinationMode = 'new' | 'append';
+
 interface Props {
   onClose: () => void;
-  onCreated: (result: CreatedPrototype) => void;
+  onCreated: (result: CreatedPrototype, mode: PrototypeDestinationMode) => void;
+  dirtyPaths: readonly string[];
+  preferredExistingFile?: string;
 }
 
 function preferredPath(id: string): string {
@@ -32,13 +37,41 @@ const INITIAL: NewPrototypeDraft = {
   file: preferredPath('NewPrototype'),
 };
 
-export default function CreatePrototypeWizard({ onClose, onCreated }: Props) {
+export default function CreatePrototypeWizard({
+  onClose, onCreated, dirtyPaths, preferredExistingFile,
+}: Props) {
+  const [mode, setMode] = useState<PrototypeDestinationMode>('new');
+  const [availableFiles, setAvailableFiles] = useState<string[]>([]);
   const [draft, setDraft] = useState<NewPrototypeDraft>(INITIAL);
-  const [preview, setPreview] = useState<NewPrototypePreview | null>(null);
+  const [preview, setPreview] = useState<NewPrototypePreview | AppendPrototypePreview | null>(null);
+  const targetIsDirty = mode === 'append' && dirtyPaths.includes(draft.file);
   const [validationError, setValidationError] = useState<StudioError | null>(null);
   const [createError, setCreateError] = useState<StudioError | null>(null);
   const [checking, setChecking] = useState(true);
   const [creating, setCreating] = useState(false);
+
+  function switchMode(next: PrototypeDestinationMode) {
+    if (next === mode) return;
+    setChecking(true);
+    setPreview(null);
+    setValidationError(null);
+    setCreateError(null);
+    setMode(next);
+    setDraft((current) => ({
+      ...current,
+      file: next === 'append' ? (preferredExistingFile ?? '') : preferredPath(current.id || 'NewPrototype'),
+    }));
+  }
+
+  useEffect(() => {
+    let active = true;
+    void studio.searchResources('', 'yaml', 0, 250).then((page) => {
+      if (active) setAvailableFiles(page.items.map((entry) => entry.path));
+    }).catch(() => {
+      if (active) setAvailableFiles([]);
+    });
+    return () => { active = false; };
+  }, []);
 
   function update<K extends keyof NewPrototypeDraft>(field: K, value: NewPrototypeDraft[K]) {
     // Do not leave an old valid preview enabled during the debounce window.
@@ -48,7 +81,8 @@ export default function CreatePrototypeWizard({ onClose, onCreated }: Props) {
     setCreateError(null);
     setDraft((current) => {
       const next = { ...current, [field]: value };
-      if (field === 'id' && current.file === preferredPath(current.id || 'NewPrototype')) {
+      if (mode === 'new' && field === 'id'
+          && current.file === preferredPath(current.id || 'NewPrototype')) {
         next.file = preferredPath(String(value));
       }
       if (field === 'kind' && value !== 'entity') {
@@ -66,7 +100,20 @@ export default function CreatePrototypeWizard({ onClose, onCreated }: Props) {
     let active = true;
     const handle = window.setTimeout(() => {
       setChecking(true);
-      void studio.previewNewPrototype(draft).then((value) => {
+      if (targetIsDirty) {
+        setPreview(null);
+        setValidationError({
+          code: 'APPEND_DIRTY_TARGET',
+          message: 'Целевой YAML содержит несохранённые изменения в открытой вкладке.',
+          hint: 'Сначала сохраните файл либо выберите другой YAML, иначе изменения вкладки могут устареть.',
+        });
+        setChecking(false);
+        return;
+      }
+      const request = mode === 'new'
+        ? studio.previewNewPrototype(draft)
+        : studio.previewAppendPrototype(draft);
+      void request.then((value) => {
         if (!active) return;
         setPreview(value);
         setValidationError(null);
@@ -82,16 +129,18 @@ export default function CreatePrototypeWizard({ onClose, onCreated }: Props) {
       active = false;
       window.clearTimeout(handle);
     };
-  }, [draft]);
+  }, [draft, mode, targetIsDirty]);
 
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (creating || checking || !preview) return;
+    if (creating || checking || !preview || targetIsDirty) return;
     setCreating(true);
     setCreateError(null);
     try {
-      const result = await studio.createNewPrototype(draft);
-      onCreated(result);
+      const result = mode === 'append'
+        ? await studio.appendPrototype(draft, (preview as AppendPrototypePreview).expected_revision)
+        : await studio.createNewPrototype(draft);
+      onCreated(result, mode);
     } catch (error) {
       setCreateError(normalizeStudioError(error));
     } finally {
@@ -113,9 +162,15 @@ export default function CreatePrototypeWizard({ onClose, onCreated }: Props) {
             </button>
           </header>
           <p className="create-proto-intro">
-            Мастер создаёт <strong>новый YAML-файл</strong> без перезаписи существующих.
-            Создание и добавление блока в уже существующий файл будет отдельной функцией.
+            Выберите создание нового YAML либо безопасное добавление прототипа в существующий список.
+            В обоих режимах все проверки и запись выполняются на стороне Rust.
           </p>
+          <div className="create-proto-mode" role="group" aria-label="Способ размещения прототипа">
+            <button type="button" className={mode === 'new' ? 'selected' : ''}
+              disabled={creating} onClick={() => switchMode('new')}>Новый файл</button>
+            <button type="button" className={mode === 'append' ? 'selected' : ''}
+              disabled={creating} onClick={() => switchMode('append')}>В существующий YAML</button>
+          </div>
 
           <fieldset className="create-proto-group">
             <legend>Идентификатор и наследование</legend>
@@ -179,15 +234,19 @@ export default function CreatePrototypeWizard({ onClose, onCreated }: Props) {
           </fieldset>}
 
           <fieldset className="create-proto-group">
-            <legend>Расположение нового файла</legend>
+            <legend>{mode === 'new' ? 'Расположение нового файла' : 'Выберите существующий YAML'}</legend>
             <label>Путь относительно корня проекта
               <input required value={draft.file} spellCheck={false}
+                list={mode === 'append' ? 'append-prototype-files' : undefined}
+                placeholder={mode === 'append' ? 'Resources/Prototypes/Entities/items.yml' : ''}
                 onChange={(event) => update('file', event.target.value)}/>
+              {mode === 'append' && <datalist id="append-prototype-files">
+                {availableFiles.map((file) => <option key={file} value={file}/>)}
+              </datalist>}
             </label>
-            <small>
-              Разрешены существующие каталоги внутри Resources/Prototypes.
-              Папка _PrototypeStudio будет создана автоматически при необходимости.
-            </small>
+            <small>{mode === 'new'
+              ? 'Разрешены существующие каталоги внутри Resources/Prototypes. Папка _PrototypeStudio создаётся автоматически при необходимости.'
+              : 'Файл должен быть проиндексирован. Пока поддерживаются только обычные однодокументные YAML-списки, без Partial-тегов.'}</small>
           </fieldset>
         </div>
 
@@ -202,7 +261,12 @@ export default function CreatePrototypeWizard({ onClose, onCreated }: Props) {
           {preview?.warnings.map((warning, i) => <div className="create-proto-warning" key={i}>
             <AlertTriangle size={14}/>{warning}
           </div>)}
-          <label className="create-proto-yaml-label">Предпросмотр YAML (создаёт Rust)</label>
+          <label className="create-proto-yaml-label">
+            {mode === 'new' ? 'Предпросмотр нового YAML (Rust)' : 'Добавляемый блок (Rust)'}
+          </label>
+          {mode === 'append' && preview && 'expected_revision' in preview && <small className="create-proto-revision">
+            Ожидаемая версия файла: {preview.expected_revision.slice(0, 12)}… Файл ещё не изменён.
+          </small>}
           <pre className="create-proto-yaml">{preview?.yaml ?? 'Укажите корректные поля прототипа для предпросмотра.'}</pre>
           {createError && <div className="create-proto-error" role="alert">
             <AlertCircle size={16}/><div>
@@ -214,8 +278,10 @@ export default function CreatePrototypeWizard({ onClose, onCreated }: Props) {
           </div>}
           <footer className="create-proto-actions">
             <button type="button" onClick={onClose} disabled={creating}>Отмена</button>
-            <button type="submit" disabled={checking || creating || !preview}>
-              <FilePlus2 size={14}/>{creating ? 'Создание…' : 'Создать файл'}
+            <button type="submit" disabled={checking || creating || !preview || targetIsDirty}>
+              <FilePlus2 size={14}/>{creating
+                ? 'Записываю…'
+                : mode === 'new' ? 'Создать файл' : 'Добавить прототип'}
             </button>
           </footer>
         </div>

@@ -80,6 +80,12 @@ impl PrototypeCatalog {
             .contains_key(&(kind.to_owned(), id.to_owned()))
     }
 
+    pub fn has_partial_declarations(&self, file: &str) -> bool {
+        self.declarations
+            .iter()
+            .any(|entry| entry.file == file && entry.mode != "normal")
+    }
+
     /// Loads on first prototype query (from a blocking task), not on workspace open.
     pub fn build(root: &Path, resources: &[ResourceEntry]) -> Self {
         let mut catalog = Self::default();

@@ -13,7 +13,7 @@ import { reviewDecision } from './lib/review-guard';
 import MonacoPreview from './editor/MonacoPreview';
 import PrototypeExplorer from './components/PrototypeExplorer';
 import RecoveryPanel from './components/RecoveryPanel';
-import CreatePrototypeWizard from './components/CreatePrototypeWizard';
+import CreatePrototypeWizard, { type PrototypeDestinationMode } from './components/CreatePrototypeWizard';
 import ConflictReviewPanel from './components/ConflictReviewPanel';
 
 const PAGE_SIZE = 100;
@@ -588,23 +588,52 @@ export default function App() {
     if (tabState.active) requestAction({ type: 'reload', path: tabState.active });
   }
 
-  function onPrototypeCreated(result: CreatedPrototype) {
+  function onPrototypeCreated(result: CreatedPrototype, mode: PrototypeDestinationMode) {
     setCreatingPrototype(false);
     if (result.overview) {
       setOverview(result.overview);
       setWorkspaceRevision((old) => old + 1);
       setPage(0);
       setExplorerMode('prototypes');
-      openResource({ path: result.file, kind: 'yaml' });
+      if (mode === 'append') {
+        if (isDirty(result.file)) {
+          setNotice('Прототип добавлен на диск, но во вкладке остался отдельный несохранённый черновик. Не закрывайте его: сравните с изменённым файлом.');
+          return;
+        }
+        // A clean, already-open tab must not continue showing the old text.
+        // Keep unrelated tabs and recovery drafts intact.
+        documents.current.delete(result.file);
+        setDrafts((previous) => {
+          const updated = { ...previous };
+          delete updated[result.file];
+          return updated;
+        });
+        setDraftBases((previous) => {
+          const updated = { ...previous };
+          delete updated[result.file];
+          return updated;
+        });
+        if (tabState.active === result.file) {
+          closeComparison();
+          void focusResource(result.file);
+        } else {
+          openResource({ path: result.file, kind: 'yaml' });
+        }
+      } else {
+        openResource({ path: result.file, kind: 'yaml' });
+      }
     }
+    const verb = mode === 'append' ? 'добавлен в' : 'создан в';
     setNotice(result.warning
-      ? 'Файл создан: ' + result.file + '. ' + result.warning
-      : 'Прототип ' + result.kind + ':' + result.id + ' создан: ' + result.file);
+      ? 'Прототип ' + result.kind + ':' + result.id + ' ' + verb + ' ' + result.file + '. ' + result.warning
+      : 'Прототип ' + result.kind + ':' + result.id + ' ' + verb + ' ' + result.file);
   }
 
   return <div className="app">
     {creatingPrototype && overview && <CreatePrototypeWizard
-      onClose={() => setCreatingPrototype(false)} onCreated={onPrototypeCreated}/>}
+      onClose={() => setCreatingPrototype(false)} onCreated={onPrototypeCreated}
+      dirtyPaths={dirtyPaths}
+      preferredExistingFile={selected?.kind === 'yaml' ? selected.path : undefined}/>}
     <header className="titlebar">
       <div className="brand"><span className="logo">S</span><div><strong>SS14 Studio</strong><small>RUST REWORK</small></div></div>
       <span className="version">0.1.5 alpha · Rust + Tauri</span>

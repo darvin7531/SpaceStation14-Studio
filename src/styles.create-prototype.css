@@ -34,3 +34,9 @@
 .create-proto-actions button[type=submit] { background:#2461a1; color:white; border-color:#4b91d7; }
 .create-proto-actions button:disabled { opacity:.5; cursor:not-allowed; }
 @media(max-width:850px) { .create-proto-layout { grid-template-columns:1fr; overflow:auto; } .create-proto-modal { overflow:auto; } .create-proto-form, .create-proto-preview { overflow:visible; } .create-proto-form { border-right:0; border-bottom:1px solid #354862; } .create-proto-yaml { max-height:260px; } }
+
+.create-proto-mode { display:flex; gap:6px; background:#112236; border:1px solid #36516d; border-radius:7px; padding:5px; }
+.create-proto-mode button { flex:1; background:transparent; border:1px solid transparent; color:#b8d0e7; border-radius:5px; padding:9px 7px; font-size:12px; }
+.create-proto-mode button.selected { border-color:#6696c8; background:#235582; color:#f2f9ff; font-weight:600; }
+.create-proto-mode button:disabled { opacity:.5; cursor:not-allowed; }
+.create-proto-revision { color:#8aaad1; font:10px/1.5 ui-monospace,Consolas,monospace; }
