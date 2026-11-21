@@ -19,7 +19,10 @@ fn issue(code: &'static str, message: &str, hint: &str) -> StudioError {
     StudioError::new(code, message, hint)
 }
 
-fn checked_content(original: &[u8], update: &RsiCreditsUpdate) -> Result<Option<String>, StudioError> {
+fn checked_content(
+    original: &[u8],
+    update: &RsiCreditsUpdate,
+) -> Result<Option<String>, StudioError> {
     if update.license.len() > 128
         || update.license.chars().any(char::is_control)
         || update.copyright.len() > 8192
@@ -154,10 +157,8 @@ mod tests {
     impl Fixture {
         fn new() -> Self {
             let id = NEXT.fetch_add(1, Ordering::Relaxed);
-            let root = std::env::temp_dir().join(format!(
-                "ss14-rsi-credits-{}-{id}",
-                std::process::id()
-            ));
+            let root =
+                std::env::temp_dir().join(format!("ss14-rsi-credits-{}-{id}", std::process::id()));
             let path = "Resources/Textures/sample.rsi".to_string();
             let folder = root.join(&path);
             fs::create_dir_all(&folder).unwrap();
@@ -209,7 +210,8 @@ mod tests {
         let mut request = fixture.request();
         request.license = "Old".into();
         request.copyright = "Before".into();
-        let original = fs::read_to_string(fixture.root.join(&fixture.path).join("meta.json")).unwrap();
+        let original =
+            fs::read_to_string(fixture.root.join(&fixture.path).join("meta.json")).unwrap();
         let result = update(&fixture.root, &request).unwrap();
         assert_eq!(result.content, original);
         assert_eq!(result.revision, request.expected_revision);
@@ -220,7 +222,11 @@ mod tests {
         let fixture = Fixture::new();
         let request = fixture.request();
         let file = fixture.root.join(&fixture.path).join("meta.json");
-        fs::write(&file, r#"{"version":1,"size":{},"states":[],"external":true}"#).unwrap();
+        fs::write(
+            &file,
+            r#"{"version":1,"size":{},"states":[],"external":true}"#,
+        )
+        .unwrap();
         let error = update(&fixture.root, &request).unwrap_err();
         assert_eq!(error.code, "RSI_CREDITS_CONFLICT");
         assert!(fs::read_to_string(file).unwrap().contains("external"));
