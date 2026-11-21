@@ -310,6 +310,13 @@ export interface DeletedRsiState {
   warning: string | null;
 }
 
+export interface RsiCreditsUpdate {
+  path: string;
+  expected_revision: string;
+  license: string;
+  copyright: string;
+}
+
 export interface RsiTimingUpdate {
   path: string;
   expected_revision: string;
@@ -512,6 +519,9 @@ export const studio = {
   },
   importRsiState(request: RsiImportRequest): Promise<ImportedRsiState> {
     return invoke('import_rsi_state', { request });
+  },
+  updateRsiCredits(request: RsiCreditsUpdate): Promise<ImportedRsiState> {
+    return invoke('update_rsi_credits', { request });
   },
   updateRsiTiming(request: RsiTimingUpdate): Promise<ImportedRsiState> {
     return invoke('update_rsi_timing', { request });
