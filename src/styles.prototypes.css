@@ -26,3 +26,7 @@
 .proto-diagnostic > small { font-size: 10px; color: #879cb1; overflow-wrap: anywhere; }
 .proto-error { font-size: 12px; color: #f3b9c1; background: #37242a; padding: 12px; }
 .proto-error p { color: #ead2d5; }
+
+.prototype-parent-link { background: #203b57; color: #bdd6f4; border: 1px solid #355674; border-radius: 5px; padding: 2px 5px; margin: 2px 4px 2px 0; font-size: 11px; }
+.prototype-parent-link:hover, .prototype-parent-link:focus-visible { background: #2b577d; color: #fff; }
+.prototype-parent-tag { color: #d6bb89; }

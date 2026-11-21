@@ -104,9 +104,14 @@ export default function PrototypeExplorer({ workspaceKey, onOpen }: Props) {
             configured_partial: 'Partial-каталог', tagged_partial: 'Tagged Partial',
             partial_only: 'Partial Only', normal: '',
           }[entry.mode]}</span>}
-          {entry.parents.length > 0 && <div className="prototype-parents" title={entry.parents.join(', ')}>
-            <span>Родители: </span>{entry.parents.join(', ')}
-            {entry.parent_tag ? ' (' + entry.parent_tag + ')' : ''}
+          {entry.parents.length > 0 && <div className="prototype-parents">
+            <span>Родители: </span>
+            {entry.parents.map((parent) => <button type="button" className="prototype-parent-link"
+              key={parent} title={'Искать объявления ' + entry.kind + ':' + parent}
+              onClick={() => { setSection('catalog'); setKind(entry.kind); setQuery(parent); setPage(0); }}>
+              {parent}
+            </button>)}
+            {entry.parent_tag && <span className="prototype-parent-tag">({entry.parent_tag})</span>}
           </div>}
         </div>)}
       </>}
