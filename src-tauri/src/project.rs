@@ -313,7 +313,8 @@ fn validate_scope(root: &Path, scope: &Path) -> Result<(), StudioError> {
     let mut current = root.to_path_buf();
     for part in relative.components() {
         current.push(part);
-        let metadata = fs::symlink_metadata(&current).map_err(|error| walk_error(&current, error))?;
+        let metadata =
+            fs::symlink_metadata(&current).map_err(|error| walk_error(&current, error))?;
         if metadata.file_type().is_symlink() {
             return Err(StudioError::new(
                 "PROJECT_SYMLINKED_SCOPE",
