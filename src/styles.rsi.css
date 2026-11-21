@@ -54,3 +54,23 @@
 .fluent-create-modal .rsi-create-metadata {
   max-height: 170px; overflow: auto; font-size: 11px;
 }
+
+/* Append-only state import. Keeps the form inside the RSI viewer, with no
+ * invisible filesystem privileges in the WebView. */
+.rsi-import-panel { padding: 10px 16px; border-bottom: 1px solid #344960; color: #bed1e7; font-size: 12px; }
+.rsi-import-panel > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; color: #c6ddf6; font-weight: 600; }
+.rsi-import-panel > form { display: grid; gap: 12px; padding: 13px 0 4px; max-width: 780px; }
+.rsi-import-panel p { margin: 0; line-height: 1.5; color: #b3c5da; }
+.rsi-import-panel code { color: #d2e5fb; }
+.rsi-import-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px,1fr)); gap: 12px; }
+.rsi-import-fields label { display: grid; gap: 5px; font-size: 11px; }
+.rsi-import-fields input, .rsi-import-fields select {
+  width: 100%; min-width: 0; background: #0b1624; border: 1px solid #49627c;
+  border-radius: 5px; padding: 8px; color: #e1edfc; font: inherit;
+}
+.rsi-import-panel .rsi-import-hint { color: #91b7dd; font-size: 11px; }
+.rsi-import-panel button[type="submit"] { display: inline-flex; align-items: center; justify-self: start; gap: 8px;
+  padding: 9px 12px; color: #eaf8ee; background: #256d53; border: 1px solid #398b6d;
+  border-radius: 6px; cursor: pointer;
+}
+.rsi-import-panel button:disabled { opacity: 0.5; cursor: not-allowed; }

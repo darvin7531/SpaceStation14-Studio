@@ -272,6 +272,23 @@ export interface FluentInspection {
   locale: FluentLocaleAnalysis;
 }
 
+export interface RsiImportRequest {
+  path: string;
+  expected_revision: string;
+  name: string;
+  directions: number;
+  frames_per_direction: number;
+  delay_seconds: number;
+  data_url: string;
+}
+
+export interface ImportedRsiState {
+  name: string;
+  content: string;
+  revision: string;
+  warning: string | null;
+}
+
 export interface NewRsiDraft {
   directory: string;
   name: string;
@@ -447,6 +464,9 @@ export const studio = {
   },
   readRsiSheet(path: string, name: string): Promise<RsiSheetImage> {
     return invoke('read_rsi_sheet', { path, name });
+  },
+  importRsiState(request: RsiImportRequest): Promise<ImportedRsiState> {
+    return invoke('import_rsi_state', { request });
   },
   readResource(path: string): Promise<ResourceDocument> {
     return invoke('read_resource', { path });

@@ -17,7 +17,7 @@ const PNG_HEADER: &[u8] = b"\x89PNG\r\n\x1a\n";
 
 /// Validate the PNG IHDR before returning compressed data to the WebView.
 /// An 8 MiB PNG can otherwise decompress to gigabytes of pixels.
-fn png_dimensions(bytes: &[u8]) -> Result<(u32, u32), StudioError> {
+pub(crate) fn png_dimensions(bytes: &[u8]) -> Result<(u32, u32), StudioError> {
     if !bytes.starts_with(PNG_HEADER)
         || bytes.len() < 29
         || &bytes[12..16] != b"IHDR"
@@ -65,7 +65,7 @@ pub struct RsiSheetImage {
     pub height: u32,
 }
 
-fn directory(root: &Path, relative: &str) -> Result<PathBuf, StudioError> {
+pub(crate) fn directory(root: &Path, relative: &str) -> Result<PathBuf, StudioError> {
     let path = root.join(relative);
     let meta = fs::symlink_metadata(&path).map_err(|e| {
         StudioError::new(

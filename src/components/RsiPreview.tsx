@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, RefreshCw } from 'lucide-react';
-import { studio, type RsiSheetImage, type RsiSheetList } from '../lib/api';
+import { studio, type ImportedRsiState, type RsiSheetImage, type RsiSheetList } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 import { buildRsiFrameLayout, isRsiLayoutError, parseRsiMetadata } from '../lib/rsi-layout';
 import RsiStatePlayer from './RsiStatePlayer';
+import RsiImportPanel from './RsiImportPanel';
 
 function Failure({ error }: { error: StudioError }) {
   return <div className="rsi-error" role="alert"><AlertCircle size={16}/>
@@ -13,7 +14,14 @@ function Failure({ error }: { error: StudioError }) {
 }
 
 /** Load one PNG at a time; do not expose project paths to the webview filesystem. */
-export default function RsiPreview({ path, metadata }: { path: string; metadata: string }) {
+export default function RsiPreview({
+  path, metadata, revision, onImported,
+}: {
+  path: string;
+  metadata: string;
+  revision: string;
+  onImported: (updated: ImportedRsiState) => void;
+}) {
   const [refresh, setRefresh] = useState(0);
   const [listing, setListing] = useState(true);
   const [list, setList] = useState<RsiSheetList | null>(null);
@@ -111,6 +119,7 @@ export default function RsiPreview({ path, metadata }: { path: string; metadata:
     {frameLayout?.warnings.map((warning, index) =>
       <p className="rsi-warning" key={'layout-' + index}>{warning}</p>)}
     {imageError && <Failure error={imageError}/>}
+    <RsiImportPanel path={path} revision={revision} onImported={onImported}/>
     <div className="rsi-stage">
       {listing ? <p>Чтение каталога RSI…</p>
         : loadingImage ? <p>Загрузка PNG…</p>
@@ -138,7 +147,8 @@ export default function RsiPreview({ path, metadata }: { path: string; metadata:
     </details>
     <p className="rsi-caveat">
       Для корректных RSI v1 доступны направления, кадры и анимация с длительностями из meta.json.
-      При повреждённых метаданных сохраняется просмотр PNG целиком. Файлы не изменяются.
+      При повреждённых метаданных сохраняется просмотр PNG целиком. Импорт создаёт только
+      новые PNG и требует подтверждения текущей ревизии meta.json.
     </p>
   </section>;
 }

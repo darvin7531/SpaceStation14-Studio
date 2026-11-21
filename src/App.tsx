@@ -4,7 +4,7 @@ import {
   AlertCircle, AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight,
   FileCode2, FileText, FolderOpen, Image as ImageIcon, Search, X, RotateCcw, Save, FilePlus2,
 } from 'lucide-react';
-import { studio, type DraftList, type DraftSnapshot, type CreatedPrototype, type CreatedFluent, type CreatedRsi, type PrototypeDeclaration, type PrototypeFieldLocator, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage } from './lib/api';
+import { studio, type DraftList, type DraftSnapshot, type CreatedPrototype, type CreatedFluent, type CreatedRsi, type ImportedRsiState, type PrototypeDeclaration, type PrototypeFieldLocator, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage } from './lib/api';
 import { normalizeStudioError, type StudioError } from './lib/errors';
 import { closeTab, openTab, type TabState } from './lib/tabs';
 import { dirtyDocumentPaths, reconcileSavedDraft } from './lib/draft-state';
@@ -779,6 +779,21 @@ export default function App() {
       : 'Прототип ' + result.kind + ':' + result.id + ' ' + verb + ' ' + result.file);
   }
 
+  function onRsiImported(path: string, result: ImportedRsiState) {
+    const updated: ResourceDocument = {
+      path,
+      content: result.content,
+      revision: result.revision,
+      bytes: new TextEncoder().encode(result.content).length,
+    };
+    documents.current.set(path, updated);
+    setDocument((current) => current?.path === path ? updated : current);
+    setDrafts((previous) => ({ ...previous, [path]: result.content }));
+    setNotice(result.warning
+      ? 'RSI обновлён: ' + result.name + '. ' + result.warning
+      : 'Добавлено состояние RSI: ' + result.name + '. PNG и meta.json записаны.');
+  }
+
   function onRsiCreated(created: CreatedRsi) {
     setCreatingRsi(false);
     setFieldTarget(null);
@@ -1006,7 +1021,9 @@ export default function App() {
             onClose={closeComparison}/>}
           {reading ? <div className="placeholder">Чтение ресурса…</div> :
             document && selected.kind === 'rsi'
-              ? <RsiPreview key={document.path + ':' + document.revision + ':' + workspaceRevision} path={selected.path} metadata={document.content}/>
+              ? <RsiPreview key={document.path + ':' + document.revision + ':' + workspaceRevision}
+                path={selected.path} metadata={document.content} revision={document.revision}
+                onImported={(result) => onRsiImported(selected.path, result)}/>
               : document ? <MonacoPreview key={document.path} resource={selected} document={document}
               value={activeText} editable={isEditableText(selected.kind) && !saving && !refreshing}
               onChange={isEditableText(selected.kind) ? (value) => {

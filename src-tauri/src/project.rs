@@ -18,6 +18,7 @@ use crate::prototype_fields::{self, FieldInspection, FieldLocator, FieldPatch, P
 use crate::prototypes::PrototypeCatalog;
 use crate::resource_edit::{self, SaveResult};
 use crate::rsi_create::{self, CreatedRsi, RsiCreationPreview, RsiDraft};
+use crate::rsi_import::{self, ImportedRsiState, RsiStateImport};
 use crate::rsi_preview::{self, RsiSheetImage, RsiSheetList};
 
 const MAX_SCAN_ENTRIES: usize = 250_000;
@@ -691,6 +692,12 @@ impl ProjectIndex {
     pub fn read_rsi_sheet(&self, rel_path: &str, name: &str) -> Result<RsiSheetImage, StudioError> {
         self.verify_indexed_rsi(rel_path)?;
         rsi_preview::read(&self.root, rel_path, name)
+    }
+
+    pub fn import_rsi_state(&self, request: &RsiStateImport) -> Result<ImportedRsiState, StudioError> {
+        self.verify_indexed_rsi(&request.path)?;
+        let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;
+        rsi_import::import(&self.root, request)
     }
 
     pub fn read_resource(&self, rel_path: &str) -> Result<ResourceDocument, StudioError> {
