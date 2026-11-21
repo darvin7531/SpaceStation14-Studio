@@ -213,7 +213,9 @@ impl PrototypeCatalog {
             &catalog.by_identity,
             &catalog.diagnostics,
         );
-        catalog.diagnostics.extend_from_slice(catalog.graph.diagnostics());
+        catalog
+            .diagnostics
+            .extend_from_slice(catalog.graph.diagnostics());
         catalog
             .diagnostics
             .sort_unstable_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));

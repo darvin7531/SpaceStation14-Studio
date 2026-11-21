@@ -217,11 +217,12 @@ impl PrototypeGraph {
                         if self.diagnostics.len() >= MAX_GRAPH_DIAGNOSTICS {
                             continue;
                         }
-                        if let Some(first_index) =
-                            by_identity.get(&next).and_then(|indices| {
-                                indices.iter().copied().find(|&i| declarations[i].mode == "normal")
-                            })
-                        {
+                        if let Some(first_index) = by_identity.get(&next).and_then(|indices| {
+                            indices
+                                .iter()
+                                .copied()
+                                .find(|&i| declarations[i].mode == "normal")
+                        }) {
                             let first = &declarations[first_index];
                             let mut chain: Vec<String> =
                                 nodes.iter().map(|(_, id)| id.clone()).collect();
@@ -326,7 +327,12 @@ impl PrototypeGraph {
 mod tests {
     use super::*;
 
-    fn declaration(kind: &str, id: &str, parents: &[&str], mode: &'static str) -> PrototypeDeclaration {
+    fn declaration(
+        kind: &str,
+        id: &str,
+        parents: &[&str],
+        mode: &'static str,
+    ) -> PrototypeDeclaration {
         PrototypeDeclaration {
             kind: kind.into(),
             id: id.into(),
@@ -343,13 +349,16 @@ mod tests {
         }
     }
 
-    fn build(declarations: &[PrototypeDeclaration], issues: &[PrototypeDiagnostic])
-        -> (PrototypeGraph, HashMap<Identity, Vec<usize>>)
-    {
+    fn build(
+        declarations: &[PrototypeDeclaration],
+        issues: &[PrototypeDiagnostic],
+    ) -> (PrototypeGraph, HashMap<Identity, Vec<usize>>) {
         let mut index: HashMap<Identity, Vec<usize>> = HashMap::new();
         for (position, item) in declarations.iter().enumerate() {
-            index.entry((item.kind.clone(), item.id.clone()))
-                .or_default().push(position);
+            index
+                .entry((item.kind.clone(), item.id.clone()))
+                .or_default()
+                .push(position);
         }
         (PrototypeGraph::build(declarations, &index, issues), index)
     }
@@ -363,11 +372,18 @@ mod tests {
             declaration("entity", "Other", &[], "normal"),
         ];
         let (graph, index) = build(&declarations, &[]);
-        let relations = graph.relations("entity", "Soldier", &declarations, &index).unwrap();
+        let relations = graph
+            .relations("entity", "Soldier", &declarations, &index)
+            .unwrap();
         assert_eq!(relations.declarations.len(), 2);
         assert_eq!(relations.parent_total, 2);
-        assert!(relations.parents.iter().all(|parent| parent.status == "defined"));
-        let base = graph.relations("entity", "Base", &declarations, &index).unwrap();
+        assert!(relations
+            .parents
+            .iter()
+            .all(|parent| parent.status == "defined"));
+        let base = graph
+            .relations("entity", "Base", &declarations, &index)
+            .unwrap();
         assert_eq!(base.child_total, 1);
         assert_eq!(base.children[0].id, "Soldier");
     }
@@ -379,10 +395,17 @@ mod tests {
             declaration("reagent", "Missing", &[], "normal"),
         ];
         let (graph, index) = build(&declarations, &[]);
-        let relations = graph.relations("entity", "One", &declarations, &index).unwrap();
+        let relations = graph
+            .relations("entity", "One", &declarations, &index)
+            .unwrap();
         assert_eq!(relations.parents[0].status, "not_indexed");
-        assert!(graph.diagnostics.iter().any(|issue| issue.code == "PARENT_NOT_INDEXED"));
-        assert!(graph.relations("entity", "Missing", &declarations, &index).is_none());
+        assert!(graph
+            .diagnostics
+            .iter()
+            .any(|issue| issue.code == "PARENT_NOT_INDEXED"));
+        assert!(graph
+            .relations("entity", "Missing", &declarations, &index)
+            .is_none());
     }
 
     #[test]
@@ -395,7 +418,12 @@ mod tests {
             message: "invalid YAML".into(),
         }];
         let (graph, index) = build(&declarations, &issues);
-        assert!(!graph.relations("entity", "One", &declarations, &index).unwrap().index_complete);
+        assert!(
+            !graph
+                .relations("entity", "One", &declarations, &index)
+                .unwrap()
+                .index_complete
+        );
         assert!(graph.diagnostics.is_empty());
     }
 
@@ -407,8 +435,14 @@ mod tests {
             declaration("entity", "C", &["A"], "normal"),
         ];
         let (graph, _) = build(&declarations, &[]);
-        assert_eq!(graph.diagnostics.iter()
-            .filter(|issue| issue.code == "DECLARED_PARENT_CYCLE").count(), 1);
+        assert_eq!(
+            graph
+                .diagnostics
+                .iter()
+                .filter(|issue| issue.code == "DECLARED_PARENT_CYCLE")
+                .count(),
+            1
+        );
     }
 
     #[test]
@@ -418,7 +452,10 @@ mod tests {
             declaration("entity", "B", &["A"], "configured_partial"),
         ];
         let (graph, _) = build(&declarations, &[]);
-        assert!(!graph.diagnostics.iter().any(|issue| issue.code == "DECLARED_PARENT_CYCLE"));
+        assert!(!graph
+            .diagnostics
+            .iter()
+            .any(|issue| issue.code == "DECLARED_PARENT_CYCLE"));
     }
 
     #[test]
@@ -428,7 +465,9 @@ mod tests {
         let declarations = vec![a, declaration("entity", "B", &["A"], "normal")];
         let (graph, index) = build(&declarations, &[]);
         assert!(graph.diagnostics.is_empty());
-        let refs = graph.relations("entity", "A", &declarations, &index).unwrap();
+        let refs = graph
+            .relations("entity", "A", &declarations, &index)
+            .unwrap();
         assert_eq!(refs.parents[0].status, "tagged");
     }
 
@@ -436,10 +475,17 @@ mod tests {
     fn details_are_paginated_in_memory_without_huge_ipc_payloads() {
         let mut declarations = vec![declaration("entity", "Root", &[], "normal")];
         for i in 0..200 {
-            declarations.push(declaration("entity", &format!("Child{i}"), &["Root"], "normal"));
+            declarations.push(declaration(
+                "entity",
+                &format!("Child{i}"),
+                &["Root"],
+                "normal",
+            ));
         }
         let (graph, index) = build(&declarations, &[]);
-        let root = graph.relations("entity", "Root", &declarations, &index).unwrap();
+        let root = graph
+            .relations("entity", "Root", &declarations, &index)
+            .unwrap();
         assert_eq!(root.child_total, 200);
         assert_eq!(root.children.len(), MAX_LINKS);
     }
