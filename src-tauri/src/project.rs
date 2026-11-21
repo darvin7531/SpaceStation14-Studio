@@ -1086,7 +1086,7 @@ mod tests {
         fx.write("Resources/Textures/Test.rsi/meta.json", "{\"version\":1}");
         fs::write(
             fx.root.join("Resources/Textures/Test.rsi/idle.png"),
-            b"\\x89PNG\\r\\n\\x1a\\nminimal fixture",
+            b"\x89PNG\r\n\x1a\nminimal fixture",
         )
         .unwrap();
         let index = ProjectIndex::open(fx.root_str()).unwrap();
