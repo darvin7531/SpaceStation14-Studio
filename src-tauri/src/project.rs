@@ -307,6 +307,22 @@ impl ProjectIndex {
             .clone())
     }
 
+    /// Analyze only an indexed YAML resource, using the in-memory source draft.
+    pub fn analyze_yaml(
+        &self,
+        rel_path: &str,
+        source: &str,
+    ) -> Result<resource_edit::YamlSyntaxReport, StudioError> {
+        if !self.is_yaml_indexed(rel_path) {
+            return Err(StudioError::new(
+                "YAML_NOT_INDEXED",
+                "Файл не найден в индексе YAML текущего проекта.",
+                "Выберите YAML через список ресурсов или обновите индекс.",
+            ));
+        }
+        resource_edit::analyze_yaml(source)
+    }
+
     /// Validate live editor text without reading or writing the disk.
     /// Restrict this action to indexed Fluent resources.
     pub fn analyze_fluent(
