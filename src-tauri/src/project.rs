@@ -7,8 +7,8 @@ use std::sync::{Arc, Mutex};
 use serde::Serialize;
 
 use crate::error::{internal_lock, StudioError};
-use crate::resource_edit::{self, SaveResult};
 use crate::prototypes::PrototypeCatalog;
+use crate::resource_edit::{self, SaveResult};
 
 const MAX_SCAN_ENTRIES: usize = 250_000;
 const MAX_READ_BYTES: u64 = 4 * 1024 * 1024;
@@ -209,13 +209,17 @@ impl ProjectIndex {
         expected_revision: &str,
         content: String,
     ) -> Result<SaveResult, StudioError> {
-        let item = self.positions.get(rel_path)
+        let item = self
+            .positions
+            .get(rel_path)
             .and_then(|index| self.resources.get(*index))
-            .ok_or_else(|| StudioError::new(
-                "RESOURCE_NOT_INDEXED",
-                "Этот файл отсутствует в индексе проекта.",
-                "Сначала откройте YAML из списка ресурсов Studio.",
-            ))?;
+            .ok_or_else(|| {
+                StudioError::new(
+                    "RESOURCE_NOT_INDEXED",
+                    "Этот файл отсутствует в индексе проекта.",
+                    "Сначала откройте YAML из списка ресурсов Studio.",
+                )
+            })?;
         if item.kind != "yaml" {
             return Err(StudioError::new(
                 "RESOURCE_EDIT_NOT_SUPPORTED",
