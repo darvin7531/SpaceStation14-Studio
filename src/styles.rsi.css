@@ -175,3 +175,6 @@
 .rsi-credits-fields input, .rsi-credits-fields textarea { background: #0c1420; border: 1px solid #405770; border-radius: 6px; color: #e8f2ff; padding: 9px; font: inherit; }
 .rsi-credits-panel button[type="submit"] { color: #fff; border: 1px solid #537daf; background: #27558a; padding: 9px 12px; border-radius: 6px; }
 .rsi-credits-panel button:disabled { opacity: .5; }
+
+.rsi-dropzone { margin: 12px 0; border: 1px dashed #5c7795; border-radius: 8px; background: #152233; padding: 17px; color: #c2d7ee; text-align: center; font-size: 12px; }
+.rsi-dropzone.dragging { border-color: #76b8ff; background: #203b55; color: #fff; }
