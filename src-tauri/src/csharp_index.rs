@@ -5,6 +5,7 @@
 //! structural index, not Roslyn semantic type resolution: inheritance,
 //! preprocessor symbols, generated sources and partial-class merging remain
 //! unverified until an explicit semantic pass is added.
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::Path;
@@ -62,6 +63,24 @@ pub struct CSharpPage {
     pub complete: bool,
     pub warnings: Vec<String>,
     pub items: Vec<CSharpDefinition>,
+}
+
+/// A conservative lookup for a YAML component type. "unique" only means
+/// one complete direct declaration was found, not a Roslyn-resolved schema.
+#[derive(Debug, Serialize)]
+pub struct ComponentSchema {
+    pub type_name: String,
+    /// unique | ambiguous | partial | uncertain | not_indexed
+    pub status: &'static str,
+    pub declarations: Vec<CSharpDefinition>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ComponentSchemaBatch {
+    pub index_complete: bool,
+    pub files_scanned: usize,
+    pub warnings: Vec<String>,
+    pub components: Vec<ComponentSchema>,
 }
 
 #[derive(Debug)]
@@ -545,6 +564,46 @@ impl CSharpCatalog {
         Ok(catalog)
     }
 
+    /// Resolve exact YAML component names only. Never guess a class by
+    /// fuzzy match or merge duplicated / partial declarations silently.
+    pub fn component_schemas(&self, names: &[String]) -> ComponentSchemaBatch {
+        let mut by_name: HashMap<&str, Vec<&CSharpDefinition>> = HashMap::new();
+        for entry in &self.definitions {
+            if entry.kind == "component" {
+                by_name.entry(entry.name.as_str()).or_default().push(entry);
+            }
+        }
+        let components = names
+            .iter()
+            .map(|type_name| {
+                let declarations: Vec<CSharpDefinition> = by_name
+                    .get(type_name.as_str())
+                    .into_iter()
+                    .flatten()
+                    .map(|entry| (*entry).clone())
+                    .collect();
+                let status = match declarations.as_slice() {
+                    [] => "not_indexed",
+                    [definition] if definition.parse_uncertain => "uncertain",
+                    [definition] if definition.partial => "partial",
+                    [_] => "unique",
+                    _ => "ambiguous",
+                };
+                ComponentSchema {
+                    type_name: type_name.clone(),
+                    status,
+                    declarations,
+                }
+            })
+            .collect();
+        ComponentSchemaBatch {
+            index_complete: self.complete,
+            files_scanned: self.files_scanned,
+            warnings: self.warnings.clone(),
+            components,
+        }
+    }
+
     pub fn page(&self, query: &str, kind: Option<&str>, offset: usize, limit: usize) -> CSharpPage {
         let query = query.trim().to_lowercase();
         let mut total = 0usize;
@@ -593,6 +652,69 @@ mod tests {
         let (defs, failed) = parse_source(&mut parser, "Content.Shared/Test.cs", input);
         assert!(!failed, "Syntax error in test fixture");
         defs
+    }
+
+    #[test]
+    fn component_schema_requires_exact_unique_non_partial_definition() {
+        let source = r#"
+        [RegisterComponent]
+        public class ItemComponent {
+            [DataField("display")]
+            public string Display = "";
+            [DataField]
+            public bool Visible = true;
+        }
+        [RegisterComponent]
+        public partial class PartialComponent {}
+        [RegisterComponent]
+        public class DoubleComponent {}
+        [RegisterComponent]
+        public class DoubleComponent {}
+        [RegisterComponent]
+        [ComponentProtoName("custom")]
+        public class RenamedComponent {}
+        "#;
+        let index = CSharpCatalog {
+            definitions: parse(source),
+            warnings: Vec::new(),
+            complete: true,
+            files_scanned: 1,
+            files_parsed: 1,
+            bytes_scanned: source.len() as u64,
+        };
+        let names: Vec<String> = ["Item", "Partial", "Double", "custom", "Missing"]
+            .into_iter().map(str::to_string).collect();
+        let result = index.component_schemas(&names);
+        assert!(result.index_complete);
+        assert_eq!(result.components[0].status, "unique");
+        assert_eq!(result.components[0].declarations[0].fields.len(), 2);
+        assert_eq!(result.components[0].declarations[0].fields[0].name, "display");
+        assert_eq!(result.components[1].status, "partial");
+        assert_eq!(result.components[2].status, "ambiguous");
+        assert_eq!(result.components[2].declarations.len(), 2);
+        assert_eq!(result.components[3].status, "unique");
+        assert_eq!(result.components[4].status, "not_indexed");
+    }
+
+    #[test]
+    fn component_schema_skips_non_component_class_of_same_name() {
+        let source = r#"
+        [Prototype("Item")]
+        public class ItemPrototype {}
+        [RegisterComponent]
+        public class ItemComponent { [DataField] public float Speed; }
+        "#;
+        let index = CSharpCatalog {
+            definitions: parse(source),
+            warnings: Vec::new(),
+            complete: true,
+            files_scanned: 1,
+            files_parsed: 1,
+            bytes_scanned: source.len() as u64,
+        };
+        let result = index.component_schemas(&["Item".into()]);
+        assert_eq!(result.components[0].status, "unique");
+        assert_eq!(result.components[0].declarations[0].class_name, "ItemComponent");
     }
 
     #[test]

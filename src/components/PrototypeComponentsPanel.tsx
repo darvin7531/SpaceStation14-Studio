@@ -6,20 +6,24 @@ import {
   type ComponentInspection,
   type ComponentScalarField,
   type ComponentScalarKind,
+  type ComponentSchemaBatch,
   type PrototypeFieldLocator,
 } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
+import ComponentSchemaHints from './ComponentSchemaHints';
+import type { EditableScalarKind } from '../lib/csharp-suggestions';
 
 interface Props {
   locator: PrototypeFieldLocator;
   source: string;
+  workspaceRevision: number;
   busy: boolean;
   onApply: (locator: PrototypeFieldLocator, original: string, changed: string) => boolean;
   onClose: () => void;
 }
 
 export default function PrototypeComponentsPanel({
-  locator, source, busy, onApply, onClose,
+  locator, source, workspaceRevision, busy, onApply, onClose,
 }: Props) {
   const [inspection, setInspection] = useState<ComponentInspection | null>(null);
   const [componentType, setComponentType] = useState('');
@@ -40,6 +44,13 @@ export default function PrototypeComponentsPanel({
   const [error, setError] = useState<StudioError | null>(null);
   const [notice, setNotice] = useState('');
   const [refresh, setRefresh] = useState(0);
+  const [schemas, setSchemas] = useState<{
+    key: string; data: ComponentSchemaBatch;
+  } | null>(null);
+  const [schemaError, setSchemaError] = useState<StudioError | null>(null);
+  const [schemaLoading, setSchemaLoading] = useState(false);
+  const schemaTypes = (inspection?.components ?? []).map((entry) => entry.type_name).join('\u001f');
+  const schemaKey = workspaceRevision + ':' + schemaTypes;
 
   useEffect(() => {
     let active = true;
@@ -69,6 +80,28 @@ export default function PrototypeComponentsPanel({
       window.clearTimeout(timer);
     };
   }, [locator, source, refresh]);
+
+  // A separate read-only request keeps YAML editing responsive while the
+  // initial C# source scan runs on the Rust blocking thread pool.
+  useEffect(() => {
+    let active = true;
+    setSchemas(null);
+    setSchemaError(null);
+    if (!schemaTypes) {
+      setSchemaLoading(false);
+      return;
+    }
+    setSchemaLoading(true);
+    const names = [...new Set(schemaTypes.split('\u001f'))];
+    void studio.inspectComponentSchemas(names).then((data) => {
+      if (active) setSchemas({ key: schemaKey, data });
+    }).catch((failure: unknown) => {
+      if (active) setSchemaError(normalizeStudioError(failure));
+    }).finally(() => {
+      if (active) setSchemaLoading(false);
+    });
+    return () => { active = false; };
+  }, [schemaKey, schemaTypes]);
 
   async function apply(operation: ComponentOperation) {
     if (!inspection || busy || loading || applying) return;
@@ -128,6 +161,15 @@ export default function PrototypeComponentsPanel({
     });
   }
 
+  function prefillFromCSharp(
+    index: number, key: string, kind: EditableScalarKind, value: string,
+  ) {
+    setPendingRemoval(null);
+    setPendingFieldRemoval(null);
+    setEditingField(null);
+    setAddingField({ index, key, kind, value });
+  }
+
   function newField(index: number) {
     setPendingRemoval(null);
     setPendingFieldRemoval(null);
@@ -145,6 +187,7 @@ export default function PrototypeComponentsPanel({
   }
 
   const disabled = busy || loading || applying || !inspection;
+  const activeSchemas = schemas?.key === schemaKey ? schemas.data : null;
 
   return <section className="prototype-components-editor"
     aria-label={'Компоненты прототипа ' + locator.kind + ':' + locator.id}>
@@ -165,6 +208,13 @@ export default function PrototypeComponentsPanel({
     </div>}
     {inspection && <>
       <p className="prototype-component-notice">{notice}</p>
+      {schemaError && <p className="prototype-component-notice" role="status">
+        Схемы C# пока недоступны: {schemaError.message}. Редактирование YAML остаётся доступным.
+      </p>}
+      {activeSchemas && !activeSchemas.index_complete && <p className="prototype-component-notice">
+        Индекс C# неполный; подсказки на добавление полей отключены.
+        {activeSchemas.warnings[0] ? ' ' + activeSchemas.warnings[0] : ''}
+      </p>}
       <div className="prototype-component-rows">
         {inspection.components.length === 0 && <p className="prototype-component-empty">
           В этом объявлении нет собственного списка компонентов. Наследуемые компоненты не показаны.
@@ -229,6 +279,10 @@ export default function PrototypeComponentsPanel({
                   </span>}
             </div>)}
           </div>
+          <ComponentSchemaHints component={entry}
+            schema={activeSchemas?.components.find((schema) => schema.type_name === entry.type_name)}
+            indexComplete={activeSchemas?.index_complete ?? false}
+            loading={schemaLoading} disabled={disabled} onSelect={prefillFromCSharp}/>
           {addingField?.index !== entry.index && <button type="button" disabled={disabled}
             className="prototype-component-add-property-trigger"
             onClick={() => newField(entry.index)}>
@@ -302,7 +356,8 @@ export default function PrototypeComponentsPanel({
       </form>
       <small className="prototype-component-caveat">
         Добавляется минимальный блок <code>- type</code>. Требования и поля компонента
-        зависят от форка SS14; C#-валидация ещё не реализована.
+        зависят от форка SS14. Схемы C# используются только для подсказок
+        собственных DataField, не для полной валидации.
         Поля string/bool/int/float можно добавлять, менять и удалять.
         Вложенные структуры и теги остаются в Monaco. Поля с комментариями не удаляются автоматически.
       </small>

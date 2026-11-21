@@ -66,6 +66,8 @@ CI also compiles the complete Tauri application with `npm run build -- --no-bund
 
 The Rust Rework can lazily scan C# source files through **Tree-sitter C#** (without Electron's regex scanning windows). Use **C# схемы** after opening a project to browse `[RegisterComponent]` components, `[Prototype]`/`[PrototypeRecord]` kinds, and immediate `[DataField]` fields/properties with C# types and source locations. The scan skips generated build directories, `Resources` and symlinks, and limits work to 20,000 files, 2 MiB per file and 128 MiB total. Results are cached per project and reset on index refresh. The UI reports skipped files and uncertain C# parses.
 
+The YAML component inspector also requests C# metadata for its explicitly listed components. It shows the direct class source and its DataFields, offering a *prefill-only* button for safe primitive fields not present in the YAML draft. The button fills the existing add-field form; nothing is written until the user applies the YAML change and saves. Ambiguous, partial, uncertain or incomplete C# schemas cannot auto-suggest fields. Names absent from the index are not treated as invalid components.
+
 This is **structural C# metadata**, not compiler semantic resolution: inherited fields, preprocessor symbols, multiple partial declarations and generated code need further handling. No source files are changed by the C# indexer.
 
 ## Rework roadmap

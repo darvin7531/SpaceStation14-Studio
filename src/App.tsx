@@ -968,7 +968,8 @@ export default function App() {
                   onApply={applyPrototypeFields} onClose={() => setFieldTarget(null)}/>
               : <PrototypeComponentsPanel
                   key={fieldTarget.file + ':' + fieldTarget.document_index + ':' + fieldTarget.item_index}
-                  locator={fieldTarget} source={activeText} busy={saving || transitioning || refreshing}
+                  locator={fieldTarget} source={activeText} workspaceRevision={workspaceRevision}
+                  busy={saving || transitioning || refreshing}
                   onApply={applyPrototypeFields} onClose={() => setFieldTarget(null)}/>)}
           {comparison && comparison.path === selected.path && <ConflictReviewPanel
             file={comparison.path} disk={comparison.disk} draft={comparison.reviewedDraft}

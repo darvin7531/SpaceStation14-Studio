@@ -40,6 +40,19 @@ export interface CSharpPage {
   items: CSharpDefinition[];
 }
 
+export interface ComponentSchema {
+  type_name: string;
+  status: 'unique' | 'ambiguous' | 'partial' | 'uncertain' | 'not_indexed';
+  declarations: CSharpDefinition[];
+}
+
+export interface ComponentSchemaBatch {
+  index_complete: boolean;
+  files_scanned: number;
+  warnings: string[];
+  components: ComponentSchema[];
+}
+
 export interface ProjectRefresh {
   overview: ProjectOverview;
   added_resources: number;
@@ -326,6 +339,9 @@ export const studio = {
   },
   searchCSharpDefinitions(query: string, kind: 'all' | 'component' | 'prototype', offset: number, limit = 50): Promise<CSharpPage> {
     return invoke('search_csharp_definitions', { query, kind, offset, limit });
+  },
+  inspectComponentSchemas(names: string[]): Promise<ComponentSchemaBatch> {
+    return invoke('inspect_component_schemas', { names });
   },
   searchPrototypes(query: string, kind: string, offset: number, limit = 100): Promise<PrototypePage> {
     return invoke('search_prototypes', { query, kind: kind || null, offset, limit });

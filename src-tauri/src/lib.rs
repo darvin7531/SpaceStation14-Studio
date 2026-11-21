@@ -16,7 +16,7 @@ mod rsi_preview;
 
 use std::sync::{Arc, Mutex};
 
-use csharp_index::CSharpPage;
+use csharp_index::{CSharpPage, ComponentSchemaBatch};
 use draft_journal::{DraftJournal, DraftList, DraftSnapshot, DraftSummary, DraftWriteResult};
 use error::{internal_lock, interrupted, StudioError};
 use fluent_create::{FluentDraft, FluentPreview};
@@ -146,6 +146,19 @@ async fn search_csharp_definitions(
     })
     .await
     .map_err(interrupted)?
+}
+
+/// Return only direct C# schema matches for explicitly declared YAML
+/// components. Keep schema inference separate from source-preserving edits.
+#[tauri::command]
+async fn inspect_component_schemas(
+    names: Vec<String>,
+    state: State<'_, WorkspaceState>,
+) -> Result<ComponentSchemaBatch, StudioError> {
+    let project = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || project.csharp_component_schemas(&names))
+        .await
+        .map_err(interrupted)?
 }
 
 #[tauri::command]
@@ -638,6 +651,7 @@ pub fn run() -> Result<(), tauri::Error> {
             refresh_project,
             search_resources,
             search_csharp_definitions,
+            inspect_component_schemas,
             search_prototypes,
             prototype_relations,
             list_prototype_diagnostics,

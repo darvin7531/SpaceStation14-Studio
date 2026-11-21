@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 
-use crate::csharp_index::{CSharpCatalog, CSharpPage};
+use crate::csharp_index::{CSharpCatalog, CSharpPage, ComponentSchemaBatch};
 use crate::error::{internal_lock, StudioError};
 use crate::fluent_create::{self, CreatedFluent, FluentDraft, FluentPreview};
 use crate::fluent_diagnostics;
@@ -238,6 +238,14 @@ impl ProjectIndex {
     /// Lazy, one-shot source scan. Concurrent requests share one result and
     /// never block the Tauri webview thread (IPC uses spawn_blocking).
     /// Explicit workspace refresh replaces the entire immutable index.
+    fn csharp_catalog(&self) -> Result<Arc<CSharpCatalog>, StudioError> {
+        let mut cache = self.csharp_catalog.lock().map_err(|_| internal_lock())?;
+        if cache.is_none() {
+            *cache = Some(Arc::new(CSharpCatalog::scan(&self.root)?));
+        }
+        cache.clone().ok_or_else(internal_lock)
+    }
+
     pub fn csharp_page(
         &self,
         query: &str,
@@ -245,14 +253,27 @@ impl ProjectIndex {
         offset: usize,
         limit: usize,
     ) -> Result<CSharpPage, StudioError> {
-        let mut cached = self.csharp_catalog.lock().map_err(|_| internal_lock())?;
-        if cached.is_none() {
-            *cached = Some(Arc::new(CSharpCatalog::scan(&self.root)?));
+        Ok(self.csharp_catalog()?.page(query, kind, offset, limit))
+    }
+
+    /// A bounded, read-only lookup for the component editor. A missing name
+    /// is not a YAML error: its class might be inherited or generated.
+    pub fn csharp_component_schemas(
+        &self,
+        names: &[String],
+    ) -> Result<ComponentSchemaBatch, StudioError> {
+        if names.len() > 128 || names.iter().any(|name| {
+            name.is_empty() || name.len() > 128
+                || !name.bytes().all(|b| b.is_ascii_alphanumeric()
+                    || matches!(b, b'_' | b'-' | b'.'))
+        }) {
+            return Err(StudioError::new(
+                "CSHARP_SCHEMA_INPUT_INVALID",
+                "Список типов компонентов слишком велик или содержит неверное имя.",
+                "Передайте не более 128 обычных имён компонентов из выбранного YAML-объявления.",
+            ));
         }
-        Ok(cached
-            .as_ref()
-            .expect("C# cache initialized")
-            .page(query, kind, offset, limit))
+        Ok(self.csharp_catalog()?.component_schemas(names))
     }
 
     pub fn is_yaml_indexed(&self, path: &str) -> bool {
@@ -932,6 +953,34 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+
+    #[test]
+    fn csharp_schema_cache_is_shared_and_rebuilt_on_project_refresh() {
+        let fx = Fixture::new();
+        let file = "Content.Shared/Components/SpriteComponent.cs";
+        fx.write(file, "[RegisterComponent]\npublic class SpriteComponent : Component {\n    [DataField]\n    public bool Visible = true;\n}\n");
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let names = vec!["Sprite".into(), "NotRegistered".into()];
+        let initial = index.csharp_component_schemas(&names).unwrap();
+        assert!(initial.index_complete);
+        assert_eq!(initial.components[0].status, "unique");
+        assert_eq!(initial.components[0].declarations[0].fields[0].name, "visible");
+        assert_eq!(initial.components[1].status, "not_indexed");
+
+        // Same C# snapshot is reused for inspector and catalog pages.
+        assert_eq!(index.csharp_page("Sprite", Some("component"), 0, 10).unwrap().total, 1);
+        fx.write(file, "public class SpriteComponent {}\n");
+        let cached = index.csharp_component_schemas(&names).unwrap();
+        assert_eq!(cached.components[0].status, "unique");
+
+        let (fresh, _) = index.refresh().unwrap();
+        let after = fresh.csharp_component_schemas(&names).unwrap();
+        assert_eq!(after.components[0].status, "not_indexed");
+        assert_eq!(
+            index.csharp_component_schemas(&["bad/path".into()]).unwrap_err().code,
+            "CSHARP_SCHEMA_INPUT_INVALID"
+        );
     }
 
     #[test]
