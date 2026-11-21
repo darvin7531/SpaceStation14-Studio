@@ -283,7 +283,10 @@ impl ProjectIndex {
         })?;
 
         let snapshot = {
-            let mut cache = self.fluent_locale_cache.lock().map_err(|_| internal_lock())?;
+            let mut cache = self
+                .fluent_locale_cache
+                .lock()
+                .map_err(|_| internal_lock())?;
             if let Some(existing) = cache.get(locale) {
                 Arc::clone(existing)
             } else {
@@ -291,18 +294,23 @@ impl ProjectIndex {
                 let mut warnings = Vec::new();
                 let mut complete = true;
                 let mut bytes = 0usize;
-                let candidates = self.resources.iter()
-                    .filter(|entry| entry.kind == "ftl"
-                        && fluent_locale::belongs_to_locale(&entry.path, locale));
+                let candidates = self.resources.iter().filter(|entry| {
+                    entry.kind == "ftl" && fluent_locale::belongs_to_locale(&entry.path, locale)
+                });
                 for (number, entry) in candidates.enumerate() {
                     if number >= fluent_locale::MAX_LOCALE_FILES {
                         complete = false;
-                        warnings.push("Лимит индекса локали — 4096 FTL-файлов. Проверка ссылок неполная.".into());
+                        warnings.push(
+                            "Лимит индекса локали — 4096 FTL-файлов. Проверка ссылок неполная."
+                                .into(),
+                        );
                         break;
                     }
                     match self.read_resource(&entry.path) {
                         Ok(document) => {
-                            if bytes.saturating_add(document.bytes) > fluent_locale::MAX_LOCALE_BYTES {
+                            if bytes.saturating_add(document.bytes)
+                                > fluent_locale::MAX_LOCALE_BYTES
+                            {
                                 complete = false;
                                 warnings.push("Индекс локали достиг лимита памяти 64 МиБ. Проверка ссылок неполная.".into());
                                 break;
@@ -563,7 +571,9 @@ impl ProjectIndex {
         let mut saved = resource_edit::save_ftl(&self.root, rel_path, expected_revision, content)?;
         if let Some(locale) = fluent_locale::locale_of(rel_path) {
             match self.fluent_locale_cache.lock() {
-                Ok(mut cache) => { cache.remove(locale); }
+                Ok(mut cache) => {
+                    cache.remove(locale);
+                }
                 Err(_) => {
                     saved.durability_warning = Some(
                         "FTL сохранён, но индекс ссылок Fluent не сброшен. Обновите индекс проекта.".into(),
@@ -1155,19 +1165,27 @@ mod tests {
         fx.write(target, "referenced = Present\n");
         fx.write(source, "use = { referenced }\n");
         let index = ProjectIndex::open(fx.root_str()).unwrap();
-        let first = index.analyze_fluent(source, "use = { referenced }\n").unwrap();
+        let first = index
+            .analyze_fluent(source, "use = { referenced }\n")
+            .unwrap();
         assert!(first.locale.complete);
         assert!(first.locale.issues.is_empty());
         assert_eq!(first.locale.file_count, 2);
 
         // Edits outside Studio require explicit index refresh; no polling.
         fx.write(target, "replaced = Gone\n");
-        let cached = index.analyze_fluent(source, "use = { referenced }\n").unwrap();
+        let cached = index
+            .analyze_fluent(source, "use = { referenced }\n")
+            .unwrap();
         assert!(cached.locale.issues.is_empty());
 
         let expected = index.read_resource(target).unwrap().revision;
-        index.save_ftl(target, &expected, "still-other = Missing\n".into()).unwrap();
-        let refreshed = index.analyze_fluent(source, "use = { referenced }\n").unwrap();
+        index
+            .save_ftl(target, &expected, "still-other = Missing\n".into())
+            .unwrap();
+        let refreshed = index
+            .analyze_fluent(source, "use = { referenced }\n")
+            .unwrap();
         assert_eq!(refreshed.locale.issues[0].code, "FTL_REFERENCE_MISSING");
     }
 
@@ -1179,11 +1197,15 @@ mod tests {
         fx.write(en_file, "source = { local-ref }\n");
         fx.write(ru_file, "local-ref = Другая локаль\n");
         let index = ProjectIndex::open(fx.root_str()).unwrap();
-        let report = index.analyze_fluent(en_file, "local-ref = Here\nsource = { local-ref }\n").unwrap();
+        let report = index
+            .analyze_fluent(en_file, "local-ref = Here\nsource = { local-ref }\n")
+            .unwrap();
         assert_eq!(report.locale.locale, "en-US");
         assert_eq!(report.locale.file_count, 1);
         assert!(report.locale.issues.is_empty());
-        let absent = index.analyze_fluent(en_file, "source = { local-ref }\n").unwrap();
+        let absent = index
+            .analyze_fluent(en_file, "source = { local-ref }\n")
+            .unwrap();
         assert_eq!(absent.locale.issues[0].code, "FTL_REFERENCE_MISSING");
     }
 

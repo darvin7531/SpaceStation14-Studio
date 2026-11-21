@@ -145,20 +145,33 @@ fn walk_expression(
     }
 }
 
-fn walk_inline(inline: &ast::InlineExpression<&str>, owner: &str, line: usize, refs: &mut Vec<Reference>) {
+fn walk_inline(
+    inline: &ast::InlineExpression<&str>,
+    owner: &str,
+    line: usize,
+    refs: &mut Vec<Reference>,
+) {
     match inline {
         ast::InlineExpression::MessageReference { id, attribute } => {
             refs.push(Reference {
                 target: id.name.to_string(),
-                attribute: attribute.as_ref().map(|attribute| attribute.name.to_string()),
+                attribute: attribute
+                    .as_ref()
+                    .map(|attribute| attribute.name.to_string()),
                 owner: owner.into(),
                 line,
             });
         }
-        ast::InlineExpression::TermReference { id, attribute, arguments } => {
+        ast::InlineExpression::TermReference {
+            id,
+            attribute,
+            arguments,
+        } => {
             refs.push(Reference {
                 target: format!("-{}", id.name),
-                attribute: attribute.as_ref().map(|attribute| attribute.name.to_string()),
+                attribute: attribute
+                    .as_ref()
+                    .map(|attribute| attribute.name.to_string()),
                 owner: owner.into(),
                 line,
             });
@@ -201,8 +214,11 @@ pub fn scan_file(file: &str, source: &str) -> FileSymbols {
                     id: id.into(),
                     file: file.into(),
                     line,
-                    attributes: message.attributes.iter()
-                        .map(|attribute| attribute.id.name.to_string()).collect(),
+                    attributes: message
+                        .attributes
+                        .iter()
+                        .map(|attribute| attribute.id.name.to_string())
+                        .collect(),
                     has_value: message.value.is_some(),
                 });
                 if let Some(value) = &message.value {
@@ -219,8 +235,11 @@ pub fn scan_file(file: &str, source: &str) -> FileSymbols {
                     id: id.clone(),
                     file: file.into(),
                     line,
-                    attributes: term.attributes.iter()
-                        .map(|attribute| attribute.id.name.to_string()).collect(),
+                    attributes: term
+                        .attributes
+                        .iter()
+                        .map(|attribute| attribute.id.name.to_string())
+                        .collect(),
                     has_value: true,
                 });
                 walk_pattern(&term.value, &id, line, &mut references);
@@ -241,7 +260,12 @@ pub fn scan_file(file: &str, source: &str) -> FileSymbols {
 }
 
 impl LocaleSnapshot {
-    pub fn new(locale: &str, files: Vec<FileSymbols>, warnings: Vec<String>, complete: bool) -> Self {
+    pub fn new(
+        locale: &str,
+        files: Vec<FileSymbols>,
+        warnings: Vec<String>,
+        complete: bool,
+    ) -> Self {
         Self {
             locale: locale.into(),
             files,
@@ -291,9 +315,9 @@ impl LocaleSnapshot {
         for symbol in &active.definitions {
             if let Some(duplicates) = symbols.get(symbol.id.as_str()) {
                 if duplicates.len() > 1 {
-                    let original = duplicates.iter().find(|candidate|
+                    let original = duplicates.iter().find(|candidate| {
                         candidate.file != symbol.file || candidate.line != symbol.line
-                    );
+                    });
                     push_issue(LocaleIssue {
                         code: "FTL_DUPLICATE_KEY",
                         line: symbol.line,
@@ -383,7 +407,10 @@ mod tests {
     use super::*;
 
     fn fixture(files: &[(&str, &str)]) -> LocaleSnapshot {
-        let scanned = files.iter().map(|(path, source)| scan_file(path, source)).collect();
+        let scanned = files
+            .iter()
+            .map(|(path, source)| scan_file(path, source))
+            .collect();
         LocaleSnapshot::new("en-US", scanned, Vec::new(), true)
     }
 
@@ -395,7 +422,10 @@ mod tests {
         assert_eq!(locale_of(FIRST), Some("en-US"));
         assert_eq!(locale_of("Resources/Locale/ru-RU/a.ftl"), Some("ru-RU"));
         assert_eq!(locale_of("Resources/Locale/en-US"), None);
-        assert!(!belongs_to_locale("Resources/Locale/en-US-extra/one.ftl", "en-US"));
+        assert!(!belongs_to_locale(
+            "Resources/Locale/en-US-extra/one.ftl",
+            "en-US"
+        ));
     }
 
     #[test]
@@ -416,12 +446,18 @@ mod tests {
         assert_eq!(result.issue_count, 1);
         assert_eq!(result.issues[0].code, "FTL_REFERENCE_MISSING");
         let result = index.inspect(SECOND, "use = { old }\n");
-        assert!(result.issues.is_empty(), "Disk versions should remain cached until a save invalidates the index");
+        assert!(
+            result.issues.is_empty(),
+            "Disk versions should remain cached until a save invalidates the index"
+        );
     }
 
     #[test]
     fn detects_duplicate_keys_across_files_and_within_one_file() {
-        let index = fixture(&[(FIRST, "same = One\n"), (SECOND, "same = Two\nsame = Three\n")]);
+        let index = fixture(&[
+            (FIRST, "same = One\n"),
+            (SECOND, "same = Two\nsame = Three\n"),
+        ]);
         let report = index.inspect(SECOND, "same = Two\nsame = Three\n");
         assert_eq!(report.issue_count, 2);
         assert_eq!(report.issues[0].code, "FTL_DUPLICATE_KEY");
@@ -432,7 +468,10 @@ mod tests {
 
     #[test]
     fn catches_missing_references_and_missing_attributes_but_not_variables() {
-        let index = fixture(&[(FIRST, "target = Value\nattrs =\n    .name = Name\n"), (SECOND, "")]);
+        let index = fixture(&[
+            (FIRST, "target = Value\nattrs =\n    .name = Name\n"),
+            (SECOND, ""),
+        ]);
         let active = "new = { absent } { target.bad } { attrs } { $runtimeVar }\n";
         let report = index.inspect(SECOND, active);
         assert_eq!(report.issue_count, 3);
@@ -443,8 +482,12 @@ mod tests {
 
     #[test]
     fn incomplete_scans_never_claim_a_reference_is_missing() {
-        let index = LocaleSnapshot::new("en-US", vec![scan_file(FIRST, "foo = ok\n")],
-            vec!["Unreadable file".into()], false);
+        let index = LocaleSnapshot::new(
+            "en-US",
+            vec![scan_file(FIRST, "foo = ok\n")],
+            vec!["Unreadable file".into()],
+            false,
+        );
         let report = index.inspect(FIRST, "foo = { external }\n");
         assert!(!report.complete);
         assert_eq!(report.issue_count, 0);
