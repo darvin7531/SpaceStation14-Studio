@@ -33,6 +33,7 @@ export interface CSharpDefinition {
 export interface CSharpPage {
   total: number;
   files_scanned: number;
+  files_parsed: number;
   bytes_scanned: number;
   complete: boolean;
   warnings: string[];

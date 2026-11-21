@@ -7,7 +7,7 @@
 //! unverified until an explicit semantic pass is added.
 use std::fs::{self, File};
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::Serialize;
 use tree_sitter::{Node, Parser};
@@ -49,6 +49,7 @@ pub struct CSharpCatalog {
     warnings: Vec<String>,
     complete: bool,
     files_scanned: usize,
+    files_parsed: usize,
     bytes_scanned: u64,
 }
 
@@ -56,6 +57,7 @@ pub struct CSharpCatalog {
 pub struct CSharpPage {
     pub total: usize,
     pub files_scanned: usize,
+    pub files_parsed: usize,
     pub bytes_scanned: u64,
     pub complete: bool,
     pub warnings: Vec<String>,
@@ -78,7 +80,7 @@ fn named_children(node: Node<'_>) -> Vec<Node<'_>> {
     node.named_children(&mut cursor).collect()
 }
 
-fn first_child(node: Node<'_>, kind: &str) -> Option<Node<'_>> {
+fn first_child<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
     named_children(node)
         .into_iter()
         .find(|child| child.kind() == kind)
@@ -390,6 +392,7 @@ impl CSharpCatalog {
             warnings: Vec::new(),
             complete: true,
             files_scanned: 0,
+            files_parsed: 0,
             bytes_scanned: 0,
         };
         let mut pending = vec![root.to_path_buf()];
@@ -511,8 +514,18 @@ impl CSharpCatalog {
                 catalog.files_scanned += 1;
                 match std::str::from_utf8(&bytes) {
                     Ok(source) => {
+                        // Most C# files do not declare SS14 serialization
+                        // metadata. A cheap substring prefilter avoids building
+                        // a syntax tree for unrelated source code.
+                        if !source.contains("RegisterComponent")
+                            && !source.contains("Prototype")
+                        {
+                            continue;
+                        }
+                        catalog.files_parsed += 1;
                         let (definitions, uncertain) = parse_source(&mut parser, &relative, source);
-                        if uncertain && !definitions.is_empty() {
+                        if uncertain {
+                            catalog.complete = false;
                             warning(&mut catalog.warnings,
                                 format!("В {relative} есть ошибки разбора C#: часть метаданных может быть неполной."));
                         }
@@ -561,6 +574,7 @@ impl CSharpCatalog {
         CSharpPage {
             total,
             files_scanned: self.files_scanned,
+            files_parsed: self.files_parsed,
             bytes_scanned: self.bytes_scanned,
             complete: self.complete,
             warnings: self.warnings.clone(),
@@ -678,9 +692,12 @@ mod tests {
             "[RegisterComponent]\npublic class SkipComponent {}\n",
         )
         .unwrap();
+        fs::write(root.join("Content.Shared/Unrelated.cs"), "public class Unrelated {}\n")
+            .unwrap();
         let index = CSharpCatalog::scan(&root).unwrap();
         assert!(index.complete);
-        assert_eq!(index.files_scanned, 1);
+        assert_eq!(index.files_scanned, 2);
+        assert_eq!(index.files_parsed, 1);
         let page = index.page("", None, 0, 10);
         assert_eq!(page.total, 1);
         assert_eq!(page.items[0].name, "Example");

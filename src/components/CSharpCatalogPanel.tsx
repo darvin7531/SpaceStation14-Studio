@@ -57,6 +57,7 @@ export default function CSharpCatalogPanel({ projectKey, onClose }: Props) {
           <code>[Prototype]</code> и <code>[DataField]</code>. Данные исходников — только для чтения.</p>
         {results && <p>
           Просканировано файлов: <strong>{results.files_scanned}</strong> ·
+          разобрано AST: <strong>{results.files_parsed}</strong> ·
           байт: <strong>{results.bytes_scanned.toLocaleString('ru-RU')}</strong> ·
           объявлений найдено: <strong>{results.total}</strong>
           {!results.complete && <strong className="csharp-catalog-incomplete"> · Индекс неполный</strong>}
