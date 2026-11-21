@@ -32,6 +32,32 @@ export interface PrototypeDeclaration {
   source_count: number;
 }
 
+export interface PrototypeFieldLocator {
+  file: string;
+  kind: string;
+  id: string;
+  document_index: number;
+  item_index: number;
+  mode: PrototypeDeclaration['mode'];
+}
+
+export interface PrototypeFields {
+  name: string;
+  description: string;
+  parent: string;
+  abstract_prototype: boolean;
+}
+
+export interface FieldInspection {
+  fields: PrototypeFields;
+  notice: string;
+}
+
+export interface FieldPatch {
+  content: string;
+  changed: boolean;
+}
+
 export interface PrototypePage {
   total: number;
   items: PrototypeDeclaration[];
@@ -153,6 +179,12 @@ export const studio = {
   },
   searchPrototypes(query: string, kind: string, offset: number, limit = 100): Promise<PrototypePage> {
     return invoke('search_prototypes', { query, kind: kind || null, offset, limit });
+  },
+  inspectPrototypeFields(locator: PrototypeFieldLocator, source: string): Promise<FieldInspection> {
+    return invoke('inspect_prototype_fields', { locator, source });
+  },
+  patchPrototypeFields(locator: PrototypeFieldLocator, source: string, fields: PrototypeFields): Promise<FieldPatch> {
+    return invoke('patch_prototype_fields', { locator, source, fields });
   },
   prototypeRelations(kind: string, id: string): Promise<PrototypeRelations> {
     return invoke('prototype_relations', { kind, id });

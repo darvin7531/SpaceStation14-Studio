@@ -3,6 +3,7 @@ mod error;
 mod project;
 mod prototype_append;
 mod prototype_create;
+mod prototype_fields;
 mod prototype_graph;
 mod prototypes;
 mod resource_edit;
@@ -14,6 +15,7 @@ use error::{internal_lock, interrupted, StudioError};
 use project::{ProjectIndex, ProjectOverview, ResourceDocument, ResourcePage};
 use prototype_append::AppendPreview;
 use prototype_create::{PrototypeDraft, PrototypePreview};
+use prototype_fields::{FieldInspection, FieldLocator, FieldPatch, PrototypeFields};
 use prototype_graph::PrototypeRelations;
 use prototypes::{DiagnosticPage, PrototypePage};
 use resource_edit::SaveResult;
@@ -392,6 +394,33 @@ async fn append_prototype(
     })
 }
 
+#[tauri::command]
+async fn inspect_prototype_fields(
+    locator: FieldLocator,
+    source: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<FieldInspection, StudioError> {
+    let project = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || project.inspect_prototype_fields(&locator, &source))
+        .await
+        .map_err(interrupted)?
+}
+
+#[tauri::command]
+async fn patch_prototype_fields(
+    locator: FieldLocator,
+    source: String,
+    fields: PrototypeFields,
+    state: State<'_, WorkspaceState>,
+) -> Result<FieldPatch, StudioError> {
+    let project = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        project.patch_prototype_fields(&locator, &source, &fields)
+    })
+    .await
+    .map_err(interrupted)?
+}
+
 pub fn run() -> Result<(), tauri::Error> {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -409,6 +438,8 @@ pub fn run() -> Result<(), tauri::Error> {
             create_new_prototype,
             preview_append_prototype,
             append_prototype,
+            inspect_prototype_fields,
+            patch_prototype_fields,
             list_drafts,
             read_draft,
             persist_draft,

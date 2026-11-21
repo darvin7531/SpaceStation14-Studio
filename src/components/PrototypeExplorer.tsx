@@ -15,9 +15,10 @@ const PAGE_SIZE = 80;
 interface Props {
   workspaceKey: string;
   onOpen: (path: string, line: number) => void;
+  onEdit: (entry: PrototypeDeclaration) => void;
 }
 
-export default function PrototypeExplorer({ workspaceKey, onOpen }: Props) {
+export default function PrototypeExplorer({ workspaceKey, onOpen, onEdit }: Props) {
   const [section, setSection] = useState<'catalog' | 'diagnostics'>('catalog');
   const [inspected, setInspected] = useState<{ kind: string; id: string } | null>(null);
   const [query, setQuery] = useState('');
@@ -112,6 +113,11 @@ export default function PrototypeExplorer({ workspaceKey, onOpen }: Props) {
             </span>
             <span className="prototype-path">{entry.file.split('/').at(-1)}:{entry.line}</span>
           </button>
+          {entry.mode === 'normal' && <button type="button" className="prototype-relations-trigger"
+            title="Редактировать простые поля через форму"
+            onClick={() => onEdit(entry)}>
+            Поля
+          </button>}
           <button type="button" className="prototype-relations-trigger"
             aria-label={'Показать связи прототипа ' + entry.kind + ':' + entry.id}
             aria-pressed={inspected?.kind === entry.kind && inspected.id === entry.id}

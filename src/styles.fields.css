@@ -1,0 +1,24 @@
+/* Conservative prototype field editor: drafts only, never implicit disk writes. */
+.prototype-field-editor { flex:none; max-height:45vh; overflow:auto; padding:12px 17px; display:flex; flex-direction:column; gap:10px; background:#13263a; border-bottom:1px solid #476986; }
+.prototype-field-editor header { display:flex; gap:10px; align-items:flex-start; justify-content:space-between; }
+.prototype-field-editor header > div { display:flex; flex-direction:column; gap:4px; min-width:0; }
+.prototype-field-editor header strong { display:flex; gap:7px; align-items:center; font-size:13px; color:#e0efff; overflow-wrap:anywhere; }
+.prototype-field-editor header small { font-size:10px; color:#8daccc; overflow-wrap:anywhere; }
+.prototype-field-editor header button { border:0; background:transparent; color:#b3c9e0; }
+.prototype-field-editor form { display:flex; flex-direction:column; gap:11px; }
+.prototype-field-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.prototype-field-grid label { min-width:0; display:grid; gap:5px; color:#b5d0eb; font-size:11px; }
+.prototype-field-grid .prototype-field-wide { grid-column:1/-1; }
+.prototype-field-grid input:not([type=checkbox]), .prototype-field-grid textarea { box-sizing:border-box; padding:7px 9px; width:100%; min-width:0; border:1px solid #477099; border-radius:5px; background:#0b1624; color:#ebf4ff; font:12px/1.5 inherit; }
+.prototype-field-grid .prototype-field-abstract { grid-column:1/-1; display:flex; flex-direction:row; gap:8px; align-items:center; }
+.prototype-field-abstract input { accent-color:#71abeb; }
+.prototype-field-error { display:flex; gap:8px; padding:8px; color:#ffc1b5; border:1px solid #865160; background:#3b2533; border-radius:6px; font-size:11px; }
+.prototype-field-error span { overflow-wrap:anywhere; }
+.prototype-field-error code { opacity:.75; }
+.prototype-field-notice { display:flex; align-items:center; gap:6px; font-size:11px; color:#aac4e1; margin:0; }
+.prototype-field-actions { display:flex; align-items:center; flex-wrap:wrap; gap:9px; }
+.prototype-field-actions small { flex:1; min-width:180px; color:#a9bfd5; font-size:10px; line-height:1.5; }
+.prototype-field-actions button { display:flex; align-items:center; gap:6px; padding:7px 10px; border:1px solid #53799d; border-radius:5px; color:#d6eaff; background:#294761; font-size:11px; }
+.prototype-field-actions button[type=submit] { color:#eef8ff; background:#21608b; border-color:#5a9fce; }
+.prototype-field-actions button:disabled { opacity:.45; cursor:not-allowed; }
+@media(max-width:800px){.prototype-field-grid{grid-template-columns:1fr;}}

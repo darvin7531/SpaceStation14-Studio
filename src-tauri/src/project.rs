@@ -9,6 +9,7 @@ use serde::Serialize;
 use crate::error::{internal_lock, StudioError};
 use crate::prototype_append::{self, AppendPreview};
 use crate::prototype_create::{self, CreatedPrototype, PrototypeDraft, PrototypePreview};
+use crate::prototype_fields::{self, FieldInspection, FieldLocator, FieldPatch, PrototypeFields};
 use crate::prototypes::PrototypeCatalog;
 use crate::resource_edit::{self, SaveResult};
 
@@ -292,6 +293,40 @@ impl ProjectIndex {
             yaml: prepared.yaml,
             warning,
         })
+    }
+
+    /// Both operations only transform in-memory text: the user commits through
+    /// the existing conflict-aware YAML save flow.
+    pub fn inspect_prototype_fields(
+        &self,
+        locator: &FieldLocator,
+        source: &str,
+    ) -> Result<FieldInspection, StudioError> {
+        if !self.is_yaml_indexed(&locator.file) {
+            return Err(StudioError::new(
+                "FIELDS_NOT_INDEXED",
+                "Прототип находится вне проиндексированных YAML-файлов.",
+                "Переоткройте проект и выберите прототип в каталоге.",
+            ));
+        }
+        if self.prototypes()?.has_partial_declarations(&locator.file) {
+            return Err(StudioError::new(
+                "FIELDS_PARTIAL_UNSUPPORTED",
+                "Форма пока недоступна для файлов с Partial Prototypes.",
+                "Используйте текстовый редактор для tagged/configured partial.",
+            ));
+        }
+        prototype_fields::inspect(source, locator)
+    }
+
+    pub fn patch_prototype_fields(
+        &self,
+        locator: &FieldLocator,
+        source: &str,
+        requested: &PrototypeFields,
+    ) -> Result<FieldPatch, StudioError> {
+        self.inspect_prototype_fields(locator, source)?;
+        prototype_fields::patch(source, locator, requested)
     }
 
     /// Only indexed YAML resources may be edited. A mutex serializes saves

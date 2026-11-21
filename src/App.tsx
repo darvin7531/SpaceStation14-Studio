@@ -4,7 +4,7 @@ import {
   AlertCircle, AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight,
   FileCode2, FileText, FolderOpen, Image as ImageIcon, Search, X, RotateCcw, Save, FilePlus2,
 } from 'lucide-react';
-import { studio, type DraftList, type DraftSnapshot, type CreatedPrototype, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage } from './lib/api';
+import { studio, type DraftList, type DraftSnapshot, type CreatedPrototype, type PrototypeDeclaration, type PrototypeFieldLocator, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage } from './lib/api';
 import { normalizeStudioError, type StudioError } from './lib/errors';
 import { closeTab, openTab, type TabState } from './lib/tabs';
 import { dirtyDocumentPaths, reconcileSavedDraft } from './lib/draft-state';
@@ -12,6 +12,7 @@ import { DraftWriteQueue, journalKey } from './lib/draft-queue';
 import { reviewDecision } from './lib/review-guard';
 import MonacoPreview from './editor/MonacoPreview';
 import PrototypeExplorer from './components/PrototypeExplorer';
+import PrototypeFieldsPanel from './components/PrototypeFieldsPanel';
 import RecoveryPanel from './components/RecoveryPanel';
 import CreatePrototypeWizard, { type PrototypeDestinationMode } from './components/CreatePrototypeWizard';
 import ConflictReviewPanel from './components/ConflictReviewPanel';
@@ -59,6 +60,7 @@ export default function App() {
   const [overview, setOverview] = useState<ProjectOverview | null>(null);
   const [opening, setOpening] = useState(false);
   const [creatingPrototype, setCreatingPrototype] = useState(false);
+  const [fieldTarget, setFieldTarget] = useState<PrototypeFieldLocator | null>(null);
   const [picking, setPicking] = useState(false);
   const [explorerMode, setExplorerMode] = useState<'files' | 'prototypes'>('files');
   const [workspaceRevision, setWorkspaceRevision] = useState(0);
@@ -169,6 +171,7 @@ export default function App() {
 
   async function loadProject(requestedPath: string) {
     setCreatingPrototype(false);
+    setFieldTarget(null);
     comparisonVersion.current += 1;
     setComparison(null);
     cancelJournalTimers();
@@ -364,6 +367,7 @@ export default function App() {
   }
 
   function executeAction(action: PendingAction) {
+    setFieldTarget(null);
     closeComparison();
     setPendingAction(null);
     if (action.type === 'open') {
@@ -552,6 +556,7 @@ export default function App() {
 
   function openResource(item: ResourceEntry) {
     if (saving || transitioning || opening) return;
+    if (item.path !== fieldTarget?.file) setFieldTarget(null);
     if (selectedPathRef.current !== item.path) closeComparison();
     const outcome = openTab(tabState, item);
     if (!outcome.ok) {
@@ -573,8 +578,31 @@ export default function App() {
     openResource({ path: file, kind: 'yaml' });
   }
 
+  function editPrototypeFields(entry: PrototypeDeclaration) {
+    if (saving || opening || transitioning) return;
+    openPrototypeSource(entry.file, entry.line);
+    setFieldTarget({
+      file: entry.file, kind: entry.kind, id: entry.id,
+      document_index: entry.document_index, item_index: entry.item_index,
+      mode: entry.mode,
+    });
+  }
+
+  function applyPrototypeFields(original: string, changed: string): boolean {
+    const file = fieldTarget?.file;
+    if (!file || selectedPathRef.current !== file || saving || opening || transitioning) return false;
+    const live = draftsRef.current[file] ?? documents.current.get(file)?.content;
+    if (live !== original) return false;
+    const next = { ...draftsRef.current, [file]: changed };
+    draftsRef.current = next;
+    setDrafts(next);
+    setNotice('Форма изменила черновик YAML. Проверьте текст и нажмите Ctrl+S для сохранения.');
+    return true;
+  }
+
   function selectTab(path: string) {
     if (saving || transitioning || opening || tabState.active === path) return;
+    setFieldTarget(null);
     closeComparison();
     setTabState((state) => ({ ...state, active: path }));
     void focusResource(path);
@@ -590,6 +618,7 @@ export default function App() {
 
   function onPrototypeCreated(result: CreatedPrototype, mode: PrototypeDestinationMode) {
     setCreatingPrototype(false);
+    setFieldTarget(null);
     if (result.overview) {
       setOverview(result.overview);
       setWorkspaceRevision((old) => old + 1);
@@ -730,7 +759,7 @@ export default function App() {
           <button type="button" aria-label="Следующая страница" disabled={(page + 1) * PAGE_SIZE >= results.total} onClick={() => setPage((value) => value + 1)}><ChevronRight size={17}/></button>
         </div>
         </> : <PrototypeExplorer workspaceKey={overview.project_root + ':' + workspaceRevision}
-          onOpen={openPrototypeSource} />}
+          onOpen={openPrototypeSource} onEdit={editPrototypeFields} />}
       </aside>
       <section className="editor">
         {tabState.tabs.length > 0 && <div className="tab-strip" role="tablist" aria-label="Открытые файлы">
@@ -768,6 +797,11 @@ export default function App() {
               </span>
             </div>
           </div>
+          {fieldTarget && selected.kind === 'yaml' && selected.path === fieldTarget.file
+            && document?.path === selected.path && !reading && <PrototypeFieldsPanel
+              key={fieldTarget.file + ':' + fieldTarget.document_index + ':' + fieldTarget.item_index}
+              locator={fieldTarget} source={activeText} busy={saving || transitioning}
+              onApply={applyPrototypeFields} onClose={() => setFieldTarget(null)}/>}
           {comparison && comparison.path === selected.path && <ConflictReviewPanel
             file={comparison.path} disk={comparison.disk} draft={comparison.reviewedDraft}
             draftChanged={Boolean(reviewDirty)} busy={comparing}
@@ -776,7 +810,11 @@ export default function App() {
           {reading ? <div className="placeholder">Чтение ресурса…</div> :
             document ? <MonacoPreview key={document.path} resource={selected} document={document}
               value={activeText} editable={selected.kind === 'yaml' && !saving}
-              onChange={selected.kind === 'yaml' ? (value) => setDrafts((previous) => ({ ...previous, [selected.path]: value })) : undefined}
+              onChange={selected.kind === 'yaml' ? (value) => {
+                const next = { ...draftsRef.current, [selected.path]: value };
+                draftsRef.current = next;
+                setDrafts(next);
+              } : undefined}
               revealLine={jumpTarget?.path === selected.path ? jumpTarget.line : undefined}
               jumpToken={jumpTarget?.path === selected.path ? jumpTarget.token : 0}/> :
               <div className="placeholder">Не удалось открыть ресурс. Объяснение ошибки показано выше.</div>}
