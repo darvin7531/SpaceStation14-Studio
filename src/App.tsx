@@ -651,7 +651,7 @@ export default function App() {
       setNotice([
         selected.kind === 'yaml'
           ? 'YAML сохранён. Индекс прототипов будет перестроен при следующем обращении.'
-          : 'FTL сохранён без изменения форматирования. Проверка синтаксиса Fluent пока не реализована.',
+          : 'FTL сохранён без изменения форматирования. Диагностика доступна в панели Fluent.',
         result.durability_warning,
         cleanupWarning,
       ].filter(Boolean).join(' '));
@@ -1066,9 +1066,14 @@ export default function App() {
           </div>
           {selected.kind === 'ftl' && document?.path === selected.path && !reading
             && <FluentDiagnosticsPanel key={selected.path} path={selected.path} source={activeText}
+              enabled={editorSettings.liveValidation} delayMs={editorSettings.validationDelay}
               onRevealLine={(line) => setJumpTarget({
                 path: selected.path, line, token: ++jumpCounter.current,
-              })}/>}
+              })}
+              onRevealSource={(file, line) => {
+                setJumpTarget({ path: file, line, token: ++jumpCounter.current });
+                openResource({ path: file, kind: 'ftl' });
+              }}/>} 
           {fieldTarget && selected.kind === 'yaml' && selected.path === fieldTarget.file
             && document?.path === selected.path && !reading && (prototypePanel === 'fields'
               ? <PrototypeFieldsPanel
