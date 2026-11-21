@@ -5,6 +5,7 @@ mod fluent_create;
 mod fluent_diagnostics;
 mod fluent_locale;
 mod project;
+mod resource_drift;
 mod prototype_append;
 mod prototype_components;
 mod prototype_create;
@@ -38,6 +39,7 @@ use prototype_fields::{FieldInspection, FieldLocator, FieldPatch, PrototypeField
 use prototype_graph::PrototypeRelations;
 use prototypes::{DiagnosticPage, PrototypePage};
 use resource_edit::{SaveResult, YamlSyntaxReport};
+use resource_drift::{OpenRevision, ResourceDriftReport};
 use rsi_create::{RsiCreationPreview, RsiDraft};
 use rsi_credits::RsiCreditsUpdate;
 use rsi_delete::{DeletedRsiState, RsiDeleteRequest};
@@ -138,6 +140,18 @@ async fn search_resources(
     })
     .await
     .map_err(interrupted)
+}
+
+/// Check open resource revisions without accepting external changes.
+#[tauri::command]
+async fn probe_open_revisions(
+    opened: Vec<OpenRevision>,
+    state: State<'_, WorkspaceState>,
+) -> Result<ResourceDriftReport, StudioError> {
+    let project = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || resource_drift::probe(&project, &opened))
+        .await
+        .map_err(interrupted)?
 }
 
 /// Search inside indexed YAML/FTL/RSI sources off the UI thread.
@@ -838,6 +852,7 @@ pub fn run() -> Result<(), tauri::Error> {
             open_project,
             refresh_project,
             search_resources,
+            probe_open_revisions,
             search_resource_content,
             search_csharp_definitions,
             read_csharp_source,
