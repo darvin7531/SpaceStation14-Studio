@@ -735,8 +735,8 @@ mod tests {
 
     #[test]
     fn catalog_keeps_base_and_partial_separate_and_reports_bad_yaml() {
-        let root = std::env::temp_dir()
-            .join(format!("ss14-prototype-integration-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("ss14-prototype-integration-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let prototypes = root.join("Resources/Prototypes");
         let partials = prototypes.join("_Local/Partials");
@@ -746,19 +746,23 @@ mod tests {
         fs::write(
             prototypes.join("base.yml"),
             "- type: entity\n  id: Example\n  parent: BaseEntity\n",
-        ).unwrap();
+        )
+        .unwrap();
         fs::write(
             partials.join("changes.yml"),
             "- type: entity\n  id: Example\n  name: Modified\n",
-        ).unwrap();
+        )
+        .unwrap();
         fs::write(
             prototypes.join("broken.yml"),
             "- type: entity\n  id: [unfinished\n",
-        ).unwrap();
+        )
+        .unwrap();
         fs::write(
             root.join("Resources/PartialPrototypes/partialPrototypes.yml"),
             "- /Prototypes/_Local/Partials\n",
-        ).unwrap();
+        )
+        .unwrap();
 
         let workspace = crate::project::ProjectIndex::open(root.to_str().unwrap()).unwrap();
         let catalog = workspace.prototypes();
@@ -766,11 +770,29 @@ mod tests {
 
         assert_eq!(page.total, 2);
         assert!(page.items.iter().all(|entry| entry.source_count == 2));
-        assert_eq!(page.items.iter().filter(|entry| entry.mode == "normal").count(), 1);
-        assert_eq!(page.items.iter().filter(|entry| entry.mode == "configured_partial").count(), 1);
-        assert!(catalog.diagnostics(0, 50).items.iter()
+        assert_eq!(
+            page.items
+                .iter()
+                .filter(|entry| entry.mode == "normal")
+                .count(),
+            1
+        );
+        assert_eq!(
+            page.items
+                .iter()
+                .filter(|entry| entry.mode == "configured_partial")
+                .count(),
+            1
+        );
+        assert!(catalog
+            .diagnostics(0, 50)
+            .items
+            .iter()
             .any(|item| item.code == "YAML_PARSE_ERROR" && item.file.ends_with("broken.yml")));
-        assert!(!catalog.diagnostics(0, 50).items.iter()
+        assert!(!catalog
+            .diagnostics(0, 50)
+            .items
+            .iter()
             .any(|item| item.code == "MULTIPLE_BASE_DECLARATIONS"));
 
         let _ = fs::remove_dir_all(root);
