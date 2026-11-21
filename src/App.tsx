@@ -2,9 +2,9 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { open as openDirectoryDialog } from '@tauri-apps/plugin-dialog';
 import {
   AlertCircle, AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight,
-  FileCode2, FileText, FolderOpen, Image as ImageIcon, Search, X, RotateCcw, Save,
+  FileCode2, FileText, FolderOpen, Image as ImageIcon, Search, X, RotateCcw, Save, FilePlus2,
 } from 'lucide-react';
-import { studio, type DraftList, type DraftSnapshot, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage } from './lib/api';
+import { studio, type DraftList, type DraftSnapshot, type CreatedPrototype, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage } from './lib/api';
 import { normalizeStudioError, type StudioError } from './lib/errors';
 import { closeTab, openTab, type TabState } from './lib/tabs';
 import { dirtyDocumentPaths, reconcileSavedDraft } from './lib/draft-state';
@@ -13,6 +13,7 @@ import { reviewDecision } from './lib/review-guard';
 import MonacoPreview from './editor/MonacoPreview';
 import PrototypeExplorer from './components/PrototypeExplorer';
 import RecoveryPanel from './components/RecoveryPanel';
+import CreatePrototypeWizard from './components/CreatePrototypeWizard';
 import ConflictReviewPanel from './components/ConflictReviewPanel';
 
 const PAGE_SIZE = 100;
@@ -57,6 +58,7 @@ export default function App() {
   });
   const [overview, setOverview] = useState<ProjectOverview | null>(null);
   const [opening, setOpening] = useState(false);
+  const [creatingPrototype, setCreatingPrototype] = useState(false);
   const [picking, setPicking] = useState(false);
   const [explorerMode, setExplorerMode] = useState<'files' | 'prototypes'>('files');
   const [workspaceRevision, setWorkspaceRevision] = useState(0);
@@ -166,6 +168,7 @@ export default function App() {
   }, [overview, drafts, draftBases, document, saving, transitioning, opening]);
 
   async function loadProject(requestedPath: string) {
+    setCreatingPrototype(false);
     comparisonVersion.current += 1;
     setComparison(null);
     cancelJournalTimers();
@@ -585,7 +588,23 @@ export default function App() {
     if (tabState.active) requestAction({ type: 'reload', path: tabState.active });
   }
 
+  function onPrototypeCreated(result: CreatedPrototype) {
+    setCreatingPrototype(false);
+    if (result.overview) {
+      setOverview(result.overview);
+      setWorkspaceRevision((old) => old + 1);
+      setPage(0);
+      setExplorerMode('prototypes');
+      openResource({ path: result.file, kind: 'yaml' });
+    }
+    setNotice(result.warning
+      ? 'Файл создан: ' + result.file + '. ' + result.warning
+      : 'Прототип ' + result.kind + ':' + result.id + ' создан: ' + result.file);
+  }
+
   return <div className="app">
+    {creatingPrototype && overview && <CreatePrototypeWizard
+      onClose={() => setCreatingPrototype(false)} onCreated={onPrototypeCreated}/>}
     <header className="titlebar">
       <div className="brand"><span className="logo">S</span><div><strong>SS14 Studio</strong><small>RUST REWORK</small></div></div>
       <span className="version">0.1.5 alpha · Rust + Tauri</span>
@@ -606,6 +625,10 @@ export default function App() {
         <span><b>{overview.prototype_files}</b> YAML-файлов</span>
         <span><b>{overview.rsi_directories}</b> RSI</span>
         <span><b>{overview.locale_files}</b> FTL</span>
+        <button type="button" className="create-proto-open" disabled={opening || saving || transitioning}
+          onClick={() => setCreatingPrototype(true)}>
+          <FilePlus2 size={15}/> Создать прототип
+        </button>
       </div>}
     </section>
 

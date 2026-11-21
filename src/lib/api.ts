@@ -95,6 +95,38 @@ export interface DraftWriteResult {
   durability_warning: string | null;
 }
 
+export interface NewPrototypeDraft {
+  kind: string;
+  id: string;
+  parent: string;
+  name: string;
+  description: string;
+  abstract_prototype: boolean;
+  sprite: string;
+  sprite_state: string;
+  include_item: boolean;
+  include_physics: boolean;
+  include_appearance: boolean;
+  file: string;
+}
+
+export interface NewPrototypePreview {
+  file: string;
+  kind: string;
+  id: string;
+  yaml: string;
+  warnings: string[];
+}
+
+export interface CreatedPrototype {
+  file: string;
+  kind: string;
+  id: string;
+  yaml: string;
+  warning: string | null;
+  overview: ProjectOverview | null;
+}
+
 export interface SaveResult {
   document: ResourceDocument;
   durability_warning?: string;
@@ -138,6 +170,12 @@ export const studio = {
   },
   deleteDraft(path: string): Promise<void> {
     return invoke('delete_draft', { path });
+  },
+  previewNewPrototype(draft: NewPrototypeDraft): Promise<NewPrototypePreview> {
+    return invoke('preview_new_prototype', { draft });
+  },
+  createNewPrototype(draft: NewPrototypeDraft): Promise<CreatedPrototype> {
+    return invoke('create_new_prototype', { draft });
   },
   readResource(path: string): Promise<ResourceDocument> {
     return invoke('read_resource', { path });

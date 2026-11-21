@@ -75,6 +75,10 @@ pub struct PrototypeCatalog {
 }
 
 impl PrototypeCatalog {
+    pub fn has_identity(&self, kind: &str, id: &str) -> bool {
+        self.by_identity.contains_key(&(kind.to_owned(), id.to_owned()))
+    }
+
     /// Loads on first prototype query (from a blocking task), not on workspace open.
     pub fn build(root: &Path, resources: &[ResourceEntry]) -> Self {
         let mut catalog = Self::default();

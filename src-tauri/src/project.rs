@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use serde::Serialize;
 
 use crate::error::{internal_lock, StudioError};
+use crate::prototype_create::{self, CreatedPrototype, PrototypeDraft, PrototypePreview};
 use crate::prototypes::PrototypeCatalog;
 use crate::resource_edit::{self, SaveResult};
 
@@ -205,6 +206,32 @@ impl ProjectIndex {
         Ok(cache
             .get_or_insert_with(|| Arc::new(PrototypeCatalog::build(&self.root, &self.resources)))
             .clone())
+    }
+
+    pub fn preview_new_prototype(
+        &self,
+        draft: &PrototypeDraft,
+    ) -> Result<PrototypePreview, StudioError> {
+        let preview = prototype_create::preview(draft)?;
+        if self.prototypes()?.has_identity(&preview.kind, &preview.id) {
+            return Err(StudioError::new(
+                "PROTOTYPE_ID_EXISTS",
+                "Прототип с таким сочетанием типа и ID уже объявлен в проекте.",
+                "Измените ID либо откройте существующее объявление из каталога.",
+            ));
+        }
+        Ok(preview)
+    }
+
+    /// Create a new, exclusive YAML file. The app command handles refreshing
+    /// the immutable resource index after this succeeds.
+    pub fn create_new_prototype(
+        &self,
+        draft: &PrototypeDraft,
+    ) -> Result<CreatedPrototype, StudioError> {
+        let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;
+        self.preview_new_prototype(draft)?;
+        prototype_create::create(&self.root, draft)
     }
 
     /// Only indexed YAML resources may be edited. A mutex serializes saves
@@ -666,6 +693,37 @@ mod tests {
         let index = ProjectIndex::open(fx.root_str()).unwrap();
         let err = index.read_resource("secret.txt").unwrap_err();
         assert_eq!(err.code, "RESOURCE_NOT_INDEXED");
+    }
+
+    #[test]
+    fn creating_prototype_can_be_found_in_fresh_index() {
+        let fx = Fixture::new();
+        let original = ProjectIndex::open(fx.root_str()).unwrap();
+        let draft = crate::prototype_create::PrototypeDraft {
+            kind: "entity".into(),
+            id: "GeneratedEntity".into(),
+            parent: "".into(),
+            name: "Generated".into(),
+            description: "".into(),
+            abstract_prototype: false,
+            sprite: "".into(),
+            sprite_state: "".into(),
+            include_item: false,
+            include_physics: false,
+            include_appearance: false,
+            file: "Resources/Prototypes/_PrototypeStudio/GeneratedEntity.yml".into(),
+        };
+        let result = original.create_new_prototype(&draft).unwrap();
+        assert_eq!(result.id, "GeneratedEntity");
+        assert_eq!(original.search("GeneratedEntity", Some("yaml"), 0, 20).total, 0);
+        let fresh = ProjectIndex::open(fx.root_str()).unwrap();
+        assert!(fresh.is_yaml_indexed(&result.file));
+        assert_eq!(fresh.prototypes().unwrap().search("GeneratedEntity", None, 0, 20).total, 1);
+        assert!(fresh.read_resource(&result.file).unwrap().content.contains("GeneratedEntity"));
+        assert_eq!(
+            fresh.create_new_prototype(&draft).unwrap_err().code,
+            "PROTOTYPE_ID_EXISTS"
+        );
     }
 
     #[test]

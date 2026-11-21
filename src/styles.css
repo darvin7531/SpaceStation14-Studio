@@ -106,3 +106,8 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .recovery-conflict-notice span { flex:1; }
 .recovery-conflict-notice button { padding:6px 9px; border:1px solid #b8854e; border-radius:5px; color:#fff0cc; background:#68432b; }
 
+
+/* Prototype wizard launcher */
+.project-counts .create-proto-open { display:flex; align-items:center; gap:6px; padding:7px 10px; border:1px solid #4774a2; border-radius:6px; background:#244f7c; color:#edf6ff; font-size:12px; white-space:nowrap; }
+.project-counts .create-proto-open:hover:not(:disabled) { background:#366b9e; }
+.project-counts .create-proto-open:disabled { opacity:.55; cursor:not-allowed; }

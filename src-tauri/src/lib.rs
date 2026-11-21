@@ -1,6 +1,7 @@
 mod draft_journal;
 mod error;
 mod project;
+mod prototype_create;
 mod prototype_graph;
 mod prototypes;
 mod resource_edit;
@@ -10,7 +11,9 @@ use std::sync::{Arc, Mutex};
 use draft_journal::{DraftJournal, DraftList, DraftSnapshot, DraftSummary, DraftWriteResult};
 use error::{internal_lock, interrupted, StudioError};
 use project::{ProjectIndex, ProjectOverview, ResourceDocument, ResourcePage};
+use prototype_create::{PrototypeDraft, PrototypePreview};
 use prototype_graph::PrototypeRelations;
+use serde::Serialize;
 use prototypes::{DiagnosticPage, PrototypePage};
 use resource_edit::SaveResult;
 use tauri::{Manager, State};
@@ -265,6 +268,74 @@ async fn delete_draft(
     .map_err(interrupted)?
 }
 
+#[derive(Debug, Serialize)]
+struct CreatePrototypeResult {
+    file: String,
+    kind: String,
+    id: String,
+    yaml: String,
+    warning: Option<String>,
+    overview: Option<ProjectOverview>,
+}
+
+#[tauri::command]
+async fn preview_new_prototype(
+    draft: PrototypeDraft,
+    state: State<'_, WorkspaceState>,
+) -> Result<PrototypePreview, StudioError> {
+    let project = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || project.preview_new_prototype(&draft))
+        .await
+        .map_err(interrupted)?
+}
+
+/// Creation writes only a brand-new file. The existing workspace state is
+/// atomically swapped with a rescan, without clearing frontend editor drafts.
+#[tauri::command]
+async fn create_new_prototype(
+    draft: PrototypeDraft,
+    state: State<'_, WorkspaceState>,
+) -> Result<CreatePrototypeResult, StudioError> {
+    let original = current_project(&state)?;
+    let project = original.clone();
+    let (created, refreshed) = tauri::async_runtime::spawn_blocking(move || {
+        let created = project.create_new_prototype(&draft)?;
+        let refreshed = ProjectIndex::open(&project.overview().project_root);
+        Ok::<_, StudioError>((created, refreshed))
+    })
+    .await
+    .map_err(interrupted)??;
+
+    let mut warning = created.warning.clone();
+    let mut overview = None;
+    match refreshed {
+        Ok(refreshed) => {
+            let mut active = state.0.lock().map_err(|_| internal_lock())?;
+            if active.as_ref().is_some_and(|existing| Arc::ptr_eq(existing, &original)) {
+                overview = Some(refreshed.overview().clone());
+                *active = Some(Arc::new(refreshed));
+            } else {
+                warning = Some("Новый файл записан, но активный проект уже изменился. Вернитесь к исходному проекту для обновления каталога.".into());
+            }
+        }
+        Err(error) => {
+            warning = Some(format!(
+                "YAML создан, но обновить каталог не удалось: {} [{}]. Переоткройте проект.",
+                error.message, error.code
+            ));
+        }
+    }
+
+    Ok(CreatePrototypeResult {
+        file: created.file,
+        kind: created.kind,
+        id: created.id,
+        yaml: created.yaml,
+        warning,
+        overview,
+    })
+}
+
 pub fn run() -> Result<(), tauri::Error> {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -278,6 +349,8 @@ pub fn run() -> Result<(), tauri::Error> {
             list_prototype_diagnostics,
             read_resource,
             save_yaml_resource,
+            preview_new_prototype,
+            create_new_prototype,
             list_drafts,
             read_draft,
             persist_draft,
