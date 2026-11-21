@@ -13,9 +13,9 @@ use error::{internal_lock, interrupted, StudioError};
 use project::{ProjectIndex, ProjectOverview, ResourceDocument, ResourcePage};
 use prototype_create::{PrototypeDraft, PrototypePreview};
 use prototype_graph::PrototypeRelations;
-use serde::Serialize;
 use prototypes::{DiagnosticPage, PrototypePage};
 use resource_edit::SaveResult;
+use serde::Serialize;
 use tauri::{Manager, State};
 
 #[derive(Default)]
@@ -311,7 +311,10 @@ async fn create_new_prototype(
     match refreshed {
         Ok(refreshed) => {
             let mut active = state.0.lock().map_err(|_| internal_lock())?;
-            if active.as_ref().is_some_and(|existing| Arc::ptr_eq(existing, &original)) {
+            if active
+                .as_ref()
+                .is_some_and(|existing| Arc::ptr_eq(existing, &original))
+            {
                 overview = Some(refreshed.overview().clone());
                 *active = Some(Arc::new(refreshed));
             } else {

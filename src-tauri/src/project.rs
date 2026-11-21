@@ -715,11 +715,27 @@ mod tests {
         };
         let result = original.create_new_prototype(&draft).unwrap();
         assert_eq!(result.id, "GeneratedEntity");
-        assert_eq!(original.search("GeneratedEntity", Some("yaml"), 0, 20).total, 0);
+        assert_eq!(
+            original
+                .search("GeneratedEntity", Some("yaml"), 0, 20)
+                .total,
+            0
+        );
         let fresh = ProjectIndex::open(fx.root_str()).unwrap();
         assert!(fresh.is_yaml_indexed(&result.file));
-        assert_eq!(fresh.prototypes().unwrap().search("GeneratedEntity", None, 0, 20).total, 1);
-        assert!(fresh.read_resource(&result.file).unwrap().content.contains("GeneratedEntity"));
+        assert_eq!(
+            fresh
+                .prototypes()
+                .unwrap()
+                .search("GeneratedEntity", None, 0, 20)
+                .total,
+            1
+        );
+        assert!(fresh
+            .read_resource(&result.file)
+            .unwrap()
+            .content
+            .contains("GeneratedEntity"));
         assert_eq!(
             fresh.create_new_prototype(&draft).unwrap_err().code,
             "PROTOTYPE_ID_EXISTS"
