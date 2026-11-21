@@ -27,7 +27,10 @@ use draft_journal::{DraftJournal, DraftList, DraftSnapshot, DraftSummary, DraftW
 use error::{internal_lock, interrupted, StudioError};
 use fluent_create::{FluentDraft, FluentPreview};
 use fluent_locale::FluentInspection;
-use project::{ContentSearchResults, ProjectIndex, ProjectOverview, ProjectRefresh, ResourceDocument, ResourcePage};
+use project::{
+    ContentSearchResults, ProjectIndex, ProjectOverview, ProjectRefresh, ResourceDocument,
+    ResourcePage,
+};
 use prototype_append::AppendPreview;
 use prototype_components::{ComponentInspection, ComponentOperation};
 use prototype_create::{PrototypeDraft, PrototypePreview};
