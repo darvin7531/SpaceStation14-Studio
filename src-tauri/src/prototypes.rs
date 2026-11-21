@@ -458,6 +458,15 @@ impl DeclarationCollector {
     }
 
     fn finalize(&mut self, draft: Draft) {
+        if draft.id_tag.is_some() {
+            // A tagged ID may represent multiple generated prototypes or a non-scalar value.
+            self.note(
+                "PROTOTYPE_DYNAMIC_ID",
+                draft.line,
+                "ID создаётся YAML-тегом динамически. Индексировать как один обычный прототип нельзя.",
+            );
+            return;
+        }
         let (Some(kind), Some(id)) = (draft.kind, draft.id) else {
             self.note(
                 "PROTOTYPE_IDENTITY_MISSING",
@@ -472,12 +481,6 @@ impl DeclarationCollector {
                 draft.line,
                 "Пропущено объявление с пустыми type или id.",
             );
-            return;
-        }
-        if draft.id_tag.is_some() {
-            // e.g. !type:CreateVariants is a dynamic identity, not a single prototype.
-            self.note("PROTOTYPE_DYNAMIC_ID", draft.line,
-                "ID создаётся YAML-тегом динамически. Индексировать как один обычный прототип нельзя.");
             return;
         }
         let mode = if draft.type_tag.as_deref() == Some("PartialOnly") {
