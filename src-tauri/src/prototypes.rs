@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, Path};
 
 use serde::Serialize;
 use yaml_rust2::parser::{Event, MarkedEventReceiver, Parser, Tag};
@@ -100,13 +100,21 @@ impl PrototypeCatalog {
             let resolved = match fs::canonicalize(&candidate) {
                 Ok(resolved) if resolved.starts_with(root) => resolved,
                 Ok(_) => {
-                    catalog.issue("SOURCE_OUTSIDE_PROJECT", path, 0,
-                        "YAML-файл оказался за пределами выбранного проекта.");
+                    catalog.issue(
+                        "SOURCE_OUTSIDE_PROJECT",
+                        path,
+                        0,
+                        "YAML-файл оказался за пределами выбранного проекта.",
+                    );
                     continue;
                 }
                 Err(error) => {
-                    catalog.issue("SOURCE_NOT_READABLE", path, 0,
-                        format!("YAML-файл недоступен: {error}"));
+                    catalog.issue(
+                        "SOURCE_NOT_READABLE",
+                        path,
+                        0,
+                        format!("YAML-файл недоступен: {error}"),
+                    );
                     continue;
                 }
             };
@@ -121,8 +129,12 @@ impl PrototypeCatalog {
             let content = match String::from_utf8(bytes) {
                 Ok(content) => content,
                 Err(error) => {
-                    catalog.issue("SOURCE_ENCODING", path, 0,
-                        format!("Невозможно разобрать YAML как UTF-8: {error}"));
+                    catalog.issue(
+                        "SOURCE_ENCODING",
+                        path,
+                        0,
+                        format!("Невозможно разобрать YAML как UTF-8: {error}"),
+                    );
                     continue;
                 }
             };
@@ -142,26 +154,43 @@ impl PrototypeCatalog {
         }
 
         catalog.declarations.sort_unstable_by(|a, b| {
-            (&a.kind, &a.id, &a.file, a.line, a.document_index, a.item_index)
-                .cmp(&(&b.kind, &b.id, &b.file, b.line, b.document_index, b.item_index))
+            (
+                &a.kind,
+                &a.id,
+                &a.file,
+                a.line,
+                a.document_index,
+                a.item_index,
+            )
+                .cmp(&(
+                    &b.kind,
+                    &b.id,
+                    &b.file,
+                    b.line,
+                    b.document_index,
+                    b.item_index,
+                ))
         });
         for (index, item) in catalog.declarations.iter().enumerate() {
-            catalog.by_identity
+            catalog
+                .by_identity
                 .entry((item.kind.clone(), item.id.clone()))
                 .or_default()
                 .push(index);
-            catalog.search_keys.push(
-                format!("{} {} {}", item.kind, item.id, item.file).to_lowercase()
-            );
+            catalog
+                .search_keys
+                .push(format!("{} {} {}", item.kind, item.id, item.file).to_lowercase());
         }
         for item in &mut catalog.declarations {
-            item.source_count = catalog.by_identity
+            item.source_count = catalog
+                .by_identity
                 .get(&(item.kind.clone(), item.id.clone()))
                 .map_or(1, Vec::len);
         }
 
         for ((kind, id), matches) in &catalog.by_identity {
-            let normal_count = matches.iter()
+            let normal_count = matches
+                .iter()
                 .filter(|&&index| catalog.declarations[index].mode == "normal")
                 .count();
             if normal_count > 1 {
@@ -176,11 +205,19 @@ impl PrototypeCatalog {
                 });
             }
         }
-        catalog.diagnostics.sort_unstable_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
+        catalog
+            .diagnostics
+            .sort_unstable_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
         catalog
     }
 
-    pub fn search(&self, query: &str, kind: Option<&str>, offset: usize, limit: usize) -> PrototypePage {
+    pub fn search(
+        &self,
+        query: &str,
+        kind: Option<&str>,
+        offset: usize,
+        limit: usize,
+    ) -> PrototypePage {
         let query = query.trim().to_lowercase();
         let kind = kind.map(str::trim).filter(|value| !value.is_empty());
         let mut total = 0;
@@ -188,7 +225,8 @@ impl PrototypeCatalog {
         let page_limit = limit.clamp(1, MAX_PAGE);
         for (index, declaration) in self.declarations.iter().enumerate() {
             if kind.is_some_and(|value| !declaration.kind.eq_ignore_ascii_case(value))
-                || (!query.is_empty() && !self.search_keys[index].contains(&query)) {
+                || (!query.is_empty() && !self.search_keys[index].contains(&query))
+            {
                 continue;
             }
             if total >= offset && items.len() < page_limit {
@@ -196,14 +234,24 @@ impl PrototypeCatalog {
             }
             total += 1;
         }
-        PrototypePage { total, items, diagnostic_count: self.diagnostics.len() }
+        PrototypePage {
+            total,
+            items,
+            diagnostic_count: self.diagnostics.len(),
+        }
     }
 
     pub fn diagnostics(&self, offset: usize, limit: usize) -> DiagnosticPage {
         let max = limit.clamp(1, MAX_PAGE);
         DiagnosticPage {
             total: self.diagnostics.len(),
-            items: self.diagnostics.iter().skip(offset).take(max).cloned().collect(),
+            items: self
+                .diagnostics
+                .iter()
+                .skip(offset)
+                .take(max)
+                .cloned()
+                .collect(),
         }
     }
 
@@ -221,7 +269,9 @@ fn read_bounded(path: &Path) -> Result<Vec<u8>, String> {
     let mut file = fs::File::open(path).map_err(|error| error.to_string())?;
     let size = file.metadata().map_err(|error| error.to_string())?.len();
     if size > MAX_YAML_BYTES {
-        return Err(format!("Файл превышает лимит индексатора: {size} байт (максимум {MAX_YAML_BYTES})."));
+        return Err(format!(
+            "Файл превышает лимит индексатора: {size} байт (максимум {MAX_YAML_BYTES})."
+        ));
     }
     let mut bytes = Vec::new();
     file.take(MAX_YAML_BYTES + 1)
@@ -244,55 +294,79 @@ fn configured_partials(root: &Path, issues: &mut Vec<PrototypeDiagnostic>) -> Ve
     {
         Ok(content) => content,
         Err(message) => {
-            issues.push(PrototypeDiagnostic { code: "PARTIAL_CONFIG_UNREADABLE",
-                file: config_rel.into(), line: 0, message });
+            issues.push(PrototypeDiagnostic {
+                code: "PARTIAL_CONFIG_UNREADABLE",
+                file: config_rel.into(),
+                line: 0,
+                message,
+            });
             return Vec::new();
         }
     };
     let parsed = match YamlLoader::load_from_str(&content) {
         Ok(parsed) => parsed,
         Err(error) => {
-            issues.push(PrototypeDiagnostic { code: "PARTIAL_CONFIG_INVALID",
-                file: config_rel.into(), line: 0, message: error.to_string() });
+            issues.push(PrototypeDiagnostic {
+                code: "PARTIAL_CONFIG_INVALID",
+                file: config_rel.into(),
+                line: 0,
+                message: error.to_string(),
+            });
             return Vec::new();
         }
     };
     let mut scopes = Vec::new();
     for document in parsed {
         let Some(paths) = document.as_vec() else {
-            issues.push(PrototypeDiagnostic { code: "PARTIAL_CONFIG_INVALID",
-                file: config_rel.into(), line: 0,
-                message: "Ожидается YAML-список путей к partial-каталогам или файлам.".into() });
+            issues.push(PrototypeDiagnostic {
+                code: "PARTIAL_CONFIG_INVALID",
+                file: config_rel.into(),
+                line: 0,
+                message: "Ожидается YAML-список путей к partial-каталогам или файлам.".into(),
+            });
             continue;
         };
         for item in paths {
             let order = scopes.len();
             let Yaml::String(raw) = item else {
-                issues.push(PrototypeDiagnostic { code: "PARTIAL_CONFIG_PATH_INVALID",
-                    file: config_rel.into(), line: 0,
-                    message: "Путь partial-ресурса должен быть строкой.".into() });
+                issues.push(PrototypeDiagnostic {
+                    code: "PARTIAL_CONFIG_PATH_INVALID",
+                    file: config_rel.into(),
+                    line: 0,
+                    message: "Путь partial-ресурса должен быть строкой.".into(),
+                });
                 continue;
             };
             let trimmed = raw.trim().replace('\\', "/");
             let rel = trimmed.trim_start_matches('/');
-            let path = if rel.starts_with("Resources/") { rel.to_string() }
-                else { format!("Resources/{rel}") };
+            let path = if rel.starts_with("Resources/") {
+                rel.to_string()
+            } else {
+                format!("Resources/{rel}")
+            };
 
             let absolute = Path::new(&path);
             if !path.starts_with("Resources/Prototypes/")
-                || absolute.components().any(|component|
-                    !matches!(component, Component::Normal(_)))
+                || absolute
+                    .components()
+                    .any(|component| !matches!(component, Component::Normal(_)))
             {
-                issues.push(PrototypeDiagnostic { code: "PARTIAL_CONFIG_PATH_INVALID",
-                    file: config_rel.into(), line: 0,
-                    message: format!("Недопустимый путь partial-ресурса: {raw}") });
+                issues.push(PrototypeDiagnostic {
+                    code: "PARTIAL_CONFIG_PATH_INVALID",
+                    file: config_rel.into(),
+                    line: 0,
+                    message: format!("Недопустимый путь partial-ресурса: {raw}"),
+                });
                 continue;
             }
             let full = root.join(&path);
             if !full.exists() {
-                issues.push(PrototypeDiagnostic { code: "PARTIAL_CONFIG_MISSING",
-                    file: config_rel.into(), line: 0,
-                    message: format!("Указанный partial-путь не существует: {path}") });
+                issues.push(PrototypeDiagnostic {
+                    code: "PARTIAL_CONFIG_MISSING",
+                    file: config_rel.into(),
+                    line: 0,
+                    message: format!("Указанный partial-путь не существует: {path}"),
+                });
             }
             scopes.push(PartialScope {
                 is_file: full.is_file() || path.ends_with(".yml") || path.ends_with(".yaml"),
@@ -342,26 +416,40 @@ struct DeclarationCollector {
 impl DeclarationCollector {
     fn new(file: &str, configured_order: Option<usize>) -> Self {
         Self {
-            file: file.into(), configured_order, document_index: 0, item_index: 0,
-            frames: Vec::new(), declarations: Vec::new(), diagnostics: Vec::new(),
+            file: file.into(),
+            configured_order,
+            document_index: 0,
+            item_index: 0,
+            frames: Vec::new(),
+            declarations: Vec::new(),
+            diagnostics: Vec::new(),
         }
     }
 
     fn note(&mut self, code: &'static str, line: usize, message: impl Into<String>) {
         self.diagnostics.push(PrototypeDiagnostic {
-            code, line, file: self.file.clone(), message: message.into(),
+            code,
+            line,
+            file: self.file.clone(),
+            message: message.into(),
         });
     }
 
     fn finalize(&mut self, draft: Draft) {
         let (Some(kind), Some(id)) = (draft.kind, draft.id) else {
-            self.note("PROTOTYPE_IDENTITY_MISSING", draft.line,
-                "Пропущено объявление без строковых полей type и id.");
+            self.note(
+                "PROTOTYPE_IDENTITY_MISSING",
+                draft.line,
+                "Пропущено объявление без строковых полей type и id.",
+            );
             return;
         };
         if kind.trim().is_empty() || id.trim().is_empty() {
-            self.note("PROTOTYPE_IDENTITY_MISSING", draft.line,
-                "Пропущено объявление с пустыми type или id.");
+            self.note(
+                "PROTOTYPE_IDENTITY_MISSING",
+                draft.line,
+                "Пропущено объявление с пустыми type или id.",
+            );
             return;
         }
         if draft.id_tag.is_some() {
@@ -372,8 +460,15 @@ impl DeclarationCollector {
         }
         let mode = if draft.type_tag.as_deref() == Some("PartialOnly") {
             "partial_only"
-        } else if draft.mapping_tag.as_ref().is_some_and(|tag| tag.starts_with("Partial:"))
-            || draft.type_tag.as_ref().is_some_and(|tag| tag.starts_with("Partial:")) {
+        } else if draft
+            .mapping_tag
+            .as_ref()
+            .is_some_and(|tag| tag.starts_with("Partial:"))
+            || draft
+                .type_tag
+                .as_ref()
+                .is_some_and(|tag| tag.starts_with("Partial:"))
+        {
             "tagged_partial"
         } else if self.configured_order.is_some() {
             "configured_partial"
@@ -381,17 +476,26 @@ impl DeclarationCollector {
             "normal"
         };
         self.declarations.push(PrototypeDeclaration {
-            kind, id, parents: draft.parents, abstract_prototype: draft.abstract_prototype,
-            file: self.file.clone(), line: draft.line, document_index: draft.document_index,
-            item_index: draft.item_index, mode,
-            partial_order: self.configured_order, parent_tag: draft.parent_tag,
+            kind,
+            id,
+            parents: draft.parents,
+            abstract_prototype: draft.abstract_prototype,
+            file: self.file.clone(),
+            line: draft.line,
+            document_index: draft.document_index,
+            item_index: draft.item_index,
+            mode,
+            partial_order: self.configured_order,
+            parent_tag: draft.parent_tag,
             source_count: 1,
         });
     }
 }
 
 fn tag_name(tag: &Tag) -> String {
-    format!("{}{}", tag.handle, tag.suffix).trim_start_matches('!').into()
+    format!("{}{}", tag.handle, tag.suffix)
+        .trim_start_matches('!')
+        .into()
 }
 
 impl MarkedEventReceiver for DeclarationCollector {
@@ -419,16 +523,26 @@ impl MarkedEventReceiver for DeclarationCollector {
                     self.frames.push(Frame::OtherSequence);
                 }
             }
-            Event::SequenceEnd => { self.frames.pop(); }
+            Event::SequenceEnd => {
+                self.frames.pop();
+            }
             Event::MappingStart(_, tag) => {
                 if matches!(self.frames.last(), Some(Frame::RootSequence)) {
                     self.item_index += 1;
                     self.frames.push(Frame::Prototype(Draft {
-                        kind: None, id: None, parents: Vec::new(),
-                        abstract_prototype: false, type_tag: None, id_tag: None,
-                        mapping_tag: tag.as_ref().map(tag_name), parent_tag: None,
-                        expected_key: true, pending_key: None, line: mark.line(),
-                        document_index: self.document_index, item_index: self.item_index,
+                        kind: None,
+                        id: None,
+                        parents: Vec::new(),
+                        abstract_prototype: false,
+                        type_tag: None,
+                        id_tag: None,
+                        mapping_tag: tag.as_ref().map(tag_name),
+                        parent_tag: None,
+                        expected_key: true,
+                        pending_key: None,
+                        line: mark.line(),
+                        document_index: self.document_index,
+                        item_index: self.item_index,
                     }));
                 } else {
                     if let Some(Frame::Prototype(draft)) = self.frames.last_mut() {
@@ -471,8 +585,12 @@ impl MarkedEventReceiver for DeclarationCollector {
                         }
                     }
                 } else if matches!(self.frames.last(), Some(Frame::ParentSequence)) {
-                    if let Some(Frame::Prototype(draft)) = self.frames.iter_mut().rev()
-                        .find(|frame| matches!(frame, Frame::Prototype(_))) {
+                    if let Some(Frame::Prototype(draft)) = self
+                        .frames
+                        .iter_mut()
+                        .rev()
+                        .find(|frame| matches!(frame, Frame::Prototype(_)))
+                    {
                         draft.parents.push(value);
                     }
                 }
@@ -486,9 +604,14 @@ impl MarkedEventReceiver for DeclarationCollector {
 mod tests {
     use super::*;
 
-    fn parse(text: &str, order: Option<usize>) -> (Vec<PrototypeDeclaration>, Vec<PrototypeDiagnostic>) {
+    fn parse(
+        text: &str,
+        order: Option<usize>,
+    ) -> (Vec<PrototypeDeclaration>, Vec<PrototypeDiagnostic>) {
         let mut collector = DeclarationCollector::new("Resources/Prototypes/test.yml", order);
-        Parser::new_from_str(text).load(&mut collector, true).unwrap();
+        Parser::new_from_str(text)
+            .load(&mut collector, true)
+            .unwrap();
         (collector.declarations, collector.diagnostics)
     }
 
@@ -519,7 +642,8 @@ mod tests {
     #[test]
     fn configured_and_explicit_partial_declarations_remain_separate() {
         let (items, _) = parse(
-            "- type: entity\n  id: Test\n- !Partial:0\n  type: entity\n  id: Other\n", Some(0),
+            "- type: entity\n  id: Test\n- !Partial:0\n  type: entity\n  id: Other\n",
+            Some(0),
         );
         assert_eq!(items.len(), 2);
         assert_eq!(items[0].mode, "configured_partial");
@@ -538,7 +662,8 @@ mod tests {
     #[test]
     fn excludes_dynamic_variant_identifiers_and_explains_why() {
         let (items, issues) = parse(
-            "- type: !PartialOnly listing\n  id: !type:CreateVariants\n  values: [A, B]\n", None,
+            "- type: !PartialOnly listing\n  id: !type:CreateVariants\n  values: [A, B]\n",
+            None,
         );
         assert!(items.is_empty());
         assert_eq!(issues[0].code, "PROTOTYPE_DYNAMIC_ID");
@@ -547,7 +672,8 @@ mod tests {
     #[test]
     fn supports_multiple_yaml_documents() {
         let (items, issues) = parse(
-            "- type: entity\n  id: First\n---\n- type: entity\n  id: Second\n", None,
+            "- type: entity\n  id: First\n---\n- type: entity\n  id: Second\n",
+            None,
         );
         assert!(issues.is_empty());
         assert_eq!(items.len(), 2);
@@ -568,8 +694,11 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join("Resources/PartialPrototypes")).unwrap();
         fs::create_dir_all(root.join("Resources/Prototypes/_Fork/Partials")).unwrap();
-        fs::write(root.join("Resources/PartialPrototypes/partialPrototypes.yml"),
-            "- /Prototypes/_Fork/Partials\n- /Prototypes/_Fork/Partials/example.yml\n").unwrap();
+        fs::write(
+            root.join("Resources/PartialPrototypes/partialPrototypes.yml"),
+            "- /Prototypes/_Fork/Partials\n- /Prototypes/_Fork/Partials/example.yml\n",
+        )
+        .unwrap();
         let mut issues = Vec::new();
         let scopes = configured_partials(&root, &mut issues);
         assert_eq!(scopes.len(), 2);
