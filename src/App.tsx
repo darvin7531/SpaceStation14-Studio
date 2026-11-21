@@ -4,7 +4,7 @@ import {
   AlertCircle, AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight,
   FileCode2, FileText, FolderOpen, Image as ImageIcon, Search, X, RotateCcw, Save, FilePlus2,
 } from 'lucide-react';
-import { studio, type DraftList, type DraftSnapshot, type CreatedPrototype, type CreatedFluent, type CreatedRsi, type DeletedRsiState, type ImportedRsiState, type PrototypeDeclaration, type PrototypeFieldLocator, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage } from './lib/api';
+import { studio, type DraftList, type DraftSnapshot, type CreatedPrototype, type CreatedFluent, type CreatedRsi, type DeletedRsiState, type ImportedRsiState, type RestoredRsiState, type PrototypeDeclaration, type PrototypeFieldLocator, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage } from './lib/api';
 import { normalizeStudioError, type StudioError } from './lib/errors';
 import { closeTab, openTab, type TabState } from './lib/tabs';
 import { dirtyDocumentPaths, reconcileSavedDraft } from './lib/draft-state';
@@ -805,6 +805,15 @@ export default function App() {
     );
   }
 
+  function onRsiRestored(path: string, result: RestoredRsiState) {
+    onRsiImported(path, result, 'timing');
+    setNotice(
+      'Восстановлено состояние RSI «' + result.name + '». Архив сохранён: '
+      + result.archive_path
+      + (result.warning ? '. Внимание: ' + result.warning : ''),
+    );
+  }
+
   function onRsiCreated(created: CreatedRsi) {
     setCreatingRsi(false);
     setFieldTarget(null);
@@ -1036,7 +1045,8 @@ export default function App() {
                 path={selected.path} metadata={document.content} revision={document.revision}
                 onImported={(result) => onRsiImported(selected.path, result)}
                 onTimingUpdated={(result) => onRsiImported(selected.path, result, 'timing')}
-                onDeleted={(result) => onRsiDeleted(selected.path, result)}/>
+                onDeleted={(result) => onRsiDeleted(selected.path, result)}
+                onRestored={(result) => onRsiRestored(selected.path, result)}/>
               : document ? <MonacoPreview key={document.path} resource={selected} document={document}
               value={activeText} editable={isEditableText(selected.kind) && !saving && !refreshing}
               onChange={isEditableText(selected.kind) ? (value) => {

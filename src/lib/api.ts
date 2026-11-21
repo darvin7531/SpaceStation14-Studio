@@ -272,6 +272,30 @@ export interface FluentInspection {
   locale: FluentLocaleAnalysis;
 }
 
+export interface RsiArchive {
+  id: string;
+  state: string;
+}
+
+export interface RsiArchiveList {
+  archives: RsiArchive[];
+  warnings: string[];
+}
+
+export interface RsiRestoreRequest {
+  path: string;
+  expected_revision: string;
+  archive_id: string;
+}
+
+export interface RestoredRsiState {
+  name: string;
+  content: string;
+  revision: string;
+  archive_path: string;
+  warning: string | null;
+}
+
 export interface RsiDeleteRequest {
   path: string;
   expected_revision: string;
@@ -494,6 +518,12 @@ export const studio = {
   },
   deleteRsiState(request: RsiDeleteRequest): Promise<DeletedRsiState> {
     return invoke('delete_rsi_state', { request });
+  },
+  listRsiArchives(path: string): Promise<RsiArchiveList> {
+    return invoke('list_rsi_archives', { path });
+  },
+  restoreRsiState(request: RsiRestoreRequest): Promise<RestoredRsiState> {
+    return invoke('restore_rsi_state', { request });
   },
   readResource(path: string): Promise<ResourceDocument> {
     return invoke('read_resource', { path });

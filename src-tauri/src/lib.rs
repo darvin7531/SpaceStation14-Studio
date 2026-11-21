@@ -16,6 +16,7 @@ mod rsi_create;
 mod rsi_delete;
 mod rsi_import;
 mod rsi_preview;
+mod rsi_restore;
 mod rsi_timing;
 
 use std::sync::{Arc, Mutex};
@@ -37,6 +38,7 @@ use rsi_create::{RsiCreationPreview, RsiDraft};
 use rsi_delete::{DeletedRsiState, RsiDeleteRequest};
 use rsi_import::{ImportedRsiState, RsiStateImport};
 use rsi_preview::{RsiSheetImage, RsiSheetList};
+use rsi_restore::{RestoredRsiState, RsiArchiveList, RsiRestoreRequest};
 use rsi_timing::RsiTimingUpdate;
 use serde::Serialize;
 use tauri::{Manager, State};
@@ -234,6 +236,28 @@ async fn delete_rsi_state(
 ) -> Result<DeletedRsiState, StudioError> {
     let index = current_project(&state)?;
     tauri::async_runtime::spawn_blocking(move || index.delete_rsi_state(&request))
+        .await
+        .map_err(interrupted)?
+}
+
+#[tauri::command]
+async fn list_rsi_archives(
+    path: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<RsiArchiveList, StudioError> {
+    let index = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || index.list_rsi_archives(&path))
+        .await
+        .map_err(interrupted)?
+}
+
+#[tauri::command]
+async fn restore_rsi_state(
+    request: RsiRestoreRequest,
+    state: State<'_, WorkspaceState>,
+) -> Result<RestoredRsiState, StudioError> {
+    let index = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || index.restore_rsi_state(&request))
         .await
         .map_err(interrupted)?
 }
@@ -771,6 +795,8 @@ pub fn run() -> Result<(), tauri::Error> {
             import_rsi_state,
             update_rsi_timing,
             delete_rsi_state,
+            list_rsi_archives,
+            restore_rsi_state,
             preview_new_rsi,
             create_new_rsi,
             save_yaml_resource,

@@ -21,6 +21,7 @@ use crate::rsi_create::{self, CreatedRsi, RsiCreationPreview, RsiDraft};
 use crate::rsi_delete::{self, DeletedRsiState, RsiDeleteRequest};
 use crate::rsi_import::{self, ImportedRsiState, RsiStateImport};
 use crate::rsi_preview::{self, RsiSheetImage, RsiSheetList};
+use crate::rsi_restore::{self, RestoredRsiState, RsiArchiveList, RsiRestoreRequest};
 use crate::rsi_timing::{self, RsiTimingUpdate};
 
 const MAX_SCAN_ENTRIES: usize = 250_000;
@@ -721,6 +722,20 @@ impl ProjectIndex {
         self.verify_indexed_rsi(&request.path)?;
         let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;
         rsi_delete::delete(&self.root, request)
+    }
+
+    pub fn list_rsi_archives(&self, path: &str) -> Result<RsiArchiveList, StudioError> {
+        self.verify_indexed_rsi(path)?;
+        rsi_restore::list(&self.root, path)
+    }
+
+    pub fn restore_rsi_state(
+        &self,
+        request: &RsiRestoreRequest,
+    ) -> Result<RestoredRsiState, StudioError> {
+        self.verify_indexed_rsi(&request.path)?;
+        let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;
+        rsi_restore::restore(&self.root, request)
     }
 
     pub fn read_resource(&self, rel_path: &str) -> Result<ResourceDocument, StudioError> {
@@ -1692,6 +1707,44 @@ mod tests {
         };
         assert_eq!(
             index.delete_rsi_state(&outside).unwrap_err().code,
+            "RSI_NOT_INDEXED"
+        );
+    }
+
+    #[test]
+    fn archived_rsi_restoration_is_available_via_the_indexed_project() {
+        let fx = Fixture::new();
+        let path = "Resources/Textures/ArchiveTest.rsi";
+        fx.write(
+            &format!("{path}/meta.json"),
+            r#"{"version":1,"size":{"x":1,"y":1},"states":[{"name":"idle"},{"name":"walk"}]}"#,
+        );
+        fx.write(&format!("{path}/idle.png"), "original data");
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let original = index.read_resource(path).unwrap();
+        let removed = index.delete_rsi_state(&RsiDeleteRequest {
+            path: path.into(),
+            expected_revision: original.revision,
+            name: "idle".into(),
+        }).unwrap();
+        let archives = index.list_rsi_archives(path).unwrap();
+        assert_eq!(archives.archives.len(), 1);
+        assert_eq!(archives.archives[0].state, "idle");
+        let restored = index.restore_rsi_state(&RsiRestoreRequest {
+            path: path.into(),
+            expected_revision: removed.revision,
+            archive_id: archives.archives[0].id.clone(),
+        }).unwrap();
+        assert!(restored.content.contains(r#""idle""#));
+        assert_eq!(index.read_resource(path).unwrap().revision, restored.revision);
+        assert_eq!(std::fs::read(fx.root.join(path).join("idle.png")).unwrap(), b"original data");
+        assert!(!index.list_rsi_archives(path).unwrap().archives.is_empty());
+        assert_eq!(
+            index.restore_rsi_state(&RsiRestoreRequest {
+                path: "Resources/Textures/Unindexed.rsi".into(),
+                expected_revision: restored.revision,
+                archive_id: archives.archives[0].id.clone(),
+            }).unwrap_err().code,
             "RSI_NOT_INDEXED"
         );
     }

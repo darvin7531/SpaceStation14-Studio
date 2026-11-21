@@ -135,3 +135,33 @@
   color: #ffe9ea; border-radius: 6px; cursor: pointer; padding: 9px 12px;
 }
 .rsi-delete-panel button:disabled { cursor: not-allowed; opacity: .5; }
+
+/* Explicit archive restore: never silently replace a current PNG. */
+.rsi-restore-panel {
+  padding: 11px 16px;
+  border-bottom: 1px solid #405369;
+  color: #c1d9e9;
+  font-size: 12px;
+}
+.rsi-restore-panel > summary {
+  display: flex; align-items: center; gap: 7px;
+  color: #c5e2fa; cursor: pointer; font-weight: 600;
+}
+.rsi-restore-panel form {
+  display: grid; gap: 12px; max-width: 750px; padding: 14px 0 4px;
+}
+.rsi-restore-panel p { display: flex; align-items: flex-start; gap: 8px; margin: 0; line-height: 1.5; }
+.rsi-restore-panel label { display: grid; gap: 6px; }
+.rsi-restore-panel select, .rsi-restore-panel input {
+  min-width: 0; width: 100%;
+  padding: 9px; border-radius: 6px; border: 1px solid #547189;
+  background: #102237; color: #dceefa;
+}
+.rsi-restore-panel code { color: #c6e2ff; overflow-wrap: anywhere; }
+.rsi-restore-panel .rsi-restore-warning { color: #f0d5aa; }
+.rsi-restore-panel button[type="submit"] {
+  display: inline-flex; align-items: center; justify-self: start; gap: 7px;
+  padding: 9px 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid #457d9c; color: #edf8ff; background: #235779;
+}
+.rsi-restore-panel button:disabled { cursor: not-allowed; opacity: .5; }

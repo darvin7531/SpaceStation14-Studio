@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, RefreshCw } from 'lucide-react';
-import { studio, type DeletedRsiState, type ImportedRsiState, type RsiSheetImage, type RsiSheetList } from '../lib/api';
+import { studio, type DeletedRsiState, type ImportedRsiState, type RestoredRsiState, type RsiSheetImage, type RsiSheetList } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 import { buildRsiFrameLayout, isRsiLayoutError, parseRsiMetadata } from '../lib/rsi-layout';
 import RsiStatePlayer from './RsiStatePlayer';
 import RsiImportPanel from './RsiImportPanel';
 import RsiTimingPanel from './RsiTimingPanel';
 import RsiDeletePanel from './RsiDeletePanel';
+import RsiRestorePanel from './RsiRestorePanel';
 
 function Failure({ error }: { error: StudioError }) {
   return <div className="rsi-error" role="alert"><AlertCircle size={16}/>
@@ -17,7 +18,7 @@ function Failure({ error }: { error: StudioError }) {
 
 /** Load one PNG at a time; do not expose project paths to the webview filesystem. */
 export default function RsiPreview({
-  path, metadata, revision, onImported, onTimingUpdated, onDeleted,
+  path, metadata, revision, onImported, onTimingUpdated, onDeleted, onRestored,
 }: {
   path: string;
   metadata: string;
@@ -25,6 +26,7 @@ export default function RsiPreview({
   onImported: (updated: ImportedRsiState) => void;
   onTimingUpdated: (updated: ImportedRsiState) => void;
   onDeleted: (result: DeletedRsiState) => void;
+  onRestored: (result: RestoredRsiState) => void;
 }) {
   const [refresh, setRefresh] = useState(0);
   const [listing, setListing] = useState(true);
@@ -130,6 +132,7 @@ export default function RsiPreview({
     {selectedState && <RsiDeletePanel
       key={'delete:' + path + ':' + selectedState.name + ':' + revision}
       path={path} revision={revision} name={selectedState.name} onDeleted={onDeleted}/>}
+    <RsiRestorePanel path={path} revision={revision} onRestored={onRestored}/>
 
     <div className="rsi-stage">
       {listing ? <p>Чтение каталога RSI…</p>
@@ -161,6 +164,7 @@ export default function RsiPreview({
       При повреждённых метаданных сохраняется просмотр PNG целиком. Импорт создаёт только
       новые PNG и требует подтверждения текущей ревизии meta.json.
       Удаление состояния возможно только после сохранения его резервной копии.
+      Восстановление из архива не перезаписывает существующие PNG.
     </p>
   </section>;
 }
