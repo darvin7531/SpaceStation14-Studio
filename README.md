@@ -1,67 +1,60 @@
-# SS14 Studio
+# SS14 Studio — Rust Rework
 
-SS14 Studio is a desktop tool for working with content in any SS14 source build.
+**Branch:** rework/rust-tauri  
+**Current preview:** 0.1.5-alpha.1 (pre-1.0, not v2).
 
-Its goal is to make creating prototypes, RSI sprites, and other project resources faster, clearer, and less error-prone, so content creators can turn ideas into working content with less manual overhead.
+SS14 Studio is being rewritten on **Rust + Tauri 2**. The desktop application in this branch has no Electron and no Node.js desktop runtime. Node.js is used only during frontend development/build through React, TypeScript and Vite. The old Electron implementation remains on the main branch for reference during feature migration.
 
-The editor is designed as a unified workspace for scanning an SS14 project, understanding its available components and resources, and helping with common content tasks through validation, previews, and guided editing workflows.
+## What is working now
 
-## Run
+- A native Tauri window with a lightweight React interface.
+- Open and verify the root directory of a Space Station 14 source checkout.
+- Read-only inventory of YAML prototype files, RSI folders and Fluent files.
+- Search by resource path and type, with pagination; queries operate on an in-memory index instead of rescanning the entire source tree.
+- Display YAML/FTL contents and RSI meta.json in a safe, read-only viewer.
+- Actionable Russian-language error handling with stable codes, hints and expandable technical details.
+- No source file mutations, no symlink traversal during indexing, capped initial scan, capped text-file read size.
+- Rust/TypeScript CI checks and unit tests.
 
-```powershell
-npm install
-npm run dev
-```
+**Limitations:** Current counts refer to YAML *files*, not individual prototype declarations. This is the first functional Rust work slice, not a feature-complete replacement for the old editor. YAML parsing and editing, Monaco, inheritance, C# symbol extraction, persistent incremental index and RSI preview are intentionally not claimed as implemented.
 
-Then click `Open Project` and select the SS14 source root that contains `Resources/Prototypes`.
+## Develop
 
-## Build Installer
+Install Node 22+, the stable Rust toolchain and Tauri 2 system prerequisites:
 
-Windows installer:
+- https://v2.tauri.app/start/prerequisites/
 
-```powershell
-npm install
-npm run dist:win
-```
+Run from the repository root:
 
-Portable Windows build:
+    npm install
+    npm test
+    npm run build:web
+    cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+    cargo test --manifest-path src-tauri/Cargo.toml --all-targets
+    cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+    npm run dev
 
-```powershell
-npm install
-npm run dist:portable
-```
+Production packaging is not enabled until editing, feature-parity and platform-smoke tests are added. The root package uses npm semver dependencies; a lockfile and pinned release build are mandatory before a binary release.
 
-Artifacts are written to `release/`.
+## Architecture
 
-## Manual Stable Release In GitHub
+- UI: React + TypeScript + Vite. Never touch project files directly.
+- IPC boundary: src/lib/api.ts — only typed, narrow Tauri commands.
+- Backend: src-tauri/src/lib.rs and src-tauri/src/project.rs.
+- Errors: src-tauri/src/error.rs and src/lib/errors.ts.
+- Project index: immutable snapshot loaded off the UI thread and atomically replaced; searches never traverse the filesystem.
+- Source files are authoritative. Derived indexes must be rebuildable.
 
-There is a manual GitHub Actions workflow for stable releases:
+## Rework roadmap
 
-1. Bump `version` in [package.json](./package.json) and push it to `main`.
-2. Open `Actions` -> `Release Stable`.
-3. Click `Run workflow`.
-4. The workflow builds:
-   - NSIS installer
-   - portable `.exe`
-   - updater metadata (`latest.yml`, blockmaps)
-5. It then publishes a GitHub Release with the current package version.
+1. Migrate the existing Monaco editor, tab/workspace UX and i18n with a typed Tauri API. Keep file editing disabled until safe write semantics are implemented.
+2. Incremental file watcher and persistent SQLite index with rapid warm startup.
+3. Correct lossless YAML/CST editing, unique declaration identity, SS14 inheritance and partial prototype semantics; verification against RobustToolbox fixtures.
+4. Conflict-safe file saving with revision checks, atomic replace where supported, useful error explanations and recovery steps.
+5. C# metadata analysis, Fluent parsing and diagnostics, RSI metadata/images with lazy binary previews.
+6. Search/graph/UI optimization and benchmarks on several real SS14 forks.
+7. Signed installers, lockfiles, cross-platform smoke tests, stable release pipeline.
 
-The updater expects the version in `package.json` to already be correct before you run the workflow.
+Rules: prevent data loss, do not hide errors or fake success, do not silently overwrite external changes, keep CI green, and measure performance before promising speedups.
 
-## License
-
-This repository is licensed under `GNU Affero General Public License v3.0 or later`.
-
-The full license text is in [LICENSE](./LICENSE).
-
-Important: AGPL is a strong copyleft license. It requires modified networked/distributed versions of the software to remain available under the same license terms, but it does not by itself prohibit commercial distribution.
-
-## Current Features
-
-- Scans YAML prototypes under `Resources/Prototypes`.
-- Scans RSI sprites under `Resources/Textures`.
-- Scans C# `[Prototype]`, `[RegisterComponent]`, `[DataField]` metadata for hints.
-- Opens prototypes in Monaco raw YAML editor.
-- Saves the selected YAML prototype block back to disk through Electron IPC.
-- Creates a new basic prototype block under `Resources/Prototypes/_PrototypeStudio`.
-- Shows basic validation for missing parents and missing Sprite RSI paths.
+License: GNU AGPL v3.0 or later.

@@ -1,0 +1,22 @@
+[package]
+name = "ss14-studio"
+version = "0.1.5-alpha.1"
+description = "Rust rework of the Space Station 14 content editor"
+authors = ["darvin7531"]
+edition = "2021"
+license = "AGPL-3.0-or-later"
+
+[lib]
+name = "ss14_studio_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[[bin]]
+name = "ss14-studio"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = "2"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+tauri = "2"

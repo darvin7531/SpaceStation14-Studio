@@ -1,0 +1,59 @@
+name: Rust Rework CI
+
+on:
+  push:
+    branches:
+      - rework/rust-tauri
+  pull_request:
+    paths:
+      - '.github/workflows/rust-rework-checks.yml'
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'tests/**'
+      - 'package*.json'
+      - 'vite.config.ts'
+      - 'tsconfig.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: React build, TypeScript and error tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install frontend dependencies
+        run: npm install --no-audit --no-fund
+      - name: Test error contracts
+        run: npm test
+      - name: Typecheck and build UI
+        run: npm run build:web
+
+  rust:
+    name: Rust format, tests and Clippy (Linux)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Install Tauri Linux prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev build-essential libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf
+      - name: Verify Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
+      - name: Clippy warnings are errors
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings

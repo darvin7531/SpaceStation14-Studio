@@ -1,9 +1,7 @@
 node_modules/
-build/
 dist/
-release/
-coverage/
-.DS_Store
+src-tauri/target/
+src-tauri/gen/schemas/
+src-tauri/.tauri/
 *.log
-.env*
-!.env.example
+.DS_Store

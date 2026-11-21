@@ -1,99 +1,30 @@
 {
-  "name": "ss14-studio",
+  "name": "ss14-studio-rust-rework",
   "private": true,
-  "version": "0.1.4",
-  "description": "Desktop studio for SS14 prototypes, RSI sprites and project resources.",
-  "license": "AGPL-3.0-or-later",
-  "author": "darvin7531",
+  "version": "0.1.5-alpha.1",
   "type": "module",
-  "main": "electron/main.cjs",
+  "license": "AGPL-3.0-or-later",
   "scripts": {
-    "dev": "concurrently -k \"vite --port=3000 --host=127.0.0.1\" \"wait-on http://127.0.0.1:3000 && cross-env ELECTRON_RENDERER_URL=http://127.0.0.1:3000 electron .\"",
-    "web": "vite --port=3000 --host=127.0.0.1",
-    "build": "tsc --noEmit && vite build",
-    "start": "npm run build && electron .",
-    "clean:release": "node -e \"fs.rmSync('release',{recursive:true,force:true})\"",
-    "pack:win": "npm run build && electron-builder --win --dir",
-    "dist:win": "npm run clean:release && npm run build && electron-builder --win nsis",
-    "dist:portable": "npm run clean:release && npm run build && electron-builder --win portable",
-    "release:stable": "npm run clean:release && npm run build && electron-builder --win nsis portable",
-    "preview": "vite preview",
-    "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\"",
-    "lint": "tsc --noEmit",
-    "test": "node --test test/*.test.cjs && tsx --test test/*.test.ts"
+    "dev": "tauri dev",
+    "dev:web": "vite --host 127.0.0.1 --port 1420 --strictPort",
+    "build": "tauri build",
+    "build:web": "tsc --noEmit && vite build",
+    "test": "tsx --test tests/*.test.ts",
+    "check": "npm run test && npm run build:web"
   },
   "dependencies": {
-    "@monaco-editor/react": "^4.7.0",
-    "clsx": "^2.1.1",
-    "electron-updater": "^6.6.2",
+    "@tauri-apps/api": "^2.0.0",
     "lucide-react": "^0.546.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "tailwind-merge": "^3.5.0",
-    "yaml": "^2.8.3",
-    "zustand": "^5.0.12"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@types/node": "^22.14.0",
-    "@tailwindcss/vite": "^4.1.14",
-    "@vitejs/plugin-react": "^5.0.4",
-    "autoprefixer": "^10.4.21",
-    "concurrently": "^9.1.2",
-    "cross-env": "^7.0.3",
-    "electron": "^41.2.0",
-    "electron-builder": "^26.0.12",
-    "tailwindcss": "^4.1.14",
+    "@tauri-apps/cli": "^2.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0",
-    "wait-on": "^8.0.3"
-  },
-  "overrides": {
-    "dompurify": "^3.3.3"
-  },
-  "build": {
-    "appId": "com.darvin7531.ss14studio",
-    "productName": "SS14 Studio",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "electron/**/*",
-      "package.json"
-    ],
-    "extraMetadata": {
-      "main": "electron/main.cjs"
-    },
-    "asar": true,
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "artifactName": "SS14-Studio-Setup-${version}.${ext}"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "perMachine": false,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "SS14 Studio"
-    },
-    "portable": {
-      "artifactName": "SS14-Studio-Portable-${version}.${ext}"
-    },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "darvin7531",
-        "repo": "SpaceStation14-Studio"
-      }
-    ]
+    "vite": "^6.2.0"
   }
 }
