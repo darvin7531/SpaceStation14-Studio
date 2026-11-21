@@ -5,6 +5,7 @@ import { normalizeStudioError, type StudioError } from '../lib/errors';
 import { buildRsiFrameLayout, isRsiLayoutError, parseRsiMetadata } from '../lib/rsi-layout';
 import RsiStatePlayer from './RsiStatePlayer';
 import RsiImportPanel from './RsiImportPanel';
+import RsiTimingPanel from './RsiTimingPanel';
 
 function Failure({ error }: { error: StudioError }) {
   return <div className="rsi-error" role="alert"><AlertCircle size={16}/>
@@ -15,12 +16,13 @@ function Failure({ error }: { error: StudioError }) {
 
 /** Load one PNG at a time; do not expose project paths to the webview filesystem. */
 export default function RsiPreview({
-  path, metadata, revision, onImported,
+  path, metadata, revision, onImported, onTimingUpdated,
 }: {
   path: string;
   metadata: string;
   revision: string;
   onImported: (updated: ImportedRsiState) => void;
+  onTimingUpdated: (updated: ImportedRsiState) => void;
 }) {
   const [refresh, setRefresh] = useState(0);
   const [listing, setListing] = useState(true);
@@ -120,6 +122,10 @@ export default function RsiPreview({
       <p className="rsi-warning" key={'layout-' + index}>{warning}</p>)}
     {imageError && <Failure error={imageError}/>}
     <RsiImportPanel path={path} revision={revision} onImported={onImported}/>
+    {frameLayout && selectedState && <RsiTimingPanel
+      key={path + ':' + selectedState.name + ':' + revision}
+      path={path} revision={revision} state={selectedState} onUpdated={onTimingUpdated}/>}
+
     <div className="rsi-stage">
       {listing ? <p>Чтение каталога RSI…</p>
         : loadingImage ? <p>Загрузка PNG…</p>

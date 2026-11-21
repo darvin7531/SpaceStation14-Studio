@@ -74,3 +74,37 @@
   border-radius: 6px; cursor: pointer;
 }
 .rsi-import-panel button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Timing editor: intentionally incapable of adding/removing PNG frames. */
+.rsi-timing-panel {
+  padding: 11px 16px;
+  border-bottom: 1px solid #354a61;
+  color: #bfd4ed;
+  font-size: 12px;
+}
+.rsi-timing-panel > summary {
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer; color: #c8def3; font-weight: 600;
+}
+.rsi-timing-panel form { display: grid; gap: 11px; padding: 12px 0 4px; }
+.rsi-timing-panel form > p { margin: 0; color: #a8c0da; line-height: 1.5; }
+.rsi-timing-directions { display: grid; gap: 10px; max-height: 340px; overflow: auto; }
+.rsi-timing-directions fieldset {
+  border: 1px solid #496177; padding: 10px; border-radius: 6px; min-width: 0;
+}
+.rsi-timing-directions legend { color: #d2e2f2; font-size: 12px; padding: 0 5px; }
+.rsi-timing-frame-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(125px,1fr)); gap: 9px;
+}
+.rsi-timing-frame-grid label { display: grid; gap: 5px; color: #adcae8; font-size: 11px; }
+.rsi-timing-frame-grid input {
+  width: 100%; min-width: 0;
+  background: #0c1827; border: 1px solid #516b86;
+  border-radius: 5px; padding: 7px; color: #e6f0ff; font: inherit;
+}
+.rsi-timing-panel button[type="submit"] {
+  display: inline-flex; gap: 7px; align-items: center; justify-self: start;
+  padding: 8px 12px; background: #295d7f; border: 1px solid #4d81a0;
+  border-radius: 6px; color: #e4f2ff; cursor: pointer;
+}
+.rsi-timing-panel button:disabled { opacity: .5; cursor: not-allowed; }

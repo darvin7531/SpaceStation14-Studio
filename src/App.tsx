@@ -779,7 +779,7 @@ export default function App() {
       : 'Прототип ' + result.kind + ':' + result.id + ' ' + verb + ' ' + result.file);
   }
 
-  function onRsiImported(path: string, result: ImportedRsiState) {
+  function onRsiImported(path: string, result: ImportedRsiState, action: 'import' | 'timing' = 'import') {
     const updated: ResourceDocument = {
       path,
       content: result.content,
@@ -791,7 +791,9 @@ export default function App() {
     setDrafts((previous) => ({ ...previous, [path]: result.content }));
     setNotice(result.warning
       ? 'RSI обновлён: ' + result.name + '. ' + result.warning
-      : 'Добавлено состояние RSI: ' + result.name + '. PNG и meta.json записаны.');
+      : action === 'timing'
+        ? 'Сохранены задержки RSI: ' + result.name + '. PNG не изменены.'
+        : 'Добавлено состояние RSI: ' + result.name + '. PNG и meta.json записаны.');
   }
 
   function onRsiCreated(created: CreatedRsi) {
@@ -1023,7 +1025,8 @@ export default function App() {
             document && selected.kind === 'rsi'
               ? <RsiPreview key={document.path + ':' + document.revision + ':' + workspaceRevision}
                 path={selected.path} metadata={document.content} revision={document.revision}
-                onImported={(result) => onRsiImported(selected.path, result)}/>
+                onImported={(result) => onRsiImported(selected.path, result)}
+                onTimingUpdated={(result) => onRsiImported(selected.path, result, 'timing')}/>
               : document ? <MonacoPreview key={document.path} resource={selected} document={document}
               value={activeText} editable={isEditableText(selected.kind) && !saving && !refreshing}
               onChange={isEditableText(selected.kind) ? (value) => {

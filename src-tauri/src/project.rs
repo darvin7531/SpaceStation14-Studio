@@ -20,6 +20,7 @@ use crate::resource_edit::{self, SaveResult};
 use crate::rsi_create::{self, CreatedRsi, RsiCreationPreview, RsiDraft};
 use crate::rsi_import::{self, ImportedRsiState, RsiStateImport};
 use crate::rsi_preview::{self, RsiSheetImage, RsiSheetList};
+use crate::rsi_timing::{self, RsiTimingUpdate};
 
 const MAX_SCAN_ENTRIES: usize = 250_000;
 const MAX_READ_BYTES: u64 = 4 * 1024 * 1024;
@@ -701,6 +702,15 @@ impl ProjectIndex {
         self.verify_indexed_rsi(&request.path)?;
         let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;
         rsi_import::import(&self.root, request)
+    }
+
+    pub fn update_rsi_timing(
+        &self,
+        request: &RsiTimingUpdate,
+    ) -> Result<ImportedRsiState, StudioError> {
+        self.verify_indexed_rsi(&request.path)?;
+        let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;
+        rsi_timing::update(&self.root, request)
     }
 
     pub fn read_resource(&self, rel_path: &str) -> Result<ResourceDocument, StudioError> {

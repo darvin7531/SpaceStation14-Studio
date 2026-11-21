@@ -92,7 +92,7 @@ fn validate_request(request: &RsiStateImport) -> Result<(), StudioError> {
     Ok(())
 }
 
-fn bounded_metadata(path: &Path) -> Result<Vec<u8>, StudioError> {
+pub(crate) fn bounded_metadata(path: &Path) -> Result<Vec<u8>, StudioError> {
     let meta = fs::symlink_metadata(path).map_err(|e| {
         issue(
             "RSI_IMPORT_META_MISSING",
@@ -362,7 +362,7 @@ fn updated_metadata(
 
 /// Reject symlinks in every ancestor: read-only previews may resolve links
 /// inside Textures, but a write operation must never follow them.
-fn safe_import_directory(root: &Path, relative: &str) -> Result<std::path::PathBuf, StudioError> {
+pub(crate) fn safe_import_directory(root: &Path, relative: &str) -> Result<std::path::PathBuf, StudioError> {
     let mut cursor = root.to_path_buf();
     for part in Path::new(relative).components() {
         let Component::Normal(segment) = part else {

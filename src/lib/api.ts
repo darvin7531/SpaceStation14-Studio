@@ -272,6 +272,13 @@ export interface FluentInspection {
   locale: FluentLocaleAnalysis;
 }
 
+export interface RsiTimingUpdate {
+  path: string;
+  expected_revision: string;
+  name: string;
+  delays: number[][];
+}
+
 export interface RsiImportRequest {
   path: string;
   expected_revision: string;
@@ -467,6 +474,9 @@ export const studio = {
   },
   importRsiState(request: RsiImportRequest): Promise<ImportedRsiState> {
     return invoke('import_rsi_state', { request });
+  },
+  updateRsiTiming(request: RsiTimingUpdate): Promise<ImportedRsiState> {
+    return invoke('update_rsi_timing', { request });
   },
   readResource(path: string): Promise<ResourceDocument> {
     return invoke('read_resource', { path });
