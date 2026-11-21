@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import type { ResourceDocument, ResourceEntry } from '../lib/api';
+import type { EditorSettings } from '../lib/editor-settings';
 
 interface Props {
+  settings: EditorSettings;
   resource: ResourceEntry;
   document: ResourceDocument;
   revealLine?: number;
@@ -16,12 +18,18 @@ interface Props {
  * Lazy-loads Monaco only when a resource is opened, and disposes the model,
  * workers' consumers and editor on tab switch/unmount.
  */
-export default function MonacoPreview({ resource, document, revealLine, jumpToken, value, editable, onChange }: Props) {
+export default function MonacoPreview({ resource, document, revealLine, jumpToken, value, editable, onChange, settings }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<{ revealLineInCenter(line: number): void; setPosition(position: { lineNumber: number; column: number }): void } | null>(null);
   const latestJump = useRef(revealLine);
   const contentRef = useRef<{ getValue(): string; setValue(value: string): void } | null>(null);
-  const updateOptionsRef = useRef<{ updateOptions(value: { readOnly?: boolean; domReadOnly?: boolean }): void } | null>(null);
+  const updateOptionsRef = useRef<{ updateOptions(value: {
+    readOnly?: boolean; domReadOnly?: boolean; fontSize?: number; tabSize?: number;
+    wordWrap?: 'on' | 'off'; lineNumbers?: 'on' | 'off' | 'relative';
+    minimap?: { enabled: boolean };
+  }): void } | null>(null);
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
@@ -39,6 +47,15 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
       domReadOnly: !editable,
     });
   }, [editable]);
+  useEffect(() => {
+    updateOptionsRef.current?.updateOptions({
+      fontSize: settings.fontSize,
+      tabSize: settings.tabSize,
+      wordWrap: settings.wordWrap,
+      lineNumbers: settings.lineNumbers,
+      minimap: { enabled: settings.minimap },
+    });
+  }, [settings]);
   const [failure, setFailure] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -69,13 +86,14 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
             readOnly: !editable,
             domReadOnly: !editable,
             automaticLayout: true,
-            minimap: { enabled: false },
-            fontSize: 13,
-            tabSize: 2,
+            minimap: { enabled: settingsRef.current.minimap },
+            fontSize: settingsRef.current.fontSize,
+            tabSize: settingsRef.current.tabSize,
+            lineNumbers: settingsRef.current.lineNumbers,
             scrollBeyondLastLine: false,
             smoothScrolling: false,
             renderWhitespace: 'selection',
-            wordWrap: 'off',
+            wordWrap: settingsRef.current.wordWrap,
             padding: { top: 14, bottom: 14 },
             overviewRulerBorder: false,
           });
