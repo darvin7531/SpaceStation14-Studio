@@ -27,7 +27,9 @@ import ConflictReviewPanel from './components/ConflictReviewPanel';
 import EditorSettingsDialog from './components/EditorSettingsDialog';
 import QuickOpenPanel from './components/QuickOpenPanel';
 import ContentSearchPanel from './components/ContentSearchPanel';
-import type { ContentSearchHit } from './lib/api';
+import type { ContentSearchHit, OpenRevision, ResourceDriftReport } from './lib/api';
+import ResourceDriftBanner from './components/ResourceDriftBanner';
+import { retainCurrentDrifts } from './lib/resource-drift';
 import { readEditorSettings, sanitizeEditorSettings, SETTINGS_KEY } from './lib/editor-settings';
 
 const PAGE_SIZE = 100;
@@ -81,6 +83,10 @@ export default function App() {
     try { window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(editorSettings)); } catch { /* storage may be blocked */ }
   }, [editorSettings]);
   const [refreshing, setRefreshing] = useState(false);
+  const [driftReport, setDriftReport] = useState<ResourceDriftReport | null>(null);
+  const [driftChecking, setDriftChecking] = useState(false);
+  const [driftError, setDriftError] = useState<StudioError | null>(null);
+  const [driftRetry, setDriftRetry] = useState(0);
   const [creatingPrototype, setCreatingPrototype] = useState(false);
   const [creatingFluent, setCreatingFluent] = useState(false);
   const [creatingRsi, setCreatingRsi] = useState(false);
@@ -235,6 +241,8 @@ export default function App() {
       setOverview(next);
       setResults({ total: 0, items: [] });
       setTabState({ tabs: [], active: null });
+      setDriftReport(null);
+      setDriftError(null);
       setDocument(null);
       setReading(false);
       setQuery('');
@@ -296,6 +304,7 @@ export default function App() {
       setDocument(tabState.active ? result.documents.get(tabState.active) ?? null : null);
       setReading(false);
       setOverview(changed.overview);
+      setDriftReport(null);
       setPage(0);
       setWorkspaceRevision((value) => value + 1);
       setFieldTarget(null);
@@ -334,6 +343,46 @@ export default function App() {
       setRefreshing(false);
     }
   }
+
+  // Poll open resources only; Rust never accepts revisions or modifies drafts.
+  // The submitted baseline is checked again after IPC to suppress stale alerts.
+  useEffect(() => {
+    if (!overview || opening || reading || saving || refreshing || transitioning) return;
+    let active = true;
+    let running = false;
+    async function check() {
+      if (!active || running) return;
+      const opened: OpenRevision[] = tabState.tabs.flatMap((tab) => {
+        const loaded = documents.current.get(tab.path);
+        return loaded ? [{ path: tab.path, expected_revision: loaded.revision }] : [];
+      });
+      if (!opened.length) {
+        setDriftReport(null);
+        return;
+      }
+      running = true;
+      setDriftChecking(true);
+      try {
+        const result = await studio.probeOpenRevisions(opened);
+        if (!active) return;
+        setDriftReport(retainCurrentDrifts(result, opened, documents.current));
+        setDriftError(null);
+      } catch (failure) {
+        if (active) setDriftError(normalizeStudioError(failure));
+      } finally {
+        running = false;
+        if (active) setDriftChecking(false);
+      }
+    }
+    const initial = window.setTimeout(() => void check(), 1200);
+    const interval = window.setInterval(() => void check(), 12000);
+    return () => {
+      active = false;
+      window.clearTimeout(initial);
+      window.clearInterval(interval);
+      setDriftChecking(false);
+    };
+  }, [overview?.project_root, tabState.tabs, opening, reading, saving, refreshing, transitioning, driftRetry]);
 
   useEffect(() => {
     if (!overview) return;
@@ -635,6 +684,9 @@ export default function App() {
         ? await studio.saveYamlResource(file, sourceRevision, submitted)
         : await studio.saveFtlResource(file, sourceRevision, submitted);
       documents.current.set(file, result.document);
+      setDriftReport((current) => current ? {
+        ...current, items: current.items.filter((item) => item.path !== file),
+      } : current);
       setDrafts((previous) => ({
         ...previous,
         [file]: reconcileSavedDraft(previous[file], submitted, result.document.content),
@@ -975,6 +1027,12 @@ export default function App() {
           onClick={() => setShowingCSharp(true)}>
           <FileCode2 size={15}/> C# схемы
         </button>
+        <button type="button" className="create-proto-open"
+          disabled={opening || saving || refreshing || transitioning || driftChecking || !tabState.tabs.length}
+          title="Проверить открытые файлы на внешние изменения, не трогая черновики"
+          onClick={() => setDriftRetry((value) => value + 1)}>
+          <RotateCcw size={15}/>{driftChecking ? 'Проверяю…' : 'Проверить файлы'}
+        </button>
         <button type="button" className="create-proto-open" disabled={opening || picking || saving || transitioning || reading || refreshing || creatingPrototype || creatingFluent || creatingRsi}
           title="Полностью пересканировать проект, сохранив открытые черновики"
           onClick={() => void refreshProject()}>
@@ -1011,6 +1069,18 @@ export default function App() {
     {overview && <RecoveryPanel entries={recoveries.items}
       warnings={recoveries.warnings} dirtyPaths={dirtyPaths}
       onRestore={restoreRecovery} onDiscard={discardRecoveryCopy}/>}
+    {overview && <ResourceDriftBanner
+      report={driftReport ?? { checked: 0, skipped: 0, items: [] }}
+      activePath={selected?.path ?? null} activeDirty={selected ? isDirty(selected.path) : false}
+      busy={opening || refreshing || saving || transitioning || reading}
+      onActivate={selectTab}
+      onCompare={() => void compareCurrent()}
+      onReload={reloadCurrent}
+      onRefreshIndex={() => void refreshProject()}/>}
+    {overview && driftError && <div className="resource-drift-warning" role="status">
+      <AlertTriangle size={14}/> Проверка файлов: {driftError.message}
+      <button type="button" onClick={() => setDriftError(null)}>Закрыть</button>
+    </div>}
     {overview?.warnings.map((message) =>
       <div key={message} className="warning"><AlertTriangle size={15}/>{message}</div>)}
 
