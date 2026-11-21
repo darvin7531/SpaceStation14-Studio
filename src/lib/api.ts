@@ -190,6 +190,32 @@ export interface FluentAnalysis {
   diagnostics: FluentDiagnostic[];
 }
 
+export interface FluentLocaleIssue {
+  code: string;
+  line: number;
+  symbol: string;
+  message: string;
+  related_file: string | null;
+  related_line: number | null;
+}
+
+export interface FluentLocaleAnalysis {
+  locale: string;
+  file_count: number;
+  declaration_count: number;
+  reference_count: number;
+  complete: boolean;
+  warnings: string[];
+  issue_count: number;
+  truncated: boolean;
+  issues: FluentLocaleIssue[];
+}
+
+export interface FluentInspection {
+  syntax: FluentAnalysis;
+  locale: FluentLocaleAnalysis;
+}
+
 export interface NewFluentDraft {
   file: string;
   starter_key: string;
@@ -294,7 +320,7 @@ export const studio = {
   saveFtlResource(path: string, expectedRevision: string, content: string): Promise<SaveResult> {
     return invoke('save_ftl_resource', { path, expectedRevision, content });
   },
-  analyzeFluentResource(path: string, content: string): Promise<FluentAnalysis> {
+  analyzeFluentResource(path: string, content: string): Promise<FluentInspection> {
     return invoke('analyze_fluent_resource', { path, content });
   },
   listDrafts(): Promise<DraftList> {

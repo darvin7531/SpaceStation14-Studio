@@ -2,6 +2,7 @@ mod draft_journal;
 mod error;
 mod fluent_create;
 mod fluent_diagnostics;
+mod fluent_locale;
 mod project;
 mod prototype_append;
 mod prototype_components;
@@ -17,7 +18,7 @@ use std::sync::{Arc, Mutex};
 use draft_journal::{DraftJournal, DraftList, DraftSnapshot, DraftSummary, DraftWriteResult};
 use error::{internal_lock, interrupted, StudioError};
 use fluent_create::{FluentDraft, FluentPreview};
-use fluent_diagnostics::FluentAnalysis;
+use fluent_locale::FluentInspection;
 use project::{ProjectIndex, ProjectOverview, ProjectRefresh, ResourceDocument, ResourcePage};
 use prototype_append::AppendPreview;
 use prototype_components::{ComponentInspection, ComponentOperation};
@@ -239,7 +240,7 @@ async fn analyze_fluent_resource(
     path: String,
     content: String,
     state: State<'_, WorkspaceState>,
-) -> Result<FluentAnalysis, StudioError> {
+) -> Result<FluentInspection, StudioError> {
     let index = current_project(&state)?;
     tauri::async_runtime::spawn_blocking(move || index.analyze_fluent(&path, &content))
         .await

@@ -87,3 +87,28 @@
   font-size: 11px;
   color: #869eb9;
 }
+
+.fluent-locale-panel {
+  border-top: 1px solid #334b63;
+  background: #0e1928;
+}
+.fluent-locale-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 17px;
+  color: #e3edf9;
+  font-size: 11px;
+  background: #1a2b41;
+}
+.fluent-locale-heading > strong { font-size: 12px; }
+.fluent-locale-heading > span { color: #9db5cf; }
+.fluent-locale-warning {
+  margin: 0;
+  padding: 7px 17px;
+  color: #ebd0a0;
+  background: #302819;
+  border-bottom: 1px solid #665132;
+  overflow-wrap: anywhere;
+}

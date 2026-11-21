@@ -8,7 +8,8 @@ use serde::Serialize;
 
 use crate::error::{internal_lock, StudioError};
 use crate::fluent_create::{self, CreatedFluent, FluentDraft, FluentPreview};
-use crate::fluent_diagnostics::{self, FluentAnalysis};
+use crate::fluent_diagnostics;
+use crate::fluent_locale::{self, FluentInspection, LocaleSnapshot};
 use crate::prototype_append::{self, AppendPreview};
 use crate::prototype_components::{self, ComponentInspection, ComponentOperation};
 use crate::prototype_create::{self, CreatedPrototype, PrototypeDraft, PrototypePreview};
@@ -67,6 +68,7 @@ pub struct ProjectIndex {
     resources: Vec<ResourceEntry>,
     positions: HashMap<String, usize>,
     prototype_catalog: Mutex<Option<Arc<PrototypeCatalog>>>,
+    fluent_locale_cache: Mutex<HashMap<String, Arc<LocaleSnapshot>>>,
     edit_lock: Mutex<()>,
 }
 
@@ -199,6 +201,7 @@ impl ProjectIndex {
             resources,
             positions,
             prototype_catalog: Mutex::new(None),
+            fluent_locale_cache: Mutex::new(HashMap::new()),
             edit_lock: Mutex::new(()),
         })
     }
@@ -256,7 +259,7 @@ impl ProjectIndex {
         &self,
         rel_path: &str,
         source: &str,
-    ) -> Result<FluentAnalysis, StudioError> {
+    ) -> Result<FluentInspection, StudioError> {
         let indexed_ftl = self
             .positions
             .get(rel_path)
@@ -269,7 +272,62 @@ impl ProjectIndex {
                 "Выберите существующий .ftl в списке ресурсов или обновите индекс.",
             ));
         }
-        fluent_diagnostics::analyze(source)
+        // Check draft size before expensive locale indexing.
+        let syntax = fluent_diagnostics::analyze(source)?;
+        let locale = fluent_locale::locale_of(rel_path).ok_or_else(|| {
+            StudioError::new(
+                "FTL_LOCALE_INVALID",
+                "Невозможно определить язык Fluent-файла.",
+                "Используйте путь внутри Resources/Locale/<язык>/.",
+            )
+        })?;
+
+        let snapshot = {
+            let mut cache = self.fluent_locale_cache.lock().map_err(|_| internal_lock())?;
+            if let Some(existing) = cache.get(locale) {
+                Arc::clone(existing)
+            } else {
+                let mut indexed = Vec::new();
+                let mut warnings = Vec::new();
+                let mut complete = true;
+                let mut bytes = 0usize;
+                let candidates = self.resources.iter()
+                    .filter(|entry| entry.kind == "ftl"
+                        && fluent_locale::belongs_to_locale(&entry.path, locale));
+                for (number, entry) in candidates.enumerate() {
+                    if number >= fluent_locale::MAX_LOCALE_FILES {
+                        complete = false;
+                        warnings.push("Лимит индекса локали — 4096 FTL-файлов. Проверка ссылок неполная.".into());
+                        break;
+                    }
+                    match self.read_resource(&entry.path) {
+                        Ok(document) => {
+                            if bytes.saturating_add(document.bytes) > fluent_locale::MAX_LOCALE_BYTES {
+                                complete = false;
+                                warnings.push("Индекс локали достиг лимита памяти 64 МиБ. Проверка ссылок неполная.".into());
+                                break;
+                            }
+                            bytes += document.bytes;
+                            indexed.push(fluent_locale::scan_file(&entry.path, &document.content));
+                        }
+                        Err(error) => {
+                            complete = false;
+                            warnings.push(format!(
+                                "Не удалось прочитать {}: {} [{}].",
+                                entry.path, error.message, error.code,
+                            ));
+                        }
+                    }
+                }
+                let built = Arc::new(LocaleSnapshot::new(locale, indexed, warnings, complete));
+                cache.insert(locale.into(), Arc::clone(&built));
+                built
+            }
+        };
+        Ok(FluentInspection {
+            syntax,
+            locale: snapshot.inspect(rel_path, source),
+        })
     }
 
     pub fn preview_new_fluent(&self, draft: &FluentDraft) -> Result<FluentPreview, StudioError> {
@@ -502,7 +560,18 @@ impl ProjectIndex {
             ));
         }
         let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;
-        resource_edit::save_ftl(&self.root, rel_path, expected_revision, content)
+        let mut saved = resource_edit::save_ftl(&self.root, rel_path, expected_revision, content)?;
+        if let Some(locale) = fluent_locale::locale_of(rel_path) {
+            match self.fluent_locale_cache.lock() {
+                Ok(mut cache) => { cache.remove(locale); }
+                Err(_) => {
+                    saved.durability_warning = Some(
+                        "FTL сохранён, но индекс ссылок Fluent не сброшен. Обновите индекс проекта.".into(),
+                    );
+                }
+            }
+        }
+        Ok(saved)
     }
 
     pub fn search(
@@ -1055,8 +1124,8 @@ mod tests {
         let diagnostics = index
             .analyze_fluent(path, "valid = Hello\nbad@name = Broken\n")
             .unwrap();
-        assert!(!diagnostics.diagnostics.is_empty());
-        assert_eq!(diagnostics.diagnostics[0].line, 2);
+        assert!(!diagnostics.syntax.diagnostics.is_empty());
+        assert_eq!(diagnostics.syntax.diagnostics[0].line, 2);
         assert_eq!(
             fs::read_to_string(fx.root.join(path)).unwrap(),
             original,
@@ -1076,6 +1145,60 @@ mod tests {
                 .code,
             "FTL_NOT_INDEXED"
         );
+    }
+
+    #[test]
+    fn locale_index_is_cached_until_a_successful_fluent_save() {
+        let fx = Fixture::new();
+        let target = "Resources/Locale/en-US/target.ftl";
+        let source = "Resources/Locale/en-US/source.ftl";
+        fx.write(target, "referenced = Present\n");
+        fx.write(source, "use = { referenced }\n");
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let first = index.analyze_fluent(source, "use = { referenced }\n").unwrap();
+        assert!(first.locale.complete);
+        assert!(first.locale.issues.is_empty());
+        assert_eq!(first.locale.file_count, 2);
+
+        // Edits outside Studio require explicit index refresh; no polling.
+        fx.write(target, "replaced = Gone\n");
+        let cached = index.analyze_fluent(source, "use = { referenced }\n").unwrap();
+        assert!(cached.locale.issues.is_empty());
+
+        let expected = index.read_resource(target).unwrap().revision;
+        index.save_ftl(target, &expected, "still-other = Missing\n".into()).unwrap();
+        let refreshed = index.analyze_fluent(source, "use = { referenced }\n").unwrap();
+        assert_eq!(refreshed.locale.issues[0].code, "FTL_REFERENCE_MISSING");
+    }
+
+    #[test]
+    fn locale_index_uses_only_the_selected_language_and_live_draft() {
+        let fx = Fixture::new();
+        let en_file = "Resources/Locale/en-US/current.ftl";
+        let ru_file = "Resources/Locale/ru-RU/target.ftl";
+        fx.write(en_file, "source = { local-ref }\n");
+        fx.write(ru_file, "local-ref = Другая локаль\n");
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let report = index.analyze_fluent(en_file, "local-ref = Here\nsource = { local-ref }\n").unwrap();
+        assert_eq!(report.locale.locale, "en-US");
+        assert_eq!(report.locale.file_count, 1);
+        assert!(report.locale.issues.is_empty());
+        let absent = index.analyze_fluent(en_file, "source = { local-ref }\n").unwrap();
+        assert_eq!(absent.locale.issues[0].code, "FTL_REFERENCE_MISSING");
+    }
+
+    #[test]
+    fn incomplete_locale_scan_does_not_claim_missing_reference() {
+        let fx = Fixture::new();
+        let a = "Resources/Locale/en-US/current.ftl";
+        let other = "Resources/Locale/en-US/unreadable.ftl";
+        fx.write(a, "a = { missing }\n");
+        fx.write(other, &"z".repeat(4 * 1024 * 1024 + 1));
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let result = index.analyze_fluent(a, "a = { missing }\n").unwrap();
+        assert!(!result.locale.complete);
+        assert_eq!(result.locale.issue_count, 0);
+        assert!(!result.locale.warnings.is_empty());
     }
 
     #[test]
