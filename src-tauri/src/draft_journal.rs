@@ -280,8 +280,7 @@ fn validate_path(path: &str) -> Result<(), StudioError> {
         && components[0].as_os_str() == "Resources"
         && ((components[1].as_os_str() == "Prototypes"
             && (path.to_lowercase().ends_with(".yml") || path.to_lowercase().ends_with(".yaml")))
-            || (components[1].as_os_str() == "Locale"
-                && path.to_lowercase().ends_with(".ftl")))
+            || (components[1].as_os_str() == "Locale" && path.to_lowercase().ends_with(".ftl")))
         && !path.contains('\\');
     if !valid {
         return Err(problem(

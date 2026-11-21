@@ -1013,7 +1013,10 @@ mod tests {
         let fx = Fixture::new();
         let file = "Resources/Locale/ru-RU/proto.ftl";
         fx.write(file, "# original\nthing-name = Before\n");
-        fx.write("Resources/Prototypes/test.yml", "- type: entity\n  id: Test\n");
+        fx.write(
+            "Resources/Prototypes/test.yml",
+            "- type: entity\n  id: Test\n",
+        );
         let index = ProjectIndex::open(fx.root_str()).unwrap();
         let loaded = index.read_resource(file).unwrap();
         let updated = "# original\nthing-name = После\n";

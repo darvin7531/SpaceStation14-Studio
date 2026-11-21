@@ -237,11 +237,9 @@ async fn save_ftl_resource(
     state: State<'_, WorkspaceState>,
 ) -> Result<SaveResult, StudioError> {
     let index = current_project(&state)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        index.save_ftl(&path, &expected_revision, content)
-    })
-    .await
-    .map_err(interrupted)?
+    tauri::async_runtime::spawn_blocking(move || index.save_ftl(&path, &expected_revision, content))
+        .await
+        .map_err(interrupted)?
 }
 
 /// List snapshots without modifying SS14 resource files.
