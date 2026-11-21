@@ -90,3 +90,20 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Compile desktop app without installer
         run: npm run build -- --no-bundle
+
+  macos-compile:
+    name: Compile macOS Tauri executable
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Install frontend
+        run: npm install --no-audit --no-fund
+      - name: Compile desktop app without signing or installer
+        run: npm run build -- --no-bundle
