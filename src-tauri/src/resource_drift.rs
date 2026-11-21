@@ -118,10 +118,8 @@ mod tests {
     impl Fixture {
         fn new() -> Self {
             let id = NEXT.fetch_add(1, Ordering::Relaxed);
-            let root = std::env::temp_dir().join(format!(
-                "ss14-studio-probe-{}-{id}",
-                std::process::id()
-            ));
+            let root =
+                std::env::temp_dir().join(format!("ss14-studio-probe-{}-{id}", std::process::id()));
             fs::create_dir_all(root.join("Resources/Prototypes")).unwrap();
             Self(root)
         }
@@ -169,11 +167,13 @@ mod tests {
         let changed = probe(&index, &opened).unwrap();
         assert_eq!(changed.checked, 3);
         assert_eq!(changed.items.len(), 2);
-        assert!(changed.items.iter().any(|item| item.path == yaml && item.status == "changed"));
         assert!(changed
             .items
             .iter()
-            .any(|item| item.path == ftl && item.status == "unavailable" && item.error_code.is_some()));
+            .any(|item| item.path == yaml && item.status == "changed"));
+        assert!(changed.items.iter().any(|item| item.path == ftl
+            && item.status == "unavailable"
+            && item.error_code.is_some()));
         assert!(changed.items.iter().all(|item| item.path != rsi));
         assert_eq!(
             fs::read_to_string(fx.0.join(yaml)).unwrap(),
