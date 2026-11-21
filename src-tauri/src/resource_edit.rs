@@ -49,6 +49,40 @@ pub fn validate_yaml(text: &str) -> Result<(), StudioError> {
         })
 }
 
+#[derive(Debug, Serialize)]
+pub struct YamlSyntaxReport {
+    pub valid: bool,
+    pub line: Option<usize>,
+    pub column: Option<usize>,
+    pub message: Option<String>,
+}
+
+/// Parse the current YAML draft without touching the filesystem. This checks
+/// YAML syntax only, not prototype inheritance, component types or SS14 semantics.
+pub fn analyze_yaml(source: &str) -> Result<YamlSyntaxReport, StudioError> {
+    if source.len() as u64 > MAX_TEXT_BYTES {
+        return Err(StudioError::new(
+            "YAML_ANALYSIS_SIZE_LIMIT",
+            "Черновик YAML превышает лимит анализа 4 МиБ.",
+            "Уменьшите файл или откройте его во внешнем редакторе.",
+        ));
+    }
+    match Parser::new_from_str(source).load(&mut IgnoreEvents, true) {
+        Ok(()) => Ok(YamlSyntaxReport {
+            valid: true,
+            line: None,
+            column: None,
+            message: None,
+        }),
+        Err(error) => Ok(YamlSyntaxReport {
+            valid: false,
+            line: Some(error.marker().line().max(1)),
+            column: Some(error.marker().col() + 1),
+            message: Some(error.info().to_owned()),
+        }),
+    }
+}
+
 pub fn save_yaml(
     root: &Path,
     relative_path: &str,
@@ -325,6 +359,29 @@ fn io_error(code: &'static str, error: std::io::Error) -> StudioError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn live_yaml_analyzer_accepts_ss14_tags_and_reports_broken_yaml() {
+        let valid = analyze_yaml("- type: !PartialOnly entity\n  id: Example\n").unwrap();
+        assert!(valid.valid);
+        assert!(valid.message.is_none());
+
+        let invalid = analyze_yaml("- type: entity\n  id: [unfinished\n").unwrap();
+        assert!(!invalid.valid);
+        assert!(invalid.line.unwrap() >= 1);
+        assert!(invalid.column.unwrap() >= 1);
+        assert!(!invalid.message.unwrap().is_empty());
+    }
+
+    #[test]
+    fn live_yaml_analyzer_enforces_input_limit() {
+        let oversized = "x".repeat(MAX_TEXT_BYTES as usize + 1);
+        assert_eq!(
+            analyze_yaml(&oversized).unwrap_err().code,
+            "YAML_ANALYSIS_SIZE_LIMIT"
+        );
+    }
+
     use std::sync::atomic::{AtomicU64, Ordering};
     static TEST_ID: AtomicU64 = AtomicU64::new(0);
 
