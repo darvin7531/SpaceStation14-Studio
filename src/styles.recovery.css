@@ -1,0 +1,22 @@
+/* Per-project recovery journal. The comparison is read-only until explicit restore. */
+.recovery-panel { padding: 10px 22px; background: #182739; border-bottom: 1px solid #4d6886; display: grid; gap: 8px; }
+.recovery-heading { display: flex; align-items: center; gap: 9px; color: #d5e8ff; font-size: 13px; }
+.recovery-heading > span { margin-left: auto; color: #98b6d3; font-size: 12px; }
+.recovery-entry-list { display: flex; flex-wrap: wrap; gap: 7px; }
+.recovery-entry { display: flex; gap: 9px; align-items: center; border: 1px solid #3b5470; background: #102034; border-radius: 6px; padding: 6px 9px; max-width: 100%; }
+.recovery-entry > span { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: #b9cee5; }
+.recovery-entry small { color: #88a1bf; font-size: 10px; }
+.recovery-entry button, .recovery-actions button { border: 1px solid #5276a0; border-radius: 5px; color: #e3f0ff; background: #294c70; padding: 6px 9px; font-size: 11px; }
+.recovery-entry button:disabled, .recovery-actions button:disabled { opacity: .45; cursor: not-allowed; }
+.recovery-warning { margin: 0; display: flex; gap: 8px; align-items: center; color: #f1ca94; font-size: 12px; line-height: 1.4; }
+.recovery-preview { display: flex; flex-direction: column; gap: 10px; background: #0e1b2b; padding: 13px; border: 1px solid #5a799b; border-radius: 8px; max-height: 58vh; overflow: auto; }
+.recovery-preview-title { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: #dbeafa; }
+.recovery-preview-title strong { font-size: 12px; overflow-wrap: anywhere; }
+.recovery-preview-title button { color: #bed6f0; background: transparent; border: 0; }
+.recovery-compare { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.recovery-compare label { display: flex; flex-direction: column; gap: 5px; min-width: 0; color: #a5c7ed; font-size: 11px; }
+.recovery-compare textarea { resize: vertical; font: 11px/1.5 Consolas,monospace; padding: 8px; min-height: 140px; white-space: pre; color: #d7e5f5; background: #09111e; border: 1px solid #3d5571; border-radius: 5px; }
+.recovery-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
+.recovery-actions button.recovery-delete { background: #52302f; border-color: #985c58; }
+.recovery-preview > small { color: #9fb2c6; font-size: 11px; line-height: 1.5; }
+@media(max-width: 860px) { .recovery-compare { grid-template-columns: minmax(0,1fr); } }
