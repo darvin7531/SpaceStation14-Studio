@@ -1,0 +1,20 @@
+.rsi-viewer { flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden; background:#0d1723; }
+.rsi-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:11px 16px; border-bottom:1px solid #344960; }
+.rsi-toolbar strong { color:#dbeafa; font-size:13px; }
+.rsi-toolbar span { color:#8ba9c9; font-size:11px; margin-right:auto; }
+.rsi-toolbar label { display:flex; align-items:center; gap:6px; color:#b4c8df; font-size:11px; }
+.rsi-toolbar select, .rsi-toolbar button { border:1px solid #4d6b89; border-radius:5px; background:#1e354b; color:#e4f0fa; padding:6px; font-size:11px; min-width:0; }
+.rsi-toolbar button { display:flex; gap:6px; align-items:center; cursor:pointer; }
+.rsi-toolbar button:disabled { opacity:.5; cursor:not-allowed; }
+.rsi-stage { flex:1; min-height:130px; overflow:auto; padding:22px; background-color:#101d2a; background-image:linear-gradient(45deg,#26394c 25%,transparent 25%),linear-gradient(-45deg,#26394c 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#26394c 75%),linear-gradient(-45deg,transparent 75%,#26394c 75%); background-size:24px 24px; background-position:0 0,0 12px,12px -12px,-12px 0; }
+.rsi-stage img { display:block; max-width:none; image-rendering:pixelated; }
+.rsi-stage p { display:inline-block; background:#0b1623; padding:10px 12px; border-radius:5px; color:#aec5df; }
+.rsi-metadata { max-height:28vh; overflow:auto; padding:12px 16px; border-top:1px solid #344960; font-size:12px; }
+.rsi-metadata summary { color:#a8c9e9; cursor:pointer; }
+.rsi-metadata pre { white-space:pre-wrap; overflow-wrap:anywhere; font:11px/1.5 ui-monospace,monospace; color:#d2e3f5; }
+.rsi-error { display:flex; flex-wrap:wrap; gap:7px; padding:10px 16px; background:#39282e; color:#f4c5cb; font-size:11px; }
+.rsi-error span { flex:1; }
+.rsi-error details { flex-basis:100%; }
+.rsi-error pre { white-space:pre-wrap; overflow-wrap:anywhere; }
+.rsi-warning { padding:8px 16px; margin:0; color:#f3d5a8; background:#382c20; font-size:11px; }
+.rsi-caveat { margin:0; padding:9px 16px; border-top:1px solid #344960; color:#96acc6; font-size:10px; }

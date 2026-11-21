@@ -127,6 +127,22 @@ export interface PrototypeDiagnosticPage {
   items: PrototypeDiagnostic[];
 }
 
+export interface RsiSheetInfo {
+  name: string;
+  bytes: number;
+  previewable: boolean;
+}
+
+export interface RsiSheetList {
+  sheets: RsiSheetInfo[];
+  warnings: string[];
+}
+
+export interface RsiSheetImage {
+  data_url: string;
+  bytes: number;
+}
+
 export interface DraftSnapshot {
   schema_version: number;
   project_root: string;
@@ -255,6 +271,12 @@ export const studio = {
   },
   appendPrototype(draft: NewPrototypeDraft, expectedRevision: string): Promise<CreatedPrototype> {
     return invoke('append_prototype', { draft, expectedRevision });
+  },
+  listRsiSheets(path: string): Promise<RsiSheetList> {
+    return invoke('list_rsi_sheets', { path });
+  },
+  readRsiSheet(path: string, name: string): Promise<RsiSheetImage> {
+    return invoke('read_rsi_sheet', { path, name });
   },
   readResource(path: string): Promise<ResourceDocument> {
     return invoke('read_resource', { path });

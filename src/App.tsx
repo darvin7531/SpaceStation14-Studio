@@ -11,6 +11,7 @@ import { dirtyDocumentPaths, reconcileSavedDraft } from './lib/draft-state';
 import { DraftWriteQueue, journalKey } from './lib/draft-queue';
 import { reviewDecision } from './lib/review-guard';
 import MonacoPreview from './editor/MonacoPreview';
+import RsiPreview from './components/RsiPreview';
 import PrototypeExplorer from './components/PrototypeExplorer';
 import PrototypeFieldsPanel from './components/PrototypeFieldsPanel';
 import PrototypeComponentsPanel from './components/PrototypeComponentsPanel';
@@ -825,7 +826,9 @@ export default function App() {
             onAccept={() => void acceptComparison()} onRefresh={() => void compareCurrent()}
             onClose={closeComparison}/>}
           {reading ? <div className="placeholder">Чтение ресурса…</div> :
-            document ? <MonacoPreview key={document.path} resource={selected} document={document}
+            document && selected.kind === 'rsi'
+              ? <RsiPreview key={document.path + ':' + document.revision} path={selected.path} metadata={document.content}/>
+              : document ? <MonacoPreview key={document.path} resource={selected} document={document}
               value={activeText} editable={selected.kind === 'yaml' && !saving}
               onChange={selected.kind === 'yaml' ? (value) => {
                 const next = { ...draftsRef.current, [selected.path]: value };

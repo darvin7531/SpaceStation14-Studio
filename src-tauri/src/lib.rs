@@ -8,6 +8,7 @@ mod prototype_fields;
 mod prototype_graph;
 mod prototypes;
 mod resource_edit;
+mod rsi_preview;
 
 use std::sync::{Arc, Mutex};
 
@@ -21,6 +22,7 @@ use prototype_fields::{FieldInspection, FieldLocator, FieldPatch, PrototypeField
 use prototype_graph::PrototypeRelations;
 use prototypes::{DiagnosticPage, PrototypePage};
 use resource_edit::SaveResult;
+use rsi_preview::{RsiSheetImage, RsiSheetList};
 use serde::Serialize;
 use tauri::{Manager, State};
 
@@ -99,6 +101,29 @@ async fn read_resource(
 ) -> Result<ResourceDocument, StudioError> {
     let index = current_project(&state)?;
     tauri::async_runtime::spawn_blocking(move || index.read_resource(&path))
+        .await
+        .map_err(interrupted)?
+}
+
+#[tauri::command]
+async fn list_rsi_sheets(
+    path: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<RsiSheetList, StudioError> {
+    let index = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || index.list_rsi_sheets(&path))
+        .await
+        .map_err(interrupted)?
+}
+
+#[tauri::command]
+async fn read_rsi_sheet(
+    path: String,
+    name: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<RsiSheetImage, StudioError> {
+    let index = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || index.read_rsi_sheet(&path, &name))
         .await
         .map_err(interrupted)?
 }
@@ -466,6 +491,8 @@ pub fn run() -> Result<(), tauri::Error> {
             prototype_relations,
             list_prototype_diagnostics,
             read_resource,
+            list_rsi_sheets,
+            read_rsi_sheet,
             save_yaml_resource,
             preview_new_prototype,
             create_new_prototype,

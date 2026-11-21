@@ -13,6 +13,7 @@ use crate::prototype_create::{self, CreatedPrototype, PrototypeDraft, PrototypeP
 use crate::prototype_fields::{self, FieldInspection, FieldLocator, FieldPatch, PrototypeFields};
 use crate::prototypes::PrototypeCatalog;
 use crate::resource_edit::{self, SaveResult};
+use crate::rsi_preview::{self, RsiSheetImage, RsiSheetList};
 
 const MAX_SCAN_ENTRIES: usize = 250_000;
 const MAX_READ_BYTES: u64 = 4 * 1024 * 1024;
@@ -428,6 +429,29 @@ impl ProjectIndex {
             total += 1;
         }
         ResourcePage { total, items }
+    }
+
+    fn verify_indexed_rsi(&self, rel_path: &str) -> Result<(), StudioError> {
+        let indexed = self.positions.get(rel_path)
+            .and_then(|index| self.resources.get(*index))
+            .is_some_and(|entry| entry.kind == "rsi");
+        if !indexed {
+            return Err(StudioError::new(
+                "RSI_NOT_INDEXED", "RSI отсутствует в индексе проекта.",
+                "Выберите RSI через список ресурсов открытого проекта.",
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn list_rsi_sheets(&self, rel_path: &str) -> Result<RsiSheetList, StudioError> {
+        self.verify_indexed_rsi(rel_path)?;
+        rsi_preview::list(&self.root, rel_path)
+    }
+
+    pub fn read_rsi_sheet(&self, rel_path: &str, name: &str) -> Result<RsiSheetImage, StudioError> {
+        self.verify_indexed_rsi(rel_path)?;
+        rsi_preview::read(&self.root, rel_path, name)
     }
 
     pub fn read_resource(&self, rel_path: &str) -> Result<ResourceDocument, StudioError> {
@@ -1050,6 +1074,50 @@ mod tests {
         let error = ProjectIndex::open(fixture.root_str()).unwrap_err();
         assert_eq!(error.code, "PROJECT_SYMLINKED_SCOPE");
         assert!(!error.hint.is_empty());
+    }
+
+    #[test]
+    fn rsi_png_is_read_only_indexed_and_bounded() {
+        let fx = Fixture::new();
+        let path = "Resources/Textures/Test.rsi";
+        fx.write("Resources/Textures/Test.rsi/meta.json", "{\"version\":1}");
+        fs::write(
+            fx.root.join("Resources/Textures/Test.rsi/idle.png"),
+            b"\\x89PNG\\r\\n\\x1a\\nminimal fixture",
+        ).unwrap();
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let sheets = index.list_rsi_sheets(path).unwrap();
+        assert_eq!(sheets.sheets.len(), 1);
+        assert_eq!(sheets.sheets[0].name, "idle.png");
+        let image = index.read_rsi_sheet(path, "idle.png").unwrap();
+        assert!(image.data_url.starts_with("data:image/png;base64,"));
+        assert_eq!(
+            index.read_rsi_sheet(path, "../idle.png").unwrap_err().code,
+            "RSI_IMAGE_NAME_INVALID"
+        );
+        assert_eq!(
+            index.list_rsi_sheets("Resources/Prototypes").unwrap_err().code,
+            "RSI_NOT_INDEXED"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rsi_symlinked_png_is_rejected() {
+        use std::os::unix::fs::symlink;
+        let fx = Fixture::new();
+        fx.write("Resources/Textures/Link.rsi/meta.json", "{}");
+        fx.write("outside.png", "not a png");
+        symlink(fx.root.join("outside.png"),
+            fx.root.join("Resources/Textures/Link.rsi/escape.png")).unwrap();
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let listing = index.list_rsi_sheets("Resources/Textures/Link.rsi").unwrap();
+        assert!(listing.sheets.is_empty());
+        assert!(!listing.warnings.is_empty());
+        assert_eq!(
+            index.read_rsi_sheet("Resources/Textures/Link.rsi", "escape.png").unwrap_err().code,
+            "RSI_IMAGE_INVALID"
+        );
     }
 
     #[test]
