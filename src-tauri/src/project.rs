@@ -275,18 +275,15 @@ impl ProjectIndex {
         }
         let original = self.read_resource(&draft.file)?;
         let combined = prototype_append::prepare_append(&original.content, &prepared.yaml)?;
-        let saved = resource_edit::save_yaml(
-            &self.root,
-            &draft.file,
-            expected_revision,
-            combined,
-        )?;
+        let saved = resource_edit::save_yaml(&self.root, &draft.file, expected_revision, combined)?;
         let mut warning = saved.durability_warning;
         match self.prototype_catalog.lock() {
             Ok(mut cache) => *cache = None,
-            Err(_) => warning = Some(
-                "YAML записан, но индекс прототипов не обновился. Переоткройте проект.".into(),
-            ),
+            Err(_) => {
+                warning = Some(
+                    "YAML записан, но индекс прототипов не обновился. Переоткройте проект.".into(),
+                )
+            }
         };
         Ok(CreatedPrototype {
             file: prepared.file,
