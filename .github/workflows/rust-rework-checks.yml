@@ -18,6 +18,11 @@ on:
 permissions:
   contents: read
 
+# Only the latest revision on a branch needs the full native build.
+concurrency:
+  group: rust-rework-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   frontend:
     name: React build, TypeScript and error tests
