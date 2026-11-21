@@ -350,7 +350,10 @@ impl ProjectIndex {
         }
         let mut bytes = Vec::new();
         fs::File::open(&path)
-            .and_then(|file| file.take(MAX_CSHARP_PREVIEW_BYTES + 1).read_to_end(&mut bytes))
+            .and_then(|file| {
+                file.take(MAX_CSHARP_PREVIEW_BYTES + 1)
+                    .read_to_end(&mut bytes)
+            })
             .map_err(|error| {
                 StudioError::new(
                     "CSHARP_SOURCE_UNAVAILABLE",
