@@ -5,6 +5,7 @@ import {
   type ComponentOperation,
   type ComponentInspection,
   type ComponentScalarField,
+  type ComponentScalarKind,
   type PrototypeFieldLocator,
 } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
@@ -23,6 +24,11 @@ export default function PrototypeComponentsPanel({
   const [inspection, setInspection] = useState<ComponentInspection | null>(null);
   const [componentType, setComponentType] = useState('');
   const [pendingRemoval, setPendingRemoval] = useState<number | null>(null);
+  const [pendingFieldRemoval, setPendingFieldRemoval] = useState<{ index: number; key: string } | null>(null);
+  const [addingField, setAddingField] = useState<{
+    index: number; key: string;
+    kind: Exclude<ComponentScalarKind, 'complex'>; value: string;
+  } | null>(null);
   const [editingField, setEditingField] = useState<{
     index: number;
     key: string;
@@ -40,6 +46,8 @@ export default function PrototypeComponentsPanel({
     setLoading(true);
     setInspection(null);
     setPendingRemoval(null);
+    setPendingFieldRemoval(null);
+    setAddingField(null);
     setEditingField(null);
     setError(null);
     const timer = window.setTimeout(() => {
@@ -83,6 +91,8 @@ export default function PrototypeComponentsPanel({
       }
       setComponentType('');
       setPendingRemoval(null);
+      setPendingFieldRemoval(null);
+      setAddingField(null);
       setEditingField(null);
       setNotice('Компонент или его поле изменены в черновике. Проверьте YAML и сохраните Ctrl+S.');
       setRefresh((value) => value + 1);
@@ -115,6 +125,22 @@ export default function PrototypeComponentsPanel({
       key: editingField.key,
       kind: editingField.kind,
       value: editingField.value,
+    });
+  }
+
+  function newField(index: number) {
+    setPendingRemoval(null);
+    setPendingFieldRemoval(null);
+    setEditingField(null);
+    setAddingField({ index, key: '', kind: 'string', value: '' });
+  }
+
+  function submitNewField(event: FormEvent<HTMLFormElement>, expectedType: string) {
+    event.preventDefault();
+    if (!addingField) return;
+    void apply({
+      operation: 'add_field', index: addingField.index, expected_type: expectedType,
+      key: addingField.key.trim(), kind: addingField.kind, value: addingField.value,
     });
   }
 
@@ -177,14 +203,71 @@ export default function PrototypeComponentsPanel({
               <span className="prototype-component-scalar-value" title={field.value}>
                 {field.value}
               </span>
-              {field.editable
-                ? <button type="button" disabled={disabled}
-                    onClick={() => edit(entry.index, field)}>Изменить</button>
+              {field.editable && field.kind !== 'complex'
+                ? <div className="prototype-component-property-actions">
+                    <button type="button" disabled={disabled}
+                      onClick={() => edit(entry.index, field)}>Изменить</button>
+                    {pendingFieldRemoval?.index === entry.index && pendingFieldRemoval.key === field.key
+                      ? <>
+                          <button type="button" className="prototype-component-danger" disabled={disabled}
+                            onClick={() => void apply({
+                              operation: 'remove_field',
+                              index: entry.index, expected_type: entry.type_name, key: field.key,
+                              expected_kind: field.kind as Exclude<ComponentScalarKind, 'complex'>,
+                              expected_value: field.value,
+                            })}>Удалить?</button>
+                          <button type="button" disabled={disabled}
+                            onClick={() => setPendingFieldRemoval(null)}>Отмена</button>
+                        </>
+                      : <button type="button" disabled={disabled} title={'Удалить поле ' + field.key}
+                          onClick={() => setPendingFieldRemoval({ index: entry.index, key: field.key })}>
+                          <Trash2 size={12}/>
+                        </button>}
+                  </div>
                 : <span className="prototype-component-readonly" title="Сложное значение редактируется в Monaco">
                     Только YAML
                   </span>}
             </div>)}
           </div>
+          {addingField?.index !== entry.index && <button type="button" disabled={disabled}
+            className="prototype-component-add-property-trigger"
+            onClick={() => newField(entry.index)}>
+            <Plus size={13}/> Добавить поле
+          </button>}
+          {addingField?.index === entry.index && <form className="prototype-component-field-form"
+            onSubmit={(event) => submitNewField(event, entry.type_name)}>
+            <label>Имя поля
+              <input spellCheck={false} disabled={disabled} placeholder="sprite, count, visible…"
+                value={addingField.key}
+                onChange={(event) => setAddingField({ ...addingField, key: event.target.value })}/>
+            </label>
+            <label>Тип
+              <select disabled={disabled} value={addingField.kind}
+                onChange={(event) => {
+                  const next = event.target.value as Exclude<ComponentScalarKind, 'complex'>;
+                  setAddingField({ ...addingField, kind: next,
+                    value: next === 'bool' ? 'false' : '' });
+                }}>
+                <option value="string">string</option><option value="bool">bool</option>
+                <option value="int">int</option><option value="float">float</option>
+              </select>
+            </label>
+            <label>Значение
+              {addingField.kind === 'bool'
+                ? <select disabled={disabled} value={addingField.value}
+                    onChange={(event) => setAddingField({ ...addingField, value: event.target.value })}>
+                    <option value="false">false</option><option value="true">true</option>
+                  </select>
+                : <input spellCheck={false} disabled={disabled} value={addingField.value}
+                    placeholder={addingField.kind === 'int' ? '0' : addingField.kind === 'float' ? '1.0' : ''}
+                    onChange={(event) => setAddingField({ ...addingField, value: event.target.value })}/>}
+            </label>
+            <button type="submit" disabled={disabled || !addingField.key.trim()}>
+              Добавить поле
+            </button>
+            <button type="button" disabled={disabled}
+              onClick={() => setAddingField(null)}>Отмена</button>
+          </form>}
           {editingField?.index === entry.index && <form className="prototype-component-field-form"
             onSubmit={(event) => submitField(event, entry.type_name)}>
             <label>Поле <code>{editingField.key}</code> · {editingField.kind}
@@ -220,8 +303,8 @@ export default function PrototypeComponentsPanel({
       <small className="prototype-component-caveat">
         Добавляется минимальный блок <code>- type</code>. Требования и поля компонента
         зависят от форка SS14; C#-валидация ещё не реализована.
-        Простые поля string/bool/int/float можно изменять, сохраняя их тип; вложенные структуры
-        и теги остаются доступны в Monaco. Блоки с комментариями автоматически не удаляются.
+        Поля string/bool/int/float можно добавлять, менять и удалять.
+        Вложенные структуры и теги остаются в Monaco. Поля с комментариями не удаляются автоматически.
       </small>
     </>}
   </section>;

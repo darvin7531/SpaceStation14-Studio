@@ -33,3 +33,13 @@
 .prototype-component-field-form label { display:grid; gap:5px; flex:1; min-width:160px; font-size:11px; color:#bfdbf3; }
 .prototype-component-field-form input, .prototype-component-field-form select { box-sizing:border-box; width:100%; border:1px solid #6484a5; border-radius:5px; color:#edf7ff; background:#0b1a2c; padding:7px 8px; font:12px ui-monospace,monospace; }
 @media(max-width:840px) { .prototype-component-property { grid-template-columns:minmax(70px,1fr) auto minmax(70px,1.5fr); } .prototype-component-property > button, .prototype-component-readonly { grid-column:3; justify-self:end; } }
+
+/* Edit controls for an individual scalar field. */
+.prototype-component-property-actions { display:flex; align-items:center; flex-wrap:wrap; justify-content:flex-end; gap:5px; }
+.prototype-component-property-actions button { min-width:0; padding:5px 7px; }
+.prototype-component-row > .prototype-component-add-property-trigger { flex:0 0 auto; margin-top:3px; background:#204d66; }
+.prototype-component-field-form { width:100%; }
+.prototype-component-field-form label { min-width:120px; }
+@media(max-width:840px) {
+  .prototype-component-property-actions { grid-column:3; }
+}

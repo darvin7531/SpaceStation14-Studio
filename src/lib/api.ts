@@ -78,7 +78,11 @@ export type ComponentOperation =
   | { operation: 'add'; type_name: string }
   | { operation: 'remove'; index: number; expected_type: string }
   | { operation: 'update_field'; index: number; expected_type: string;
-      key: string; kind: Exclude<ComponentScalarKind, 'complex'>; value: string };
+      key: string; kind: Exclude<ComponentScalarKind, 'complex'>; value: string }
+  | { operation: 'add_field'; index: number; expected_type: string;
+      key: string; kind: Exclude<ComponentScalarKind, 'complex'>; value: string }
+  | { operation: 'remove_field'; index: number; expected_type: string;
+      key: string; expected_kind: Exclude<ComponentScalarKind, 'complex'>; expected_value: string };
 
 export interface FieldPatch {
   content: string;
