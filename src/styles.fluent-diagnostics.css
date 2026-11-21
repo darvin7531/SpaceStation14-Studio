@@ -116,3 +116,12 @@
 .fluent-diagnostics-row { border-bottom: 1px solid #223247; }
 .fluent-related-source { margin: 0 0 6px 65px; border: 1px solid #3f5c7b; border-radius: 4px; background: #1b344e; color: #b6d8ff; font-size: 11px; padding: 4px 8px; text-align: left; max-width: calc(100% - 70px); overflow-wrap: anywhere; }
 .fluent-check-now { margin-left: auto; padding: 5px 8px; border: 1px solid #426787; border-radius: 5px; background: #234360; color: #dcecff; }
+
+.yaml-diagnostics { flex: none; max-height: 175px; overflow-y: auto; background: #102030; border-bottom: 1px solid #344c65; color: #c4d6e9; font-size: 12px; }
+.yaml-diagnostics header { display: flex; align-items: center; gap: 9px; padding: 9px 16px; background: #17283b; }
+.yaml-diagnostics header small { color: #94acc5; }
+.yaml-diagnostics header button { margin-left: auto; border: 1px solid #426787; border-radius: 5px; background: #234360; color: #dcecff; padding: 5px 9px; }
+.yaml-diagnostics p { display: flex; align-items: center; gap: 8px; margin: 0; padding: 9px 16px; }
+.yaml-diagnostics-error { display: flex; align-items: center; gap: 9px; width: 100%; background: #37272b; border: 0; border-top: 1px solid #754b54; color: #ffc9c3; text-align: left; padding: 9px 16px; }
+.yaml-diagnostics-error:focus-visible, .yaml-diagnostics-error:hover { outline: 1px solid #98b8dc; }
+.yaml-diagnostics footer { padding: 7px 16px; font-size: 11px; color: #90a7bf; }
