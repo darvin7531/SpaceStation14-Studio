@@ -34,7 +34,7 @@ Run from the repository root:
     cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
     npm run dev
 
-Production packaging is not enabled until editing, feature-parity and platform-smoke tests are added. The root package uses npm semver dependencies; a lockfile and pinned release build are mandatory before a binary release.
+CI also compiles the complete Tauri application with `npm run build -- --no-bundle` (Linux). It does not launch the GUI or generate an installer. Production packaging is not enabled until editing, feature-parity and platform-smoke tests are added. The root package uses npm semver dependencies; a lockfile and pinned release build are mandatory before a binary release.
 
 ## Architecture
 
