@@ -20,6 +20,7 @@ import RecoveryPanel from './components/RecoveryPanel';
 import CreatePrototypeWizard, { type PrototypeDestinationMode } from './components/CreatePrototypeWizard';
 import CreateFluentWizard from './components/CreateFluentWizard';
 import FluentDiagnosticsPanel from './components/FluentDiagnosticsPanel';
+import CSharpCatalogPanel from './components/CSharpCatalogPanel';
 import ConflictReviewPanel from './components/ConflictReviewPanel';
 
 const PAGE_SIZE = 100;
@@ -68,6 +69,7 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [creatingPrototype, setCreatingPrototype] = useState(false);
   const [creatingFluent, setCreatingFluent] = useState(false);
+  const [showingCSharp, setShowingCSharp] = useState(false);
   const [fieldTarget, setFieldTarget] = useState<PrototypeFieldLocator | null>(null);
   const [prototypePanel, setPrototypePanel] = useState<'fields' | 'components'>('fields');
   const [picking, setPicking] = useState(false);
@@ -181,6 +183,7 @@ export default function App() {
   async function loadProject(requestedPath: string) {
     setCreatingPrototype(false);
     setCreatingFluent(false);
+    setShowingCSharp(false);
     setFieldTarget(null);
     comparisonVersion.current += 1;
     setComparison(null);
@@ -790,6 +793,9 @@ export default function App() {
   }
 
   return <div className="app">
+    {showingCSharp && overview && <CSharpCatalogPanel
+      projectKey={overview.project_root + ':' + workspaceRevision}
+      onClose={() => setShowingCSharp(false)}/>}
     {creatingFluent && overview && <CreateFluentWizard
       onClose={() => setCreatingFluent(false)}
       onCreated={onFluentCreated}
@@ -826,6 +832,11 @@ export default function App() {
           disabled={opening || saving || transitioning || refreshing || creatingPrototype || creatingFluent}
           onClick={() => setCreatingFluent(true)}>
           <FilePlus2 size={15}/> Создать FTL
+        </button>
+        <button type="button" className="create-proto-open"
+          disabled={opening || saving || transitioning || refreshing || creatingPrototype || creatingFluent}
+          onClick={() => setShowingCSharp(true)}>
+          <FileCode2 size={15}/> C# схемы
         </button>
         <button type="button" className="create-proto-open" disabled={opening || picking || saving || transitioning || reading || refreshing || creatingPrototype || creatingFluent}
           title="Полностью пересканировать проект, сохранив открытые черновики"

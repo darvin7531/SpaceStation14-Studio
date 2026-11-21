@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 
+use crate::csharp_index::{CSharpCatalog, CSharpPage};
 use crate::error::{internal_lock, StudioError};
 use crate::fluent_create::{self, CreatedFluent, FluentDraft, FluentPreview};
 use crate::fluent_diagnostics;
@@ -68,6 +69,7 @@ pub struct ProjectIndex {
     resources: Vec<ResourceEntry>,
     positions: HashMap<String, usize>,
     prototype_catalog: Mutex<Option<Arc<PrototypeCatalog>>>,
+    csharp_catalog: Mutex<Option<Arc<CSharpCatalog>>>,
     fluent_locale_cache: Mutex<HashMap<String, Arc<LocaleSnapshot>>>,
     edit_lock: Mutex<()>,
 }
@@ -201,6 +203,7 @@ impl ProjectIndex {
             resources,
             positions,
             prototype_catalog: Mutex::new(None),
+            csharp_catalog: Mutex::new(None),
             fluent_locale_cache: Mutex::new(HashMap::new()),
             edit_lock: Mutex::new(()),
         })
@@ -230,6 +233,23 @@ impl ProjectIndex {
             removed_resources,
         };
         Ok((refreshed, summary))
+    }
+
+    /// Lazy, one-shot source scan. Concurrent requests share one result and
+    /// never block the Tauri webview thread (IPC uses spawn_blocking).
+    /// Explicit workspace refresh replaces the entire immutable index.
+    pub fn csharp_page(
+        &self,
+        query: &str,
+        kind: Option<&str>,
+        offset: usize,
+        limit: usize,
+    ) -> Result<CSharpPage, StudioError> {
+        let mut cached = self.csharp_catalog.lock().map_err(|_| internal_lock())?;
+        if cached.is_none() {
+            *cached = Some(Arc::new(CSharpCatalog::scan(&self.root)?));
+        }
+        Ok(cached.as_ref().expect("C# cache initialized").page(query, kind, offset, limit))
     }
 
     pub fn is_yaml_indexed(&self, path: &str) -> bool {

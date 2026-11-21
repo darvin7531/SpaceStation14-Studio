@@ -1,3 +1,4 @@
+mod csharp_index;
 mod draft_journal;
 mod error;
 mod fluent_create;
@@ -15,6 +16,7 @@ mod rsi_preview;
 
 use std::sync::{Arc, Mutex};
 
+use csharp_index::CSharpPage;
 use draft_journal::{DraftJournal, DraftList, DraftSnapshot, DraftSummary, DraftWriteResult};
 use error::{internal_lock, interrupted, StudioError};
 use fluent_create::{FluentDraft, FluentPreview};
@@ -121,6 +123,29 @@ async fn search_resources(
     })
     .await
     .map_err(interrupted)
+}
+
+/// Discover C# annotations without the legacy regex / fixed-line-window
+/// heuristics. Work is bounded, lazy and cached per open project.
+#[tauri::command]
+async fn search_csharp_definitions(
+    query: String,
+    kind: Option<String>,
+    offset: Option<usize>,
+    limit: Option<usize>,
+    state: State<'_, WorkspaceState>,
+) -> Result<CSharpPage, StudioError> {
+    let project = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        project.csharp_page(
+            &query,
+            kind.as_deref(),
+            offset.unwrap_or(0),
+            limit.unwrap_or(50),
+        )
+    })
+    .await
+    .map_err(interrupted)?
 }
 
 #[tauri::command]
@@ -612,6 +637,7 @@ pub fn run() -> Result<(), tauri::Error> {
             open_project,
             refresh_project,
             search_resources,
+            search_csharp_definitions,
             search_prototypes,
             prototype_relations,
             list_prototype_diagnostics,

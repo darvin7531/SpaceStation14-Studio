@@ -62,6 +62,12 @@ CI also compiles the complete Tauri application with `npm run build -- --no-bund
 - Project index: immutable snapshot loaded off the UI thread and atomically replaced; searches never traverse the filesystem.
 - Source files are authoritative. Derived indexes must be rebuildable.
 
+## Native C# schema index (experimental)
+
+The Rust Rework can lazily scan C# source files through **Tree-sitter C#** (without Electron's regex scanning windows). Use **C# схемы** after opening a project to browse `[RegisterComponent]` components, `[Prototype]`/`[PrototypeRecord]` kinds, and immediate `[DataField]` fields/properties with C# types and source locations. The scan skips generated build directories, `Resources` and symlinks, and limits work to 20,000 files, 2 MiB per file and 128 MiB total. Results are cached per project and reset on index refresh. The UI reports skipped files and uncertain C# parses.
+
+This is **structural C# metadata**, not compiler semantic resolution: inherited fields, preprocessor symbols, multiple partial declarations and generated code need further handling. No source files are changed by the C# indexer.
+
 ## Rework roadmap
 
 For the continuously updated task-level checklist, acceptance criteria, and the latest development cycle, see [RUST_REWORK_PLAN.md](RUST_REWORK_PLAN.md).

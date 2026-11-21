@@ -9,6 +9,36 @@ export interface ProjectOverview {
   total_resources: number;
   warnings: string[];
 }
+export interface CSharpField {
+  name: string;
+  member: string;
+  field_type: string;
+  line: number;
+  required: boolean;
+  explicit_name: boolean;
+}
+
+export interface CSharpDefinition {
+  kind: 'component' | 'prototype';
+  name: string;
+  class_name: string;
+  file: string;
+  line: number;
+  partial: boolean;
+  base_types: string;
+  fields: CSharpField[];
+  parse_uncertain: boolean;
+}
+
+export interface CSharpPage {
+  total: number;
+  files_scanned: number;
+  bytes_scanned: number;
+  complete: boolean;
+  warnings: string[];
+  items: CSharpDefinition[];
+}
+
 export interface ProjectRefresh {
   overview: ProjectOverview;
   added_resources: number;
@@ -292,6 +322,9 @@ export const studio = {
   },
   searchResources(query: string, kind: ResourceKind, offset: number, limit = 100): Promise<ResourcePage> {
     return invoke('search_resources', { query, kind, offset, limit });
+  },
+  searchCSharpDefinitions(query: string, kind: 'all' | 'component' | 'prototype', offset: number, limit = 50): Promise<CSharpPage> {
+    return invoke('search_csharp_definitions', { query, kind, offset, limit });
   },
   searchPrototypes(query: string, kind: string, offset: number, limit = 100): Promise<PrototypePage> {
     return invoke('search_prototypes', { query, kind: kind || null, offset, limit });

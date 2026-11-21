@@ -1,0 +1,581 @@
+//! Bounded, lazy C# syntax index for SS14 metadata.
+//!
+//! Unlike the Electron regex scanner, Tree-sitter attaches attributes to the
+//! actual class/member syntax node, not a nearby line. This is intentionally a
+//! structural index, not Roslyn semantic type resolution: inheritance,
+//! preprocessor symbols, generated sources and partial-class merging remain
+//! unverified until an explicit semantic pass is added.
+use std::fs::{self, File};
+use std::io::Read;
+use std::path::{Path, PathBuf};
+
+use serde::Serialize;
+use tree_sitter::{Node, Parser};
+
+use crate::error::StudioError;
+
+const MAX_SOURCE_FILES: usize = 20_000;
+const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_SCAN_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_WARNINGS: usize = 40;
+const MAX_PAGE: usize = 150;
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CSharpField {
+    pub name: String,
+    pub member: String,
+    pub field_type: String,
+    pub line: usize,
+    pub required: bool,
+    pub explicit_name: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CSharpDefinition {
+    pub kind: &'static str,
+    pub name: String,
+    pub class_name: String,
+    pub file: String,
+    pub line: usize,
+    pub partial: bool,
+    pub base_types: String,
+    pub fields: Vec<CSharpField>,
+    pub parse_uncertain: bool,
+}
+
+#[derive(Debug)]
+pub struct CSharpCatalog {
+    definitions: Vec<CSharpDefinition>,
+    warnings: Vec<String>,
+    complete: bool,
+    files_scanned: usize,
+    bytes_scanned: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CSharpPage {
+    pub total: usize,
+    pub files_scanned: usize,
+    pub bytes_scanned: u64,
+    pub complete: bool,
+    pub warnings: Vec<String>,
+    pub items: Vec<CSharpDefinition>,
+}
+
+#[derive(Debug)]
+struct Attribute {
+    name: String,
+    literal: Option<String>,
+    arguments: String,
+}
+
+fn node_text<'a>(node: Node<'_>, source: &'a [u8]) -> &'a str {
+    node.utf8_text(source).unwrap_or("")
+}
+
+fn named_children(node: Node<'_>) -> Vec<Node<'_>> {
+    let mut cursor = node.walk();
+    node.named_children(&mut cursor).collect()
+}
+
+fn first_child(node: Node<'_>, kind: &str) -> Option<Node<'_>> {
+    named_children(node).into_iter().find(|child| child.kind() == kind)
+}
+
+fn first_string(node: Node<'_>, source: &[u8]) -> Option<String> {
+    let mut pending = vec![node];
+    while let Some(candidate) = pending.pop() {
+        if matches!(candidate.kind(), "string_literal" | "verbatim_string_literal" | "raw_string_literal") {
+            let raw = node_text(candidate, source);
+            if let Some(inner) = raw.strip_prefix('"').and_then(|value| value.strip_suffix('"')) {
+                // Do not pretend to evaluate C# escapes or interpolated values.
+                if !inner.contains('\\') && !inner.contains('{') {
+                    return Some(inner.into());
+                }
+            }
+        }
+        for child in named_children(candidate).into_iter().rev() {
+            pending.push(child);
+        }
+    }
+    None
+}
+
+fn attributes(node: Node<'_>, source: &[u8]) -> Vec<Attribute> {
+    let mut result = Vec::new();
+    for list in named_children(node) {
+        if list.kind() != "attribute_list" {
+            continue;
+        }
+        for attr in named_children(list) {
+            if attr.kind() != "attribute" {
+                continue;
+            }
+            let attribute_name = attr.child_by_field_name("name")
+                .or_else(|| attr.named_child(0))
+                .map(|part| node_text(part, source))
+                .unwrap_or("");
+            let name = attribute_name
+                .rsplit('.')
+                .next()
+                .unwrap_or(attribute_name)
+                .trim_end_matches("Attribute");
+            if name.is_empty() {
+                continue;
+            }
+            result.push(Attribute {
+                name: name.into(),
+                literal: first_string(attr, source),
+                arguments: node_text(attr, source).into(),
+            });
+        }
+    }
+    result
+}
+
+fn member_name(member: &str) -> String {
+    let cleaned = member.trim_start_matches('@').trim_start_matches('_');
+    let mut chars = cleaned.chars();
+    match chars.next() {
+        Some(first) => first.to_lowercase().collect::<String>() + chars.as_str(),
+        None => member.into(),
+    }
+}
+
+fn data_fields(node: Node<'_>, source: &[u8]) -> Vec<CSharpField> {
+    let Some(attribute) = attributes(node, source)
+        .into_iter()
+        .find(|attr| attr.name == "DataField")
+    else {
+        return Vec::new();
+    };
+
+    let required = attribute.arguments
+        .split(',')
+        .map(|arg| arg.to_ascii_lowercase())
+        .any(|arg| {
+            let normalized = arg.trim_start();
+            (normalized.starts_with("required:") || normalized.starts_with("required ="))
+                && normalized.contains("true")
+        });
+    let explicit_name = attribute.literal.is_some();
+
+    let (field_type, declarations) = if node.kind() == "property_declaration" {
+        let kind = node.child_by_field_name("type")
+            .map(|part| node_text(part, source).to_string())
+            .unwrap_or_default();
+        let name = node.child_by_field_name("name")
+            .map(|part| node_text(part, source).to_string());
+        (kind, name.into_iter().map(|name| (name, node.start_position().row + 1)).collect())
+    } else if node.kind() == "field_declaration" {
+        let Some(declaration) = first_child(node, "variable_declaration") else {
+            return Vec::new();
+        };
+        let kind = declaration.child_by_field_name("type")
+            .or_else(|| declaration.named_child(0))
+            .map(|part| node_text(part, source).to_string())
+            .unwrap_or_default();
+        let names = named_children(declaration).into_iter()
+            .filter(|child| child.kind() == "variable_declarator")
+            .filter_map(|child| {
+                child.child_by_field_name("name")
+                    .or_else(|| child.named_child(0))
+                    .map(|name| (node_text(name, source).to_string(), child.start_position().row + 1))
+            }).collect();
+        (kind, names)
+    } else {
+        return Vec::new();
+    };
+
+    let declarations: Vec<(String, usize)> = declarations;
+    // A single DataField attribute on multiple variables is ambiguous for
+    // YAML. Do not manufacture several equally named schema entries.
+    if declarations.len() != 1 || field_type.trim().is_empty() {
+        return Vec::new();
+    }
+    declarations
+        .into_iter()
+        .map(|(member, line)| CSharpField {
+            name: attribute.literal.clone().unwrap_or_else(|| member_name(&member)),
+            member,
+            field_type: field_type.trim().into(),
+            line,
+            required,
+            explicit_name,
+        })
+        .collect()
+}
+
+fn component_name(class_name: &str) -> String {
+    let name = ["Client", "Server", "Shared"]
+        .into_iter()
+        .find_map(|prefix| class_name.strip_prefix(prefix))
+        .unwrap_or(class_name);
+    name.strip_suffix("Component").unwrap_or(name).into()
+}
+
+fn prototype_name(class_name: &str) -> String {
+    if class_name == "EntityPrototype" {
+        return "entity".into();
+    }
+    member_name(class_name.strip_suffix("Prototype").unwrap_or(class_name))
+}
+
+fn parse_class(node: Node<'_>, file: &str, source: &[u8]) -> Vec<CSharpDefinition> {
+    if !matches!(node.kind(), "class_declaration" | "record_declaration") {
+        return Vec::new();
+    }
+    let Some(name_node) = node.child_by_field_name("name") else {
+        return Vec::new();
+    };
+    let class_name = node_text(name_node, source).to_string();
+    let attrs = attributes(node, source);
+
+    let component = attrs.iter().any(|attr| attr.name == "RegisterComponent");
+    let prototype = attrs.iter().find(|attr|
+        attr.name == "Prototype" || attr.name == "PrototypeRecord"
+    );
+    if !component && prototype.is_none() {
+        return Vec::new();
+    }
+
+    let body = node.child_by_field_name("body");
+    let mut fields = Vec::new();
+    if let Some(body) = body {
+        for member in named_children(body) {
+            if matches!(member.kind(), "field_declaration" | "property_declaration") {
+                fields.extend(data_fields(member, source));
+            }
+        }
+    }
+    let declaration = &source[node.start_byte()..name_node.start_byte()];
+    let partial = String::from_utf8_lossy(declaration)
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|word| word == "partial");
+    let base_types = first_child(node, "base_list")
+        .map(|part| node_text(part, source).trim_start_matches(':').trim().to_string())
+        .unwrap_or_default();
+    let line = node.start_position().row + 1;
+    let mut result = Vec::new();
+    if component {
+        let override_name = attrs.iter().find(|attr| attr.name == "ComponentProtoName")
+            .and_then(|attr| attr.literal.clone());
+        result.push(CSharpDefinition {
+            kind: "component",
+            name: override_name.unwrap_or_else(|| component_name(&class_name)),
+            class_name: class_name.clone(),
+            file: file.into(),
+            line,
+            partial,
+            base_types: base_types.clone(),
+            fields: fields.clone(),
+            parse_uncertain: node.has_error(),
+        });
+    }
+    if let Some(proto) = prototype {
+        result.push(CSharpDefinition {
+            kind: "prototype",
+            name: proto.literal.clone().unwrap_or_else(|| prototype_name(&class_name)),
+            class_name,
+            file: file.into(),
+            line,
+            partial,
+            base_types,
+            fields,
+            parse_uncertain: node.has_error(),
+        });
+    }
+    result
+}
+
+fn parse_source(parser: &mut Parser, file: &str, source: &str) -> (Vec<CSharpDefinition>, bool) {
+    let Some(tree) = parser.parse(source, None) else {
+        return (Vec::new(), true);
+    };
+    let mut definitions = Vec::new();
+    let root = tree.root_node();
+    let mut pending = vec![root];
+    while let Some(node) = pending.pop() {
+        definitions.extend(parse_class(node, file, source.as_bytes()));
+        for child in named_children(node).into_iter().rev() {
+            pending.push(child);
+        }
+    }
+    (definitions, root.has_error())
+}
+
+fn warning(warnings: &mut Vec<String>, issue: String) {
+    if warnings.len() < MAX_WARNINGS {
+        warnings.push(issue);
+    }
+}
+
+fn is_skipped_dir(name: &str) -> bool {
+    matches!(name,
+        ".git" | ".idea" | ".vs" | ".vscode" | "Resources" | "node_modules" |
+        "target" | "bin" | "obj" | "dist" | "build" | "release" |
+        "artifacts" | "packages" | ".cache" | "vendor")
+}
+
+impl CSharpCatalog {
+    pub fn scan(root: &Path) -> Result<Self, StudioError> {
+        let mut parser = Parser::new();
+        parser.set_language(&tree_sitter_c_sharp::LANGUAGE.into()).map_err(|err| {
+            StudioError::new(
+                "CSHARP_PARSER_UNAVAILABLE",
+                "Не удалось загрузить синтаксический анализатор C#.",
+                "Проверьте установленную сборку Studio.",
+            ).with_details(err.to_string())
+        })?;
+
+        let mut catalog = Self {
+            definitions: Vec::new(),
+            warnings: Vec::new(),
+            complete: true,
+            files_scanned: 0,
+            bytes_scanned: 0,
+        };
+        let mut pending = vec![root.to_path_buf()];
+        while let Some(directory) = pending.pop() {
+            let entries = match fs::read_dir(&directory) {
+                Ok(entries) => entries,
+                Err(error) => {
+                    catalog.complete = false;
+                    warning(&mut catalog.warnings, format!(
+                        "Не удалось прочитать каталог {}: {error}", directory.display()
+                    ));
+                    continue;
+                }
+            };
+            for entry in entries {
+                let entry = match entry {
+                    Ok(entry) => entry,
+                    Err(error) => {
+                        catalog.complete = false;
+                        warning(&mut catalog.warnings, format!("Ошибка обхода C#-исходников: {error}"));
+                        continue;
+                    }
+                };
+                let path = entry.path();
+                let kind = match entry.file_type() {
+                    Ok(kind) => kind,
+                    Err(error) => {
+                        catalog.complete = false;
+                        warning(&mut catalog.warnings, format!("Недоступен тип {}: {error}", path.display()));
+                        continue;
+                    }
+                };
+                if kind.is_symlink() {
+                    continue;
+                }
+                if kind.is_dir() {
+                    if !is_skipped_dir(&entry.file_name().to_string_lossy()) {
+                        pending.push(path);
+                    }
+                    continue;
+                }
+                if !kind.is_file() || !path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("cs")) {
+                    continue;
+                }
+                if catalog.files_scanned >= MAX_SOURCE_FILES {
+                    catalog.complete = false;
+                    warning(&mut catalog.warnings, format!(
+                        "Лимит {MAX_SOURCE_FILES} C#-файлов достигнут. Индекс неполный."
+                    ));
+                    return Ok(catalog);
+                }
+                let relative = path.strip_prefix(root)
+                    .unwrap_or(&path).to_string_lossy().replace('\\', "/");
+                let metadata = match entry.metadata() {
+                    Ok(meta) => meta,
+                    Err(error) => {
+                        catalog.complete = false;
+                        warning(&mut catalog.warnings, format!("Недоступен {relative}: {error}"));
+                        continue;
+                    }
+                };
+                if metadata.len() > MAX_FILE_BYTES {
+                    catalog.complete = false;
+                    warning(&mut catalog.warnings, format!("{relative} больше лимита 2 МиБ: пропущен."));
+                    continue;
+                }
+                if catalog.bytes_scanned.saturating_add(metadata.len()) > MAX_SCAN_BYTES {
+                    catalog.complete = false;
+                    warning(&mut catalog.warnings, "Лимит чтения C#-исходников 128 МиБ достигнут: индекс неполный.".into());
+                    return Ok(catalog);
+                }
+                let mut bytes = Vec::with_capacity(metadata.len() as usize);
+                let opened = File::open(&path)
+                    .and_then(|file| file.take(MAX_FILE_BYTES + 1).read_to_end(&mut bytes));
+                if let Err(error) = opened {
+                    catalog.complete = false;
+                    warning(&mut catalog.warnings, format!("Не удалось прочитать {relative}: {error}"));
+                    continue;
+                }
+                if bytes.len() as u64 > MAX_FILE_BYTES {
+                    catalog.complete = false;
+                    warning(&mut catalog.warnings, format!("{relative} изменился при чтении и превысил 2 МиБ."));
+                    continue;
+                }
+                catalog.bytes_scanned += bytes.len() as u64;
+                catalog.files_scanned += 1;
+                match std::str::from_utf8(&bytes) {
+                    Ok(source) => {
+                        let (definitions, uncertain) = parse_source(&mut parser, &relative, source);
+                        if uncertain && !definitions.is_empty() {
+                            warning(&mut catalog.warnings,
+                                format!("В {relative} есть ошибки разбора C#: часть метаданных может быть неполной."));
+                        }
+                        catalog.definitions.extend(definitions);
+                    }
+                    Err(_) => {
+                        catalog.complete = false;
+                        warning(&mut catalog.warnings, format!("{relative} не является UTF-8: пропущен."));
+                    }
+                }
+            }
+        }
+        catalog.definitions.sort_unstable_by(|a, b|
+            a.name.cmp(&b.name).then_with(|| a.file.cmp(&b.file))
+        );
+        Ok(catalog)
+    }
+
+    pub fn page(&self, query: &str, kind: Option<&str>, offset: usize, limit: usize) -> CSharpPage {
+        let query = query.trim().to_lowercase();
+        let mut total = 0usize;
+        let mut items = Vec::new();
+        for definition in &self.definitions {
+            if kind.is_some_and(|kind| kind != "all" && definition.kind != kind) {
+                continue;
+            }
+            if !query.is_empty()
+                && !definition.name.to_lowercase().contains(&query)
+                && !definition.class_name.to_lowercase().contains(&query)
+                && !definition.file.to_lowercase().contains(&query)
+                && !definition.fields.iter().any(|field| field.name.to_lowercase().contains(&query))
+            {
+                continue;
+            }
+            if total >= offset && items.len() < limit.clamp(1, MAX_PAGE) {
+                items.push(definition.clone());
+            }
+            total += 1;
+        }
+        CSharpPage {
+            total,
+            files_scanned: self.files_scanned,
+            bytes_scanned: self.bytes_scanned,
+            complete: self.complete,
+            warnings: self.warnings.clone(),
+            items,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(input: &str) -> Vec<CSharpDefinition> {
+        let mut parser = Parser::new();
+        parser.set_language(&tree_sitter_c_sharp::LANGUAGE.into()).unwrap();
+        let (defs, failed) = parse_source(&mut parser, "Content.Shared/Test.cs", input);
+        assert!(!failed, "Syntax error in test fixture");
+        defs
+    }
+
+    #[test]
+    fn finds_attributes_inside_their_actual_class_not_nearby_classes() {
+        let source = r#"
+        [RegisterComponent]
+        [ComponentProtoName("Renamed")]
+        public sealed partial class SharedExampleComponent : Component {
+            /// Test
+            [DataField("maxValue", required: true)]
+            public int Maximum = 5;
+
+            [DataField]
+            public Dictionary<string, int> CurrentValues { get; set; }
+        }
+        class Unrelated { [DataField] public int FalseField; }
+        "#;
+        let defs = parse(source);
+        assert_eq!(defs.len(), 1);
+        let component = &defs[0];
+        assert_eq!(component.kind, "component");
+        assert_eq!(component.name, "Renamed");
+        assert_eq!(component.class_name, "SharedExampleComponent");
+        assert!(component.partial);
+        assert_eq!(component.fields.len(), 2);
+        assert_eq!(component.fields[0].name, "maxValue");
+        assert!(component.fields[0].required);
+        assert_eq!(component.fields[1].name, "currentValues");
+        assert!(!component.fields[1].explicit_name);
+    }
+
+    #[test]
+    fn finds_prototype_and_record_declarations_with_identity() {
+        let defs = parse(r#"
+        [Prototype("custom-item")]
+        public sealed class CustomItemPrototype : IPrototype { [DataField] public string ID = ""; }
+        [Prototype]
+        public partial class EntityPrototype : IPrototype { }
+        "#);
+        assert_eq!(defs.len(), 2);
+        assert_eq!(defs[0].kind, "prototype");
+        assert_eq!(defs[0].name, "custom-item");
+        assert_eq!(defs[0].fields[0].name, "iD");
+        assert_eq!(defs[1].name, "entity");
+    }
+
+    #[test]
+    fn ignores_attributes_inside_comments_and_string_literals() {
+        let defs = parse(r#"
+        // [RegisterComponent] class FakeComponent {}
+        /* [RegisterComponent] class AnotherFakeComponent {} */
+        public class Unrelated {
+            public string Text = "[RegisterComponent] class BadComponent {}";
+        }
+        [RegisterComponent]
+        public class RealComponent { }
+        "#);
+        assert_eq!(defs.len(), 1);
+        assert_eq!(defs[0].name, "Real");
+    }
+
+    #[test]
+    fn no_fixed_line_window_and_no_cross_class_datafield_leakage() {
+        let long_gap = "\n".repeat(300);
+        let source = format!(
+            "[RegisterComponent]\npublic class HugeComponent {{\n{long_gap}[DataField]\npublic float Payload;\n}}\n[RegisterComponent]\npublic class OtherComponent {{ }}",
+        );
+        let defs = parse(&source);
+        assert_eq!(defs.len(), 2);
+        assert_eq!(defs[0].fields.len(), 1);
+        assert_eq!(defs[1].fields.len(), 0);
+    }
+
+    #[test]
+    fn scan_respects_root_scopes_and_skips_symlink() {
+        let root = std::env::temp_dir().join(format!(
+            "ss14-csharp-test-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("anonymous")
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("Content.Shared")).unwrap();
+        fs::create_dir_all(root.join("Resources")).unwrap();
+        fs::write(root.join("Content.Shared/Example.cs"),
+            "[RegisterComponent]\npublic class ExampleComponent {}\n").unwrap();
+        fs::write(root.join("Resources/Skip.cs"),
+            "[RegisterComponent]\npublic class SkipComponent {}\n").unwrap();
+        let index = CSharpCatalog::scan(&root).unwrap();
+        assert!(index.complete);
+        assert_eq!(index.files_scanned, 1);
+        let page = index.page("", None, 0, 10);
+        assert_eq!(page.total, 1);
+        assert_eq!(page.items[0].name, "Example");
+        fs::remove_dir_all(root).unwrap();
+    }
+}
