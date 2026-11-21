@@ -29,6 +29,28 @@ const MAX_SCAN_ENTRIES: usize = 250_000;
 const MAX_READ_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_RESULTS: usize = 250;
 
+const MAX_CONTENT_SEARCH_FILES: usize = 8_192;
+const MAX_CONTENT_SEARCH_BYTES: usize = 64 * 1024 * 1024;
+const MAX_CONTENT_SEARCH_HITS: usize = 200;
+const MAX_CONTENT_HITS_PER_FILE: usize = 12;
+
+#[derive(Debug, Serialize)]
+pub struct ContentSearchHit {
+    pub path: String,
+    pub kind: &'static str,
+    pub line: usize,
+    pub preview: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ContentSearchResults {
+    pub items: Vec<ContentSearchHit>,
+    pub files_scanned: usize,
+    pub bytes_scanned: usize,
+    pub complete: bool,
+    pub warnings: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ProjectOverview {
     pub project_root: String,
@@ -688,6 +710,118 @@ impl ProjectIndex {
         ResourcePage { total, items }
     }
 
+    /// Bounded search in indexed resource text. No regex, writes or filesystem
+    /// traversal beyond the existing project index. Large forks return a
+    /// clearly labelled partial result instead of blocking indefinitely.
+    pub fn search_content(
+        &self,
+        query: &str,
+        kind: Option<&str>,
+    ) -> Result<ContentSearchResults, StudioError> {
+        let trimmed = query.trim();
+        if trimmed.is_empty() || trimmed.len() > 128 || trimmed.chars().any(char::is_control) {
+            return Err(StudioError::new(
+                "CONTENT_SEARCH_QUERY_INVALID",
+                "Поисковая строка должна содержать от 1 до 128 байт без управляющих символов.",
+                "Укажите обычный текст для поиска по ресурсам проекта.",
+            ));
+        }
+        let requested_kind = kind.unwrap_or("all");
+        if !matches!(requested_kind, "all" | "yaml" | "ftl" | "rsi") {
+            return Err(StudioError::new(
+                "CONTENT_SEARCH_KIND_INVALID",
+                "Неизвестный тип ресурса для поиска.",
+                "Выберите все ресурсы, YAML, FTL или RSI.",
+            ));
+        }
+        let needle = trimmed.to_lowercase();
+        let mut result = ContentSearchResults {
+            items: Vec::new(),
+            files_scanned: 0,
+            bytes_scanned: 0,
+            complete: true,
+            warnings: Vec::new(),
+        };
+        let mut read_failures = 0usize;
+        let mut truncated_files = 0usize;
+        for entry in &self.resources {
+            if requested_kind != "all" && entry.kind != requested_kind {
+                continue;
+            }
+            if result.files_scanned >= MAX_CONTENT_SEARCH_FILES {
+                result.complete = false;
+                result.warnings.push(format!(
+                    "Достигнут лимит {} просмотренных файлов. Уточните запрос.",
+                    MAX_CONTENT_SEARCH_FILES
+                ));
+                break;
+            }
+            let document = match self.read_resource(&entry.path) {
+                Ok(document) => document,
+                Err(error) => {
+                    result.complete = false;
+                    read_failures += 1;
+                    if result.warnings.len() < 5 {
+                        result.warnings.push(format!(
+                            "{}: файл пропущен [{}].",
+                            entry.path, error.code
+                        ));
+                    }
+                    continue;
+                }
+            };
+            if result.bytes_scanned.saturating_add(document.bytes) > MAX_CONTENT_SEARCH_BYTES {
+                result.complete = false;
+                result.warnings.push(
+                    "Лимит чтения 64 МиБ достигнут. Уточните запрос или выберите тип файлов."
+                        .into(),
+                );
+                break;
+            }
+            result.files_scanned += 1;
+            result.bytes_scanned += document.bytes;
+            let mut file_hits = 0usize;
+            for (line_index, line) in document.content.lines().enumerate() {
+                if !line.to_lowercase().contains(&needle) {
+                    continue;
+                }
+                if file_hits >= MAX_CONTENT_HITS_PER_FILE {
+                    result.complete = false;
+                    truncated_files += 1;
+                    break;
+                }
+                if result.items.len() >= MAX_CONTENT_SEARCH_HITS {
+                    result.complete = false;
+                    result.warnings.push(
+                        "Показаны первые 200 совпадений. Уточните поисковую строку.".into(),
+                    );
+                    return Ok(result);
+                }
+                let preview: String = line.trim().chars().take(180).collect();
+                result.items.push(ContentSearchHit {
+                    path: entry.path.clone(),
+                    kind: entry.kind,
+                    line: line_index + 1,
+                    preview,
+                });
+                file_hits += 1;
+            }
+        }
+        if read_failures > 5 {
+            result.warnings.push(format!(
+                "Всего пропущено недоступных или слишком больших файлов: {}.",
+                read_failures
+            ));
+        }
+        if truncated_files > 0 {
+            result.warnings.push(format!(
+                "В {} файлах показаны только первые 12 совпадений. Уточните запрос.",
+                truncated_files
+            ));
+        }
+        Ok(result)
+    }
+
     fn verify_indexed_rsi(&self, rel_path: &str) -> Result<(), StudioError> {
         let indexed = self
             .positions
@@ -1182,6 +1316,61 @@ mod tests {
         let index = ProjectIndex::open(fx.root_str()).unwrap();
         assert_eq!(index.overview().prototype_files, 0);
         assert_eq!(index.overview().warnings.len(), 3);
+    }
+
+    #[test]
+    fn content_search_returns_resource_matches_and_line_numbers() {
+        let fx = Fixture::new();
+        fx.write(
+            "Resources/Prototypes/one.yml",
+            "# note\n- type: entity\n  id: TestAlpha\n",
+        );
+        fx.write("Resources/Locale/en-US/a.ftl", "name = TESTALPHA\n");
+        fx.write(
+            "Resources/Textures/icon.rsi/meta.json",
+            r#"{"version":1,"note":"testalpha"}"#,
+        );
+        fx.write("unindexed.txt", "testalpha\n");
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let result = index.search_content("testalpha", None).unwrap();
+        assert!(result.complete);
+        assert_eq!(result.items.len(), 3);
+        assert!(result
+            .items
+            .iter()
+            .any(|item| item.kind == "yaml" && item.line == 3));
+        assert!(result
+            .items
+            .iter()
+            .any(|item| item.kind == "ftl" && item.line == 1));
+        assert!(result.items.iter().any(|item| item.kind == "rsi"));
+        assert!(result.items.iter().all(|item| !item.path.contains("unindexed")));
+        let yaml = index.search_content("testalpha", Some("yaml")).unwrap();
+        assert_eq!(yaml.items.len(), 1);
+        assert_eq!(index.search_content("missing", None).unwrap().items.len(), 0);
+    }
+
+    #[test]
+    fn content_search_rejects_bad_requests_and_caps_per_file_results() {
+        let fx = Fixture::new();
+        fx.write("Resources/Prototypes/one.yml", &"Match\n".repeat(20));
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        assert_eq!(
+            index.search_content("", None).unwrap_err().code,
+            "CONTENT_SEARCH_QUERY_INVALID"
+        );
+        assert_eq!(
+            index.search_content("x", Some("../invalid")).unwrap_err().code,
+            "CONTENT_SEARCH_KIND_INVALID"
+        );
+        assert_eq!(
+            index.search_content(&"x".repeat(129), None).unwrap_err().code,
+            "CONTENT_SEARCH_QUERY_INVALID"
+        );
+        let result = index.search_content("match", None).unwrap();
+        assert_eq!(result.items.len(), 12);
+        assert!(!result.complete);
+        assert!(!result.warnings.is_empty());
     }
 
     #[test]

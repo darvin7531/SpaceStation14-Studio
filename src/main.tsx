@@ -13,6 +13,7 @@ import './styles.fluent.css';
 import './styles.fluent-diagnostics.css';
 import './styles.csharp.css';
 import './styles.settings.css';
+import './styles.search.css';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('The Studio root element is missing.');

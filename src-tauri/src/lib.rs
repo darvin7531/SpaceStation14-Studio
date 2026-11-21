@@ -27,7 +27,7 @@ use draft_journal::{DraftJournal, DraftList, DraftSnapshot, DraftSummary, DraftW
 use error::{internal_lock, interrupted, StudioError};
 use fluent_create::{FluentDraft, FluentPreview};
 use fluent_locale::FluentInspection;
-use project::{ProjectIndex, ProjectOverview, ProjectRefresh, ResourceDocument, ResourcePage};
+use project::{ContentSearchResults, ProjectIndex, ProjectOverview, ProjectRefresh, ResourceDocument, ResourcePage};
 use prototype_append::AppendPreview;
 use prototype_components::{ComponentInspection, ComponentOperation};
 use prototype_create::{PrototypeDraft, PrototypePreview};
@@ -135,6 +135,19 @@ async fn search_resources(
     })
     .await
     .map_err(interrupted)
+}
+
+/// Search inside indexed YAML/FTL/RSI sources off the UI thread.
+#[tauri::command]
+async fn search_resource_content(
+    query: String,
+    kind: Option<String>,
+    state: State<'_, WorkspaceState>,
+) -> Result<ContentSearchResults, StudioError> {
+    let index = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || index.search_content(&query, kind.as_deref()))
+        .await
+        .map_err(interrupted)?
 }
 
 /// Discover C# annotations without the legacy regex / fixed-line-window
@@ -810,6 +823,7 @@ pub fn run() -> Result<(), tauri::Error> {
             open_project,
             refresh_project,
             search_resources,
+            search_resource_content,
             search_csharp_definitions,
             inspect_component_schemas,
             search_prototypes,

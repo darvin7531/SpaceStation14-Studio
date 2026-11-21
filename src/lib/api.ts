@@ -76,6 +76,19 @@ export interface ResourcePage {
   total: number;
   items: ResourceEntry[];
 }
+export interface ContentSearchHit {
+  path: string;
+  kind: Exclude<ResourceKind, 'all'>;
+  line: number;
+  preview: string;
+}
+export interface ContentSearchResults {
+  items: ContentSearchHit[];
+  files_scanned: number;
+  bytes_scanned: number;
+  complete: boolean;
+  warnings: string[];
+}
 export interface PrototypeDeclaration {
   kind: string;
   id: string;
@@ -445,6 +458,9 @@ export const studio = {
   },
   searchResources(query: string, kind: ResourceKind, offset: number, limit = 100): Promise<ResourcePage> {
     return invoke('search_resources', { query, kind, offset, limit });
+  },
+  searchResourceContent(query: string, kind: ResourceKind): Promise<ContentSearchResults> {
+    return invoke('search_resource_content', { query, kind });
   },
   searchCSharpDefinitions(query: string, kind: 'all' | 'component' | 'prototype', offset: number, limit = 50): Promise<CSharpPage> {
     return invoke('search_csharp_definitions', { query, kind, offset, limit });

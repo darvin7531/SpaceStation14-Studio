@@ -26,6 +26,8 @@ import CSharpCatalogPanel from './components/CSharpCatalogPanel';
 import ConflictReviewPanel from './components/ConflictReviewPanel';
 import EditorSettingsDialog from './components/EditorSettingsDialog';
 import QuickOpenPanel from './components/QuickOpenPanel';
+import ContentSearchPanel from './components/ContentSearchPanel';
+import type { ContentSearchHit } from './lib/api';
 import { readEditorSettings, sanitizeEditorSettings, SETTINGS_KEY } from './lib/editor-settings';
 
 const PAGE_SIZE = 100;
@@ -73,6 +75,7 @@ export default function App() {
   const [opening, setOpening] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
+  const [contentSearchOpen, setContentSearchOpen] = useState(false);
   const [editorSettings, setEditorSettings] = useState(() => readEditorSettings(window.localStorage));
   useEffect(() => {
     try { window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(editorSettings)); } catch { /* storage may be blocked */ }
@@ -198,6 +201,7 @@ export default function App() {
     setCreatingRsi(false);
     setShowingCSharp(false);
     setQuickOpen(false);
+    setContentSearchOpen(false);
     setFieldTarget(null);
     comparisonVersion.current += 1;
     setComparison(null);
@@ -750,10 +754,21 @@ export default function App() {
       const key = event.key.toLowerCase();
       if (key === 'p' && !event.shiftKey && overview && !settingsOpen) {
         event.preventDefault();
-        if (!opening && !refreshing && !transitioning) setQuickOpen(true);
+        if (!opening && !refreshing && !transitioning) {
+          setContentSearchOpen(false);
+          setQuickOpen(true);
+        }
         return;
       }
-      if (!overview || settingsOpen || quickOpen || opening || refreshing || transitioning || saving) return;
+      if (key === 'f' && event.shiftKey && overview && !settingsOpen) {
+        event.preventDefault();
+        if (!opening && !refreshing && !transitioning) {
+          setQuickOpen(false);
+          setContentSearchOpen(true);
+        }
+        return;
+      }
+      if (!overview || settingsOpen || quickOpen || contentSearchOpen || opening || refreshing || transitioning || saving) return;
       if (key === 'tab') {
         const next = nextTabPath(tabState, event.shiftKey);
         if (next) { event.preventDefault(); selectTab(next); }
@@ -764,7 +779,7 @@ export default function App() {
     }
     window.addEventListener('keydown', shortcut, true);
     return () => window.removeEventListener('keydown', shortcut, true);
-  }, [overview, settingsOpen, quickOpen, opening, refreshing, transitioning, saving, tabState]);
+  }, [overview, settingsOpen, quickOpen, contentSearchOpen, opening, refreshing, transitioning, saving, tabState]);
 
   function reloadCurrent() {
     if (tabState.active) requestAction({ type: 'reload', path: tabState.active });
@@ -881,7 +896,15 @@ export default function App() {
       : 'FTL создан: ' + created.file + '. Редактор готов для дальнейшей работы.');
   }
 
+  function openContentHit(hit: ContentSearchHit) {
+    setContentSearchOpen(false);
+    setJumpTarget({ path: hit.path, line: hit.line, token: ++jumpCounter.current });
+    openResource({ path: hit.path, kind: hit.kind });
+  }
+
   return <div className="app">
+    {contentSearchOpen && overview && <ContentSearchPanel
+      onClose={() => setContentSearchOpen(false)} onOpen={openContentHit}/>}
     {quickOpen && overview && <QuickOpenPanel onClose={() => setQuickOpen(false)}
       onOpen={(resource) => { setQuickOpen(false); openResource(resource); }}/>}
     {settingsOpen && <EditorSettingsDialog value={editorSettings}
@@ -908,6 +931,10 @@ export default function App() {
         <button type="button" className="settings-trigger" disabled={!overview || opening || refreshing}
           title="Быстро открыть файл (Ctrl+P)" onClick={() => setQuickOpen(true)}>
           <Search size={15}/> Быстро открыть
+        </button>
+        <button type="button" className="settings-trigger" disabled={!overview || opening || refreshing}
+          title="Поиск по содержимому (Ctrl+Shift+F)" onClick={() => setContentSearchOpen(true)}>
+          <Search size={15}/> Поиск в файлах
         </button>
         <button type="button" className="settings-trigger"
         onClick={() => setSettingsOpen(true)}><Settings2 size={15}/> Настройки</button>
