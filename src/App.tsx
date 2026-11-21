@@ -786,7 +786,7 @@ export default function App() {
       : 'Прототип ' + result.kind + ':' + result.id + ' ' + verb + ' ' + result.file);
   }
 
-  function onRsiImported(path: string, result: ImportedRsiState, action: 'import' | 'timing' = 'import') {
+  function onRsiImported(path: string, result: ImportedRsiState, action: 'import' | 'timing' | 'credits' = 'import') {
     const updated: ResourceDocument = {
       path,
       content: result.content,
