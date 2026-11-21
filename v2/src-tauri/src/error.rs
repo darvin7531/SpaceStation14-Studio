@@ -12,11 +12,7 @@ pub struct StudioError {
 }
 
 impl StudioError {
-    pub fn new(
-        code: &'static str,
-        message: impl Into<String>,
-        hint: impl Into<String>,
-    ) -> Self {
+    pub fn new(code: &'static str, message: impl Into<String>, hint: impl Into<String>) -> Self {
         Self {
             code,
             message: message.into(),

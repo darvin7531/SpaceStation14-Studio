@@ -181,11 +181,8 @@ mod tests {
     impl Fixture {
         fn new() -> Self {
             let n = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-            let root = std::env::temp_dir().join(format!(
-                "ss14-studio-v2-{}-{}",
-                std::process::id(),
-                n
-            ));
+            let root =
+                std::env::temp_dir().join(format!("ss14-studio-v2-{}-{}", std::process::id(), n));
             fs::create_dir_all(root.join("Resources/Prototypes")).unwrap();
             Self { root }
         }
