@@ -799,7 +799,10 @@ mod tests {
             parse_source(&mut parser, "Content.Shared/Two.cs", same_namespace);
         assert!(!invalid);
         assert_eq!(second.len(), 1);
-        assert_eq!(second[0].qualified_name, "Content.Shared.One.ExampleComponent");
+        assert_eq!(
+            second[0].qualified_name,
+            "Content.Shared.One.ExampleComponent"
+        );
         let (_, unrelated, invalid) =
             parse_source(&mut parser, "Content.Shared/Other.cs", other_namespace);
         assert!(!invalid);
