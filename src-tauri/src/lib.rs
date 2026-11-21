@@ -49,7 +49,12 @@ async fn search_resources(
 ) -> Result<ResourcePage, StudioError> {
     let index = current_project(&state)?;
     tauri::async_runtime::spawn_blocking(move || {
-        index.search(&query, kind.as_deref(), offset.unwrap_or(0), limit.unwrap_or(100))
+        index.search(
+            &query,
+            kind.as_deref(),
+            offset.unwrap_or(0),
+            limit.unwrap_or(100),
+        )
     })
     .await
     .map_err(interrupted)

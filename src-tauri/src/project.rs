@@ -129,10 +129,13 @@ impl ProjectIndex {
 
         let mut warnings = Vec::new();
         if !resources_root.join("Textures").is_dir() {
-            warnings.push("Каталог Resources/Textures отсутствует: RSI не проиндексированы.".into());
+            warnings
+                .push("Каталог Resources/Textures отсутствует: RSI не проиндексированы.".into());
         }
         if !resources_root.join("Locale").is_dir() {
-            warnings.push("Каталог Resources/Locale отсутствует: локализации не проиндексированы.".into());
+            warnings.push(
+                "Каталог Resources/Locale отсутствует: локализации не проиндексированы.".into(),
+            );
         }
 
         let count = |kind: &str| resources.iter().filter(|item| item.kind == kind).count();
@@ -320,7 +323,11 @@ fn scan(
                 }
             } else if kind.is_file() {
                 let entry_kind = match scope {
-                    ScanScope::Prototype if has_extension(&path, "yml") || has_extension(&path, "yaml") => Some("yaml"),
+                    ScanScope::Prototype
+                        if has_extension(&path, "yml") || has_extension(&path, "yaml") =>
+                    {
+                        Some("yaml")
+                    }
                     ScanScope::Locale if has_extension(&path, "ftl") => Some("ftl"),
                     _ => None,
                 };
@@ -382,8 +389,8 @@ mod tests {
     impl Fixture {
         fn new() -> Self {
             let n = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-            let root = std::env::temp_dir()
-                .join(format!("ss14-studio-rust-{}-{}", std::process::id(), n));
+            let root =
+                std::env::temp_dir().join(format!("ss14-studio-rust-{}-{}", std::process::id(), n));
             fs::create_dir_all(root.join("Resources/Prototypes")).unwrap();
             Self { root }
         }
@@ -439,8 +446,14 @@ mod tests {
     #[test]
     fn indexes_resources_and_keeps_counts_distinct_from_prototype_counts() {
         let fx = Fixture::new();
-        fx.write("Resources/Prototypes/A/items.yml", "- type: entity\n  id: Foo");
-        fx.write("Resources/Prototypes/A/other.YAML", "- type: entity\n  id: Bar");
+        fx.write(
+            "Resources/Prototypes/A/items.yml",
+            "- type: entity\n  id: Foo",
+        );
+        fx.write(
+            "Resources/Prototypes/A/other.YAML",
+            "- type: entity\n  id: Bar",
+        );
         fx.write("Resources/Textures/Objects/test.rsi/meta.json", "{}");
         fx.write("Resources/Locale/en-US/items.ftl", "item = Item");
         let index = ProjectIndex::open(fx.root_str()).unwrap();
@@ -482,7 +495,9 @@ mod tests {
         let original = "- type: entity\n  id: Visible\n";
         fx.write("Resources/Prototypes/fixture.yml", original);
         let index = ProjectIndex::open(fx.root_str()).unwrap();
-        let doc = index.read_resource("Resources/Prototypes/fixture.yml").unwrap();
+        let doc = index
+            .read_resource("Resources/Prototypes/fixture.yml")
+            .unwrap();
         assert_eq!(doc.content, original);
         assert_eq!(
             fs::read_to_string(fx.root.join("Resources/Prototypes/fixture.yml")).unwrap(),
