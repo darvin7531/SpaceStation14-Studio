@@ -4,6 +4,7 @@ import {
   studio,
   type ComponentOperation,
   type ComponentInspection,
+  type ComponentScalarField,
   type PrototypeFieldLocator,
 } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
@@ -22,6 +23,12 @@ export default function PrototypeComponentsPanel({
   const [inspection, setInspection] = useState<ComponentInspection | null>(null);
   const [componentType, setComponentType] = useState('');
   const [pendingRemoval, setPendingRemoval] = useState<number | null>(null);
+  const [editingField, setEditingField] = useState<{
+    index: number;
+    key: string;
+    kind: 'string' | 'bool' | 'int' | 'float';
+    value: string;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<StudioError | null>(null);
@@ -33,6 +40,7 @@ export default function PrototypeComponentsPanel({
     setLoading(true);
     setInspection(null);
     setPendingRemoval(null);
+    setEditingField(null);
     setError(null);
     const timer = window.setTimeout(() => {
       void studio.inspectPrototypeComponents(locator, source)
@@ -75,7 +83,8 @@ export default function PrototypeComponentsPanel({
       }
       setComponentType('');
       setPendingRemoval(null);
-      setNotice('Компонент изменён в черновике. Проверьте YAML и сохраните Ctrl+S.');
+      setEditingField(null);
+      setNotice('Компонент или его поле изменены в черновике. Проверьте YAML и сохраните Ctrl+S.');
       setRefresh((value) => value + 1);
     } catch (failure) {
       setError(normalizeStudioError(failure));
@@ -87,6 +96,26 @@ export default function PrototypeComponentsPanel({
   function add(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void apply({ operation: 'add', type_name: componentType.trim() });
+  }
+
+  function edit(index: number, field: ComponentScalarField) {
+    if (!field.editable || field.kind === 'complex') return;
+    setEditingField({
+      index, key: field.key, kind: field.kind, value: field.value,
+    });
+  }
+
+  function submitField(event: FormEvent<HTMLFormElement>, expectedType: string) {
+    event.preventDefault();
+    if (!editingField) return;
+    void apply({
+      operation: 'update_field',
+      index: editingField.index,
+      expected_type: expectedType,
+      key: editingField.key,
+      kind: editingField.kind,
+      value: editingField.value,
+    });
   }
 
   const disabled = busy || loading || applying || !inspection;
@@ -137,6 +166,40 @@ export default function PrototypeComponentsPanel({
                 onClick={() => setPendingRemoval(entry.index)}>
                 <Trash2 size={14}/> Удалить
               </button>}
+          <div className="prototype-component-properties" aria-label={'Поля компонента ' + entry.type_name}>
+            {entry.fields.length === 0 && <span className="prototype-component-no-fields">
+              Дополнительных полей нет
+            </span>}
+            {entry.fields.map((field) => <div className="prototype-component-property"
+              key={field.key}>
+              <code title={field.key}>{field.key}</code>
+              <span className="prototype-component-scalar-kind">{field.kind}</span>
+              <span className="prototype-component-scalar-value" title={field.value}>
+                {field.value}
+              </span>
+              {field.editable
+                ? <button type="button" disabled={disabled}
+                    onClick={() => edit(entry.index, field)}>Изменить</button>
+                : <span className="prototype-component-readonly" title="Сложное значение редактируется в Monaco">
+                    Только YAML
+                  </span>}
+            </div>)}
+          </div>
+          {editingField?.index === entry.index && <form className="prototype-component-field-form"
+            onSubmit={(event) => submitField(event, entry.type_name)}>
+            <label>Поле <code>{editingField.key}</code> · {editingField.kind}
+              {editingField.kind === 'bool'
+                ? <select disabled={disabled} value={editingField.value}
+                    onChange={(event) => setEditingField({ ...editingField, value: event.target.value })}>
+                    <option value="true">true</option><option value="false">false</option>
+                  </select>
+                : <input disabled={disabled} value={editingField.value} spellCheck={false}
+                    onChange={(event) => setEditingField({ ...editingField, value: event.target.value })}/>}
+            </label>
+            <button type="submit" disabled={disabled}>Применить поле</button>
+            <button type="button" disabled={disabled}
+              onClick={() => setEditingField(null)}>Отмена</button>
+          </form>}
         </div>)}
       </div>
       <form className="prototype-component-add" onSubmit={add}>
@@ -157,7 +220,8 @@ export default function PrototypeComponentsPanel({
       <small className="prototype-component-caveat">
         Добавляется минимальный блок <code>- type</code>. Требования и поля компонента
         зависят от форка SS14; C#-валидация ещё не реализована.
-        Блоки с комментариями и нестандартной YAML-разметкой автоматически не удаляются.
+        Простые поля string/bool/int/float можно изменять, сохраняя их тип; вложенные структуры
+        и теги остаются доступны в Monaco. Блоки с комментариями автоматически не удаляются.
       </small>
     </>}
   </section>;

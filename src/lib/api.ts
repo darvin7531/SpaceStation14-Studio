@@ -53,10 +53,20 @@ export interface FieldInspection {
   notice: string;
 }
 
+export type ComponentScalarKind = 'string' | 'bool' | 'int' | 'float' | 'complex';
+
+export interface ComponentScalarField {
+  key: string;
+  kind: ComponentScalarKind;
+  value: string;
+  editable: boolean;
+}
+
 export interface PrototypeComponentEntry {
   index: number;
   type_name: string;
   field_count: number;
+  fields: ComponentScalarField[];
 }
 
 export interface ComponentInspection {
@@ -66,7 +76,9 @@ export interface ComponentInspection {
 
 export type ComponentOperation =
   | { operation: 'add'; type_name: string }
-  | { operation: 'remove'; index: number; expected_type: string };
+  | { operation: 'remove'; index: number; expected_type: string }
+  | { operation: 'update_field'; index: number; expected_type: string;
+      key: string; kind: Exclude<ComponentScalarKind, 'complex'>; value: string };
 
 export interface FieldPatch {
   content: string;

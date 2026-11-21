@@ -20,3 +20,16 @@
 .prototype-component-add input { width:100%; min-width:0; box-sizing:border-box; padding:8px 9px; border:1px solid #527698; border-radius:5px; color:#e5f3ff; background:#0a1625; font:12px/1.4 ui-monospace,monospace; }
 .prototype-component-caveat { font-size:10px; color:#a8bfd5; line-height:1.5; }
 .prototype-component-empty { font-size:11px; color:#98b5d1; margin:0; }
+
+/* Scalar component fields: nested YAML is shown as read-only context. */
+.prototype-component-properties { width:100%; display:grid; gap:4px; border-top:1px solid #304762; padding-top:8px; }
+.prototype-component-no-fields { color:#90adc9; font-size:10px; }
+.prototype-component-property { min-width:0; display:grid; grid-template-columns:minmax(100px,1fr) auto minmax(100px,2fr) auto; align-items:center; gap:7px; padding:4px 0; color:#d1e4f7; font-size:11px; }
+.prototype-component-property code { overflow:hidden; text-overflow:ellipsis; color:#b0d4ff; }
+.prototype-component-scalar-kind { font:10px ui-monospace,monospace; color:#8daecf; }
+.prototype-component-scalar-value { overflow:hidden; white-space:pre; text-overflow:ellipsis; color:#dbe9f7; }
+.prototype-component-readonly { color:#8a9fb7; font-size:10px; white-space:nowrap; }
+.prototype-component-field-form { width:100%; display:flex; align-items:end; flex-wrap:wrap; gap:8px; padding:9px; background:#192f46; border:1px solid #486f94; border-radius:6px; }
+.prototype-component-field-form label { display:grid; gap:5px; flex:1; min-width:160px; font-size:11px; color:#bfdbf3; }
+.prototype-component-field-form input, .prototype-component-field-form select { box-sizing:border-box; width:100%; border:1px solid #6484a5; border-radius:5px; color:#edf7ff; background:#0b1a2c; padding:7px 8px; font:12px ui-monospace,monospace; }
+@media(max-width:840px) { .prototype-component-property { grid-template-columns:minmax(70px,1fr) auto minmax(70px,1.5fr); } .prototype-component-property > button, .prototype-component-readonly { grid-column:3; justify-self:end; } }

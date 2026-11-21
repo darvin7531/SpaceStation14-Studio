@@ -16,6 +16,17 @@ pub struct ComponentEntry {
     pub index: usize,
     pub type_name: String,
     pub field_count: usize,
+    pub fields: Vec<ComponentScalarField>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ComponentScalarField {
+    pub key: String,
+    /// string | bool | int | float | complex
+    pub kind: String,
+    /// Preview of the current value. Complex values are read-only.
+    pub value: String,
+    pub editable: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -29,6 +40,13 @@ pub struct ComponentInspection {
 pub enum ComponentOperation {
     Add { type_name: String },
     Remove { index: usize, expected_type: String },
+    UpdateField {
+        index: usize,
+        expected_type: String,
+        key: String,
+        kind: String,
+        value: String,
+    },
 }
 
 fn issue(code: &'static str, message: &str) -> StudioError {
@@ -74,6 +92,93 @@ fn components(row: &Yaml) -> Result<&[Yaml], StudioError> {
             "Поле components не является обычным YAML-списком.",
         )),
     }
+}
+
+fn scalar_field(key: &Yaml, value: &Yaml) -> Option<ComponentScalarField> {
+    let name = key.as_str()?;
+    if name == "type" { return None; }
+    let (kind, text, editable) = match value {
+        Yaml::String(s) => ("string", s.clone(), !s.contains(['\r', '\n'])),
+        Yaml::Boolean(v) => ("bool", v.to_string(), true),
+        Yaml::Integer(v) => ("int", v.to_string(), true),
+        Yaml::Real(raw) => ("float", raw.clone(), raw.parse::<f64>().is_ok_and(f64::is_finite)),
+        _ => ("complex", "Сложное значение — открыть в Monaco".into(), false),
+    };
+    Some(ComponentScalarField {
+        key: name.into(), kind: kind.into(), value: text, editable,
+    })
+}
+
+fn key_allowed(key: &str) -> bool {
+    !key.is_empty() && key.len() <= 128 && key.bytes().all(|b| {
+        b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.')
+    })
+}
+
+fn encode_scalar(kind: &str, value: &str) -> Result<(String, Yaml), StudioError> {
+    if value.len() > 4096 || value.contains('\0') {
+        return Err(issue("COMPONENT_VALUE_INVALID", "Значение поля слишком длинное или содержит NUL."));
+    }
+    let text = match kind {
+        "string" => serde_json::to_string(value).map_err(|err| issue(
+            "COMPONENT_VALUE_INVALID", "Не удалось кодировать YAML-строку.",
+        ).with_details(err.to_string()))?,
+        "bool" if matches!(value, "true" | "false") => value.into(),
+        "int" => value.parse::<i64>().map_err(|_| issue(
+            "COMPONENT_VALUE_INVALID", "Ожидается целое 64-битное число.",
+        ))?.to_string(),
+        "float" => {
+            let parsed = value.parse::<f64>().map_err(|_| issue(
+                "COMPONENT_VALUE_INVALID", "Ожидается обычное дробное число.",
+            ))?;
+            if !parsed.is_finite() { return Err(issue(
+                "COMPONENT_VALUE_INVALID", "Значение Infinity или NaN не поддерживается.",
+            )); }
+            let mut text = parsed.to_string();
+            if !text.contains(['.', 'e', 'E']) { text.push_str(".0"); }
+            text
+        },
+        _ => return Err(issue(
+            "COMPONENT_KIND_INVALID", "Указан неподдерживаемый тип или неверное булево значение.",
+        )),
+    };
+    let nodes = yaml_rust2::YamlLoader::load_from_str(&text).map_err(|_| issue(
+        "COMPONENT_VALUE_INVALID", "Невозможно безопасно разобрать значение.",
+    ))?;
+    let parsed = nodes.first().ok_or_else(|| issue(
+        "COMPONENT_VALUE_INVALID", "Не удалось разобрать новое значение.",
+    ))?.clone();
+    let actual_kind = scalar_field(&Yaml::String("_".into()), &parsed)
+        .map(|entry| entry.kind).unwrap_or_default();
+    if actual_kind != kind { return Err(issue(
+        "COMPONENT_KIND_INVALID", "YAML определил тип нового значения иначе, чем ожидалось.",
+    )); }
+    Ok((text, parsed))
+}
+
+// Copy the whitespace before an inline comment; do not confuse a # inside
+// single/double-quoted YAML strings with the beginning of a comment.
+fn inline_comment(raw: &str) -> Option<&str> {
+    let mut single = false;
+    let mut double = false;
+    let mut escaped = false;
+    let mut previous = ' ';
+    for (byte, ch) in raw.char_indices() {
+        if double {
+            if escaped { escaped = false; }
+            else if ch == '\\' { escaped = true; }
+            else if ch == '"' { double = false; }
+        } else if single {
+            if ch == '\'' { single = false; }
+        } else if ch == '"' { double = true; }
+        else if ch == '\'' { single = true; }
+        else if ch == '#' && previous.is_whitespace() {
+            let start = raw[..byte].trim_end_matches([' ', '\t']).len();
+            return Some(&raw[start..]);
+        }
+        previous = ch;
+    }
+    None
 }
 
 // Entire file is parsed and every declaration identity is verified.
@@ -243,6 +348,8 @@ pub fn inspect(source: &str, locator: &FieldLocator) -> Result<ComponentInspecti
             index,
             type_name: item["type"].as_str().unwrap_or_default().into(),
             field_count: item.as_hash().map_or(0, |map| map.len().saturating_sub(1)),
+            fields: item.as_hash().map_or_else(Vec::new, |hash| hash.iter()
+                .filter_map(|(key, value)| scalar_field(key, value)).collect()),
         })
         .collect();
     Ok(ComponentInspection {
@@ -263,6 +370,7 @@ pub fn patch(
     let mut expected_len = original.len();
     let mut removed = None;
     let mut added = None;
+    let mut edited_field: Option<(usize, String, Yaml)> = None;
 
     match operation {
         ComponentOperation::Add { type_name } => {
@@ -323,6 +431,71 @@ pub fn patch(
             }
             expected_len += 1;
             added = Some(type_name.as_str());
+        }
+        ComponentOperation::UpdateField {
+            index, expected_type, key, kind, value,
+        } => {
+            let existing = original.get(*index).ok_or_else(|| issue(
+                "COMPONENT_NOT_FOUND", "Компонент больше не находится на прежней позиции.",
+            ))?;
+            if existing["type"].as_str() != Some(expected_type) {
+                return Err(issue(
+                    "COMPONENT_STALE_SELECTION", "Тип или порядок компонента изменился.",
+                ));
+            }
+            if key == "type" || !key_allowed(key) {
+                return Err(issue(
+                    "COMPONENT_FIELD_INVALID", "Редактировать type и необычные имена ключей через форму нельзя.",
+                ));
+            }
+            let old = &existing[key.as_str()];
+            let old_kind = scalar_field(&Yaml::String(key.clone()), old)
+                .ok_or_else(|| issue("COMPONENT_FIELD_NOT_FOUND", "Поле не найдено."))?;
+            if !old_kind.editable || old_kind.kind != *kind {
+                return Err(issue(
+                    "COMPONENT_FIELD_COMPLEX", "Поле имеет сложную структуру или изменило свой тип.",
+                ));
+            }
+            let (encoded, parsed) = encode_scalar(kind, value)?;
+            if old == &parsed {
+                return Ok(FieldPatch { content: source.into(), changed: false });
+            }
+            let start = positions.starts[*index] + 1;
+            let end = positions.starts.get(index + 1).copied().unwrap_or(positions.section_end);
+            let prefix = format!("    {key}:");
+            let matches: Vec<usize> = (start..end).filter(|&line_number| {
+                positions.lines[line_number].strip_prefix(&prefix).is_some_and(|rest| {
+                    rest.is_empty() || rest.starts_with([' ', '\t', '\r', '\n'])
+                })
+            }).collect();
+            if matches.len() != 1 {
+                return Err(issue(
+                    "COMPONENT_FIELD_LAYOUT", "Поле не найдено в прямых строках компонента или повторяется.",
+                ));
+            }
+            let n = matches[0];
+            let current_line = &positions.lines[n];
+            let rest = current_line.strip_prefix(&prefix).expect("position verified")
+                .trim_start_matches([' ', '\t']).trim_end_matches(['\r', '\n']);
+            let comment = inline_comment(rest).unwrap_or("");
+            let current_value = rest[..rest.len() - comment.len()].trim();
+            if current_value.is_empty()
+                || current_value.starts_with(['|', '>', '!', '&', '*', '[', '{'])
+            {
+                return Err(issue(
+                    "COMPONENT_FIELD_LAYOUT", "Значение поля записано тегом или многострочной конструкцией.",
+                ));
+            }
+            let eol = if current_line.ends_with("\r\n") { "\r\n" }
+                else if current_line.ends_with('\n') { "\n" } else { "" };
+            for (i, line) in positions.lines.iter().enumerate() {
+                if i == n {
+                    result.push_str(&format!("    {key}: {encoded}{comment}{eol}"));
+                } else {
+                    result.push_str(line);
+                }
+            }
+            edited_field = Some((*index, key.clone(), parsed));
         }
         ComponentOperation::Remove {
             index,
@@ -417,6 +590,33 @@ pub fn patch(
                 "COMPONENT_VERIFY_FAILED",
                 "После добавления компоненты изменились неожиданно.",
             ));
+        }
+    }
+    if let Some((index, key, wanted)) = edited_field {
+        if final_components.len() != original.len() {
+            return Err(issue("COMPONENT_VERIFY_FAILED", "Изменилось количество компонентов."));
+        }
+        for (i, (old, new)) in original.iter().zip(final_components).enumerate() {
+            if i == index {
+                let mut old_hash = old.as_hash().ok_or_else(|| issue(
+                    "COMPONENT_VERIFY_FAILED", "Компонент перестал быть словарём.",
+                ))?.clone();
+                let mut new_hash = new.as_hash().ok_or_else(|| issue(
+                    "COMPONENT_VERIFY_FAILED", "Компонент перестал быть словарём.",
+                ))?.clone();
+                old_hash.remove(&Yaml::String(key.clone()));
+                new_hash.remove(&Yaml::String(key.clone()));
+                if old_hash != new_hash || new[key.as_str()] != wanted {
+                    return Err(issue(
+                        "COMPONENT_VERIFY_FAILED",
+                        "После редактирования изменились другие поля компонента.",
+                    ));
+                }
+            } else if old != new {
+                return Err(issue(
+                    "COMPONENT_VERIFY_FAILED", "Изменился соседний компонент.",
+                ));
+            }
         }
     }
     if let Some(index) = removed {
@@ -631,5 +831,91 @@ mod tests {
             inspect(source, &loc(1, "First")).unwrap_err().code,
             "COMPONENT_UNSUPPORTED_LAYOUT"
         );
+    }
+
+    #[test]
+    fn lists_editable_scalar_fields_and_marks_nested_read_only() {
+        let source = "- type: entity\n  id: Tool\n  components:\n  - type: Sprite\n    sprite: Objects/Tools/sword.rsi\n    visible: true\n    count: 42\n    scale: 1.5\n    layers:\n    - state: icon\n";
+        let list = inspect(source, &loc(1, "Tool")).unwrap();
+        let fields = &list.components[0].fields;
+        assert_eq!(fields.len(), 5);
+        assert!(fields.iter().any(|f| f.key == "visible" && f.kind == "bool" && f.editable));
+        assert!(fields.iter().any(|f| f.key == "count" && f.kind == "int" && f.editable));
+        assert!(fields.iter().any(|f| f.key == "scale" && f.kind == "float" && f.editable));
+        assert!(fields.iter().any(|f| f.key == "sprite" && f.kind == "string" && f.editable));
+        assert!(fields.iter().any(|f| f.key == "layers" && f.kind == "complex" && !f.editable));
+    }
+
+    #[test]
+    fn edits_single_scalar_and_preserves_neighbors_and_inline_comments() {
+        let source = "# banner\n- type: entity\n  id: First\n  components:\n  - type: Sprite\n    sprite: 'old#name.rsi' # keep note\n    layers:\n    - state: icon\n  - type: Item\n    size: Small\n- type: entity\n  id: Second\n  name: Untouched\n";
+        let patch = patch(source, &loc(1, "First"), &ComponentOperation::UpdateField {
+            index: 0, expected_type: "Sprite".into(), key: "sprite".into(),
+            kind: "string".into(), value: "new#name.rsi".into(),
+        }).unwrap();
+        assert!(patch.changed);
+        assert!(patch.content.contains("    sprite: \"new#name.rsi\" # keep note\n"));
+        assert!(patch.content.contains("    layers:\n    - state: icon\n  - type: Item\n    size: Small\n"));
+        assert!(patch.content.ends_with("- type: entity\n  id: Second\n  name: Untouched\n"));
+        assert_eq!(inspect(&patch.content, &loc(1, "First")).unwrap().components[0].fields[0].value, "new#name.rsi");
+    }
+
+    #[test]
+    fn edits_boolean_integer_and_float_without_coercion() {
+        let source = "- type: entity\r\n  id: Gear\r\n  components:\r\n  - type: Test\r\n    flag: false\r\n    count: 3\r\n    factor: 1.5\r\n";
+        let mut updated = source.to_owned();
+        for (key, kind, value) in [
+            ("flag", "bool", "true"), ("count", "int", "7"), ("factor", "float", "2.25"),
+        ] {
+            updated = patch(&updated, &loc(1, "Gear"), &ComponentOperation::UpdateField {
+                index: 0, expected_type: "Test".into(), key: key.into(),
+                kind: kind.into(), value: value.into(),
+            }).unwrap().content;
+        }
+        assert!(updated.contains("    flag: true\r\n"));
+        assert!(updated.contains("    count: 7\r\n"));
+        assert!(updated.contains("    factor: 2.25\r\n"));
+        assert!(!updated.replace("\r\n", "").contains('\n'));
+        let fields = inspect(&updated, &loc(1, "Gear")).unwrap().components.remove(0).fields;
+        assert!(fields.iter().any(|f| f.key == "flag" && f.kind == "bool" && f.value == "true"));
+        assert!(fields.iter().any(|f| f.key == "count" && f.kind == "int" && f.value == "7"));
+        assert!(fields.iter().any(|f| f.key == "factor" && f.kind == "float"));
+    }
+
+    #[test]
+    fn rejects_nested_tagged_block_and_duplicate_scalar_rows() {
+        let source = "- type: entity\n  id: Gear\n  components:\n  - type: Test\n    layers:\n    - state: icon\n";
+        let attempt = ComponentOperation::UpdateField {
+            index: 0, expected_type: "Test".into(), key: "layers".into(),
+            kind: "string".into(), value: "nope".into(),
+        };
+        assert_eq!(patch(source, &loc(1, "Gear"), &attempt).unwrap_err().code, "COMPONENT_FIELD_COMPLEX");
+        let multiline = "- type: entity\n  id: Gear\n  components:\n  - type: Test\n    desc: |\n      hello\n";
+        assert_eq!(patch(multiline, &loc(1, "Gear"), &ComponentOperation::UpdateField {
+            index: 0, expected_type: "Test".into(), key: "desc".into(),
+            kind: "string".into(), value: "new".into(),
+        }).unwrap_err().code, "COMPONENT_FIELD_COMPLEX");
+        let duplicate = "- type: entity\n  id: Gear\n  components:\n  - type: Test\n    flag: false\n    flag: false\n";
+        assert_eq!(patch(duplicate, &loc(1, "Gear"), &ComponentOperation::UpdateField {
+            index: 0, expected_type: "Test".into(), key: "flag".into(),
+            kind: "bool".into(), value: "true".into(),
+        }).unwrap_err().code, "COMPONENT_FIELD_LAYOUT");
+    }
+
+    #[test]
+    fn refuses_stale_component_and_invalid_typed_value() {
+        let source = "- type: entity\n  id: Gear\n  components:\n  - type: Test\n    enabled: false\n";
+        assert_eq!(patch(source, &loc(1, "Gear"), &ComponentOperation::UpdateField {
+            index: 0, expected_type: "Other".into(), key: "enabled".into(),
+            kind: "bool".into(), value: "true".into(),
+        }).unwrap_err().code, "COMPONENT_STALE_SELECTION");
+        assert_eq!(patch(source, &loc(1, "Gear"), &ComponentOperation::UpdateField {
+            index: 0, expected_type: "Test".into(), key: "enabled".into(),
+            kind: "bool".into(), value: "whatever".into(),
+        }).unwrap_err().code, "COMPONENT_KIND_INVALID");
+        assert_eq!(patch(source, &loc(1, "Gear"), &ComponentOperation::UpdateField {
+            index: 0, expected_type: "Test".into(), key: "enabled".into(),
+            kind: "bool".into(), value: "false".into(),
+        }).unwrap().changed, false);
     }
 }
