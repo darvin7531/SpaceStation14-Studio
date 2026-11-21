@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, RefreshCw } from 'lucide-react';
-import { studio, type ImportedRsiState, type RsiSheetImage, type RsiSheetList } from '../lib/api';
+import { studio, type DeletedRsiState, type ImportedRsiState, type RsiSheetImage, type RsiSheetList } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 import { buildRsiFrameLayout, isRsiLayoutError, parseRsiMetadata } from '../lib/rsi-layout';
 import RsiStatePlayer from './RsiStatePlayer';
 import RsiImportPanel from './RsiImportPanel';
 import RsiTimingPanel from './RsiTimingPanel';
+import RsiDeletePanel from './RsiDeletePanel';
 
 function Failure({ error }: { error: StudioError }) {
   return <div className="rsi-error" role="alert"><AlertCircle size={16}/>
@@ -16,13 +17,14 @@ function Failure({ error }: { error: StudioError }) {
 
 /** Load one PNG at a time; do not expose project paths to the webview filesystem. */
 export default function RsiPreview({
-  path, metadata, revision, onImported, onTimingUpdated,
+  path, metadata, revision, onImported, onTimingUpdated, onDeleted,
 }: {
   path: string;
   metadata: string;
   revision: string;
   onImported: (updated: ImportedRsiState) => void;
   onTimingUpdated: (updated: ImportedRsiState) => void;
+  onDeleted: (result: DeletedRsiState) => void;
 }) {
   const [refresh, setRefresh] = useState(0);
   const [listing, setListing] = useState(true);
@@ -125,6 +127,9 @@ export default function RsiPreview({
     {frameLayout && selectedState && <RsiTimingPanel
       key={path + ':' + selectedState.name + ':' + revision}
       path={path} revision={revision} state={selectedState} onUpdated={onTimingUpdated}/>}
+    {selectedState && <RsiDeletePanel
+      key={'delete:' + path + ':' + selectedState.name + ':' + revision}
+      path={path} revision={revision} name={selectedState.name} onDeleted={onDeleted}/>
 
     <div className="rsi-stage">
       {listing ? <p>Чтение каталога RSI…</p>
@@ -155,6 +160,7 @@ export default function RsiPreview({
       Для корректных RSI v1 доступны направления, кадры и анимация с длительностями из meta.json.
       При повреждённых метаданных сохраняется просмотр PNG целиком. Импорт создаёт только
       новые PNG и требует подтверждения текущей ревизии meta.json.
+      Удаление состояния возможно только после сохранения его резервной копии.
     </p>
   </section>;
 }

@@ -108,3 +108,30 @@
   border-radius: 6px; color: #e4f2ff; cursor: pointer;
 }
 .rsi-timing-panel button:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Destructive metadata action is always name-confirmed and backed up first. */
+.rsi-delete-panel {
+  padding: 11px 16px;
+  border-bottom: 1px solid #57424b;
+  font-size: 12px;
+  color: #e3cbd1;
+}
+.rsi-delete-panel > summary {
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer; font-weight: 600; color: #f5c4c8;
+}
+.rsi-delete-panel form { display: grid; max-width: 740px; gap: 12px; padding: 13px 0 4px; }
+.rsi-delete-panel p { display: flex; align-items: flex-start; gap: 7px; margin: 0; line-height: 1.5; }
+.rsi-delete-panel code { color: #eed4da; overflow-wrap: anywhere; }
+.rsi-delete-panel label { display: grid; gap: 7px; color: #eddae0; }
+.rsi-delete-panel label input {
+  min-width: 0; width: 100%;
+  background: #160f1a; color: #f6e6e9;
+  border: 1px solid #7c5961; border-radius: 6px; padding: 9px;
+}
+.rsi-delete-panel button[type="submit"] {
+  display: inline-flex; align-items: center; justify-self: start; gap: 8px;
+  border: 1px solid #9f5765; background: #783b4a;
+  color: #ffe9ea; border-radius: 6px; cursor: pointer; padding: 9px 12px;
+}
+.rsi-delete-panel button:disabled { cursor: not-allowed; opacity: .5; }

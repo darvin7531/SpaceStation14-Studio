@@ -272,6 +272,20 @@ export interface FluentInspection {
   locale: FluentLocaleAnalysis;
 }
 
+export interface RsiDeleteRequest {
+  path: string;
+  expected_revision: string;
+  name: string;
+}
+
+export interface DeletedRsiState {
+  name: string;
+  content: string;
+  revision: string;
+  archive_path: string;
+  warning: string | null;
+}
+
 export interface RsiTimingUpdate {
   path: string;
   expected_revision: string;
@@ -477,6 +491,9 @@ export const studio = {
   },
   updateRsiTiming(request: RsiTimingUpdate): Promise<ImportedRsiState> {
     return invoke('update_rsi_timing', { request });
+  },
+  deleteRsiState(request: RsiDeleteRequest): Promise<DeletedRsiState> {
+    return invoke('delete_rsi_state', { request });
   },
   readResource(path: string): Promise<ResourceDocument> {
     return invoke('read_resource', { path });

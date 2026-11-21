@@ -13,6 +13,7 @@ mod prototype_graph;
 mod prototypes;
 mod resource_edit;
 mod rsi_create;
+mod rsi_delete;
 mod rsi_import;
 mod rsi_preview;
 mod rsi_timing;
@@ -33,6 +34,7 @@ use prototype_graph::PrototypeRelations;
 use prototypes::{DiagnosticPage, PrototypePage};
 use resource_edit::SaveResult;
 use rsi_create::{RsiCreationPreview, RsiDraft};
+use rsi_delete::{DeletedRsiState, RsiDeleteRequest};
 use rsi_import::{ImportedRsiState, RsiStateImport};
 use rsi_preview::{RsiSheetImage, RsiSheetList};
 use rsi_timing::RsiTimingUpdate;
@@ -221,6 +223,17 @@ async fn update_rsi_timing(
 ) -> Result<ImportedRsiState, StudioError> {
     let index = current_project(&state)?;
     tauri::async_runtime::spawn_blocking(move || index.update_rsi_timing(&request))
+        .await
+        .map_err(interrupted)?
+}
+
+#[tauri::command]
+async fn delete_rsi_state(
+    request: RsiDeleteRequest,
+    state: State<'_, WorkspaceState>,
+) -> Result<DeletedRsiState, StudioError> {
+    let index = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || index.delete_rsi_state(&request))
         .await
         .map_err(interrupted)?
 }
@@ -757,6 +770,7 @@ pub fn run() -> Result<(), tauri::Error> {
             read_rsi_sheet,
             import_rsi_state,
             update_rsi_timing,
+            delete_rsi_state,
             preview_new_rsi,
             create_new_rsi,
             save_yaml_resource,

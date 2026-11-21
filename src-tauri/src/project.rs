@@ -18,6 +18,7 @@ use crate::prototype_fields::{self, FieldInspection, FieldLocator, FieldPatch, P
 use crate::prototypes::PrototypeCatalog;
 use crate::resource_edit::{self, SaveResult};
 use crate::rsi_create::{self, CreatedRsi, RsiCreationPreview, RsiDraft};
+use crate::rsi_delete::{self, DeletedRsiState, RsiDeleteRequest};
 use crate::rsi_import::{self, ImportedRsiState, RsiStateImport};
 use crate::rsi_preview::{self, RsiSheetImage, RsiSheetList};
 use crate::rsi_timing::{self, RsiTimingUpdate};
@@ -711,6 +712,15 @@ impl ProjectIndex {
         self.verify_indexed_rsi(&request.path)?;
         let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;
         rsi_timing::update(&self.root, request)
+    }
+
+    pub fn delete_rsi_state(
+        &self,
+        request: &RsiDeleteRequest,
+    ) -> Result<DeletedRsiState, StudioError> {
+        self.verify_indexed_rsi(&request.path)?;
+        let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;
+        rsi_delete::delete(&self.root, request)
     }
 
     pub fn read_resource(&self, rel_path: &str) -> Result<ResourceDocument, StudioError> {
@@ -1647,6 +1657,41 @@ mod tests {
         };
         assert_eq!(
             index.update_rsi_timing(&outside).unwrap_err().code,
+            "RSI_NOT_INDEXED"
+        );
+    }
+
+    #[test]
+    fn deleting_rsi_state_checks_index_and_updates_visible_meta() {
+        let fx = Fixture::new();
+        let path = "Resources/Textures/Selected.rsi";
+        fx.write(
+            &format!("{path}/meta.json"),
+            r#"{"version":1,"size":{"x":1,"y":1},"states":[{"name":"idle"}]}"#,
+        );
+        fx.write(&format!("{path}/idle.png"), "fixture png bytes");
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let doc = index.read_resource(path).unwrap();
+        let request = RsiDeleteRequest {
+            path: path.into(),
+            expected_revision: doc.revision,
+            name: "idle".into(),
+        };
+        let removed = index.delete_rsi_state(&request).unwrap();
+        assert_eq!(removed.name, "idle");
+        assert!(!fx.root.join(path).join("idle.png").exists());
+        let read_back = index.read_resource(path).unwrap();
+        assert_eq!(read_back.revision, removed.revision);
+        assert_eq!(
+            index.delete_rsi_state(&request).unwrap_err().code,
+            "RSI_DELETE_CONFLICT"
+        );
+        let outside = RsiDeleteRequest {
+            path: "Resources/Textures/Missing.rsi".into(),
+            ..request
+        };
+        assert_eq!(
+            index.delete_rsi_state(&outside).unwrap_err().code,
             "RSI_NOT_INDEXED"
         );
     }
