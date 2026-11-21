@@ -14,6 +14,7 @@ use yaml_rust2::scanner::Marker;
 use yaml_rust2::{Yaml, YamlLoader};
 
 use crate::project::ResourceEntry;
+use crate::prototype_graph::{PrototypeGraph, PrototypeRelations};
 
 const MAX_YAML_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_PAGE: usize = 200;
@@ -70,6 +71,7 @@ pub struct PrototypeCatalog {
     diagnostics: Vec<PrototypeDiagnostic>,
     search_keys: Vec<String>,
     by_identity: HashMap<(String, String), Vec<usize>>,
+    graph: PrototypeGraph,
 }
 
 impl PrototypeCatalog {
@@ -206,6 +208,12 @@ impl PrototypeCatalog {
                 });
             }
         }
+        catalog.graph = PrototypeGraph::build(
+            &catalog.declarations,
+            &catalog.by_identity,
+            &catalog.diagnostics,
+        );
+        catalog.diagnostics.extend_from_slice(catalog.graph.diagnostics());
         catalog
             .diagnostics
             .sort_unstable_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
@@ -240,6 +248,11 @@ impl PrototypeCatalog {
             items,
             diagnostic_count: self.diagnostics.len(),
         }
+    }
+
+    pub fn relations(&self, kind: &str, id: &str) -> Option<PrototypeRelations> {
+        self.graph
+            .relations(kind, id, &self.declarations, &self.by_identity)
     }
 
     pub fn diagnostics(&self, offset: usize, limit: usize) -> DiagnosticPage {

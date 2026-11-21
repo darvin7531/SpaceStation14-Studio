@@ -8,6 +8,7 @@ import {
   type PrototypePage,
 } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
+import PrototypeRelationsPanel from './PrototypeRelationsPanel';
 
 const PAGE_SIZE = 80;
 
@@ -18,6 +19,7 @@ interface Props {
 
 export default function PrototypeExplorer({ workspaceKey, onOpen }: Props) {
   const [section, setSection] = useState<'catalog' | 'diagnostics'>('catalog');
+  const [inspected, setInspected] = useState<{ kind: string; id: string } | null>(null);
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState('');
   const [page, setPage] = useState(0);
@@ -52,6 +54,14 @@ export default function PrototypeExplorer({ workspaceKey, onOpen }: Props) {
     };
   }, [workspaceKey, section, query, kind, page, diagnosticsPage]);
 
+  function navigate(kindName: string, id: string) {
+    setSection('catalog');
+    setKind(kindName);
+    setQuery(id);
+    setPage(0);
+    setInspected({ kind: kindName, id });
+  }
+
   return <div className="prototype-explorer">
     <div className="proto-sections" role="group" aria-label="Режим каталога прототипов">
       <button type="button" className={section === 'catalog' ? 'selected' : ''} onClick={() => setSection('catalog')}>
@@ -77,6 +87,8 @@ export default function PrototypeExplorer({ workspaceKey, onOpen }: Props) {
       <strong>{section === 'catalog' ? 'Объявления прототипов' : 'Диагностика YAML'}</strong>
       <small>{section === 'catalog' ? result.total : issues.total}</small>
     </div>
+    {inspected && <PrototypeRelationsPanel selected={inspected} workspaceKey={workspaceKey}
+      onClose={() => setInspected(null)} onNavigate={navigate} onOpen={onOpen}/>}
     {error && <div className="proto-error" role="alert">
       <strong>{error.message}</strong><p>{error.hint}</p>
       <code>{error.code}</code>
@@ -100,6 +112,13 @@ export default function PrototypeExplorer({ workspaceKey, onOpen }: Props) {
             </span>
             <span className="prototype-path">{entry.file.split('/').at(-1)}:{entry.line}</span>
           </button>
+          <button type="button" className="prototype-relations-trigger"
+            aria-label={'Показать связи прототипа ' + entry.kind + ':' + entry.id}
+            aria-pressed={inspected?.kind === entry.kind && inspected.id === entry.id}
+            onClick={() => setInspected((prev) => prev?.kind === entry.kind && prev.id === entry.id
+              ? null : { kind: entry.kind, id: entry.id })}>
+            Связи и потомки
+          </button>
           {entry.mode !== 'normal' && <span className="prototype-partial">{{
             configured_partial: 'Partial-каталог', tagged_partial: 'Tagged Partial',
             partial_only: 'Partial Only', normal: '',
@@ -108,7 +127,7 @@ export default function PrototypeExplorer({ workspaceKey, onOpen }: Props) {
             <span>Родители: </span>
             {entry.parents.map((parent) => <button type="button" className="prototype-parent-link"
               key={parent} title={'Искать объявления ' + entry.kind + ':' + parent}
-              onClick={() => { setSection('catalog'); setKind(entry.kind); setQuery(parent); setPage(0); }}>
+              onClick={() => navigate(entry.kind, parent)}>
               {parent}
             </button>)}
             {entry.parent_tag && <span className="prototype-parent-tag">({entry.parent_tag})</span>}

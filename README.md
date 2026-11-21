@@ -12,6 +12,7 @@ SS14 Studio is being rewritten on **Rust + Tauri 2**. The desktop application in
 - Read-only inventory of YAML prototype files, RSI folders and Fluent files.
 - **Lazy Rust YAML declaration catalog:** enumerate real prototype `type` + `id` entries, parents, abstract flag, source line and multi-document origin. Search uses a prebuilt in-memory index; parse happens once when the Prototypes pane is opened.
 - Partial declarations are kept separate: configured partial directories from `Resources/PartialPrototypes/partialPrototypes.yml`, `!PartialOnly`, `!Partial:0`. Unsupported dynamic IDs are reported, not silently treated as ordinary prototypes.
+- Source-level prototype graph: direct parent links, reverse child references, definition provenance, conservative missing-reference and static cycle diagnostics. Links from partials stay tagged by provenance; dynamic references are never assumed to be a confirmed engine inheritance path.
 - Parsed YAML diagnostics are exposed in a separate paginated view. A malformed source file is reported without poisoning the index of other files.
 - Search by resource path and type, with pagination; queries use precomputed case-insensitive keys and resource reads use a direct lookup map, with no filesystem walk per search.
 - Display YAML/FTL contents and RSI meta.json in a Monaco-based syntax-highlighted, read-only viewer. Monaco and its worker are bundled locally (offline); JSON metadata uses lightweight syntax colouring without the heavy JSON language service. Open tabs are bounded and support close/reload.

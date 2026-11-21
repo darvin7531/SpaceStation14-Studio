@@ -1,11 +1,13 @@
 mod error;
 mod project;
+mod prototype_graph;
 mod prototypes;
 
 use std::sync::{Arc, Mutex};
 
 use error::{internal_lock, interrupted, StudioError};
 use project::{ProjectIndex, ProjectOverview, ResourceDocument, ResourcePage};
+use prototype_graph::PrototypeRelations;
 use prototypes::{DiagnosticPage, PrototypePage};
 use tauri::State;
 
@@ -112,6 +114,27 @@ async fn list_prototype_diagnostics(
     .map_err(interrupted)
 }
 
+/// Source relationships are informational and do not perform YAML inheritance.
+#[tauri::command]
+async fn prototype_relations(
+    kind: String,
+    id: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<PrototypeRelations, StudioError> {
+    let index = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        index.prototypes().relations(&kind, &id).ok_or_else(|| {
+            StudioError::new(
+                "PROTOTYPE_NOT_INDEXED",
+                "Прототип не найден в каталоге открытого проекта.",
+                "Повторите поиск по точному типу и ID либо заново откройте проект.",
+            )
+        })
+    })
+    .await
+    .map_err(interrupted)?
+}
+
 pub fn run() -> Result<(), tauri::Error> {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -120,6 +143,7 @@ pub fn run() -> Result<(), tauri::Error> {
             open_project,
             search_resources,
             search_prototypes,
+            prototype_relations,
             list_prototype_diagnostics,
             read_resource
         ])

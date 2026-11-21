@@ -38,6 +38,26 @@ export interface PrototypePage {
   diagnostic_count: number;
 }
 
+export interface PrototypeRelationLink {
+  kind: string;
+  id: string;
+  file: string;
+  line: number;
+  source_mode: PrototypeDeclaration['mode'];
+  status: 'defined' | 'partial_only' | 'ambiguous' | 'not_indexed' | 'tagged';
+}
+
+export interface PrototypeRelations {
+  kind: string;
+  id: string;
+  declarations: PrototypeDeclaration[];
+  parents: PrototypeRelationLink[];
+  children: PrototypeRelationLink[];
+  parent_total: number;
+  child_total: number;
+  index_complete: boolean;
+}
+
 export interface PrototypeDiagnostic {
   code: string;
   file: string;
@@ -66,6 +86,9 @@ export const studio = {
   },
   searchPrototypes(query: string, kind: string, offset: number, limit = 100): Promise<PrototypePage> {
     return invoke('search_prototypes', { query, kind: kind || null, offset, limit });
+  },
+  prototypeRelations(kind: string, id: string): Promise<PrototypeRelations> {
+    return invoke('prototype_relations', { kind, id });
   },
   listPrototypeDiagnostics(offset = 0, limit = 100): Promise<PrototypeDiagnosticPage> {
     return invoke('list_prototype_diagnostics', { offset, limit });
