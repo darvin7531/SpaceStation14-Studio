@@ -11,7 +11,38 @@ use std::{
 const MAX_FILES: usize = 4096;
 const MAX_SHEETS: usize = 256;
 const MAX_PNG: u64 = 8 * 1024 * 1024;
+const MAX_IMAGE_DIMENSION: u32 = 16_384;
+const MAX_IMAGE_PIXELS: u64 = 16_777_216;
 const PNG_HEADER: &[u8] = b"\x89PNG\r\n\x1a\n";
+
+/// Validate the PNG IHDR before returning compressed data to the WebView.
+/// An 8 MiB PNG can otherwise decompress to gigabytes of pixels.
+fn png_dimensions(bytes: &[u8]) -> Result<(u32, u32), StudioError> {
+    if !bytes.starts_with(PNG_HEADER) || bytes.len() < 29
+        || &bytes[12..16] != b"IHDR"
+        || u32::from_be_bytes(bytes[8..12].try_into().unwrap_or([0; 4])) != 13
+    {
+        return Err(StudioError::new(
+            "RSI_PNG_HEADER_INVALID",
+            "PNG не содержит корректного заголовка IHDR.",
+            "Проверьте исходное изображение RSI.",
+        ));
+    }
+    let width = u32::from_be_bytes(bytes[16..20].try_into().unwrap_or([0; 4]));
+    let height = u32::from_be_bytes(bytes[20..24].try_into().unwrap_or([0; 4]));
+    if width == 0 || height == 0
+        || width > MAX_IMAGE_DIMENSION
+        || height > MAX_IMAGE_DIMENSION
+        || u64::from(width) * u64::from(height) > MAX_IMAGE_PIXELS
+    {
+        return Err(StudioError::new(
+            "RSI_IMAGE_DIMENSIONS_LIMIT",
+            "Размер PNG слишком велик для безопасного предпросмотра.",
+            "Используйте изображение меньшего размера или откройте его во внешнем редакторе.",
+        ));
+    }
+    Ok((width, height))
+}
 
 #[derive(Debug, Serialize)]
 pub struct RsiSheetInfo {
@@ -28,6 +59,8 @@ pub struct RsiSheetList {
 pub struct RsiSheetImage {
     pub data_url: String,
     pub bytes: usize,
+    pub width: u32,
+    pub height: u32,
 }
 
 fn directory(root: &Path, relative: &str) -> Result<PathBuf, StudioError> {
@@ -235,15 +268,29 @@ pub fn read(root: &Path, relative: &str, name: &str) -> Result<RsiSheetImage, St
             "Проверьте формат файла в исходном проекте.",
         ));
     }
+    let (width, height) = png_dimensions(&bytes)?;
     Ok(RsiSheetImage {
         data_url: format!("data:image/png;base64,{}", STANDARD.encode(&bytes)),
         bytes: bytes.len(),
+        width,
+        height,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn rejects_png_decompression_bombs_and_malformed_headers() {
+        let mut png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR\x00\x00\x00\x20\x00\x00\x00\x20\x08\x06\x00\x00\x00".to_vec();
+        assert_eq!(png_dimensions(&png).unwrap(), (32, 32));
+        png[16..20].copy_from_slice(&16_384_u32.to_be_bytes());
+        png[20..24].copy_from_slice(&16_384_u32.to_be_bytes());
+        assert_eq!(png_dimensions(&png).unwrap_err().code, "RSI_IMAGE_DIMENSIONS_LIMIT");
+        png[12..16].copy_from_slice(b"IDAT");
+        assert_eq!(png_dimensions(&png).unwrap_err().code, "RSI_PNG_HEADER_INVALID");
+    }
+
     #[test]
     fn image_names_cannot_traverse() {
         for name in ["../a.png", "dir/a.png", "dir\\a.png", "meta.json", "", "."] {

@@ -1568,7 +1568,7 @@ mod tests {
         fx.write("Resources/Textures/Test.rsi/meta.json", "{\"version\":1}");
         fs::write(
             fx.root.join("Resources/Textures/Test.rsi/idle.png"),
-            b"\x89PNG\r\n\x1a\nminimal fixture",
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00",
         )
         .unwrap();
         let index = ProjectIndex::open(fx.root_str()).unwrap();
@@ -1577,6 +1577,8 @@ mod tests {
         assert_eq!(sheets.sheets[0].name, "idle.png");
         let image = index.read_rsi_sheet(path, "idle.png").unwrap();
         assert!(image.data_url.starts_with("data:image/png;base64,"));
+        assert_eq!(image.width, 1);
+        assert_eq!(image.height, 1);
         assert_eq!(
             index.read_rsi_sheet(path, "../idle.png").unwrap_err().code,
             "RSI_IMAGE_NAME_INVALID"

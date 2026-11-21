@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import { studio, type RsiSheetImage, type RsiSheetList } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
+import { buildRsiFrameLayout, isRsiLayoutError, parseRsiMetadata } from '../lib/rsi-layout';
+import RsiStatePlayer from './RsiStatePlayer';
 
 function Failure({ error }: { error: StudioError }) {
   return <div className="rsi-error" role="alert"><AlertCircle size={16}/>
@@ -21,18 +23,16 @@ export default function RsiPreview({ path, metadata }: { path: string; metadata:
   const [imageError, setImageError] = useState<StudioError | null>(null);
   const [loadingImage, setLoadingImage] = useState(false);
   const [zoom, setZoom] = useState(4);
-  const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
+  const [displayMode, setDisplayMode] = useState<'frames' | 'sheet'>('frames');
+  const dimensions = image ? { width: image.width, height: image.height } : null;
 
-  const states = useMemo((): string[] => {
-    try {
-      const parsed: unknown = JSON.parse(metadata);
-      if (typeof parsed !== 'object' || parsed === null || !('states' in parsed)) return [];
-      if (!Array.isArray(parsed.states)) return [];
-      return parsed.states.flatMap((item: unknown) =>
-        typeof item === 'object' && item !== null && 'name' in item && typeof item.name === 'string'
-          ? [item.name] : []);
-    } catch { return []; }
-  }, [metadata]);
+  const inspection = useMemo(() => parseRsiMetadata(metadata), [metadata]);
+  const states = inspection.states.map((state) => state.name);
+  const selectedState = inspection.states.find((state) => state.name + '.png' === selected) ?? null;
+  const layoutResult = inspection.size && selectedState && dimensions
+    ? buildRsiFrameLayout(inspection.size, selectedState, dimensions.width, dimensions.height)
+    : null;
+  const frameLayout = layoutResult && !isRsiLayoutError(layoutResult) ? layoutResult : null;
 
   useEffect(() => {
     let active = true;
@@ -43,18 +43,19 @@ export default function RsiPreview({ path, metadata }: { path: string; metadata:
     void studio.listRsiSheets(path).then((result) => {
       if (!active) return;
       setList(result);
-      setSelected(result.sheets.find((sheet) => sheet.previewable)?.name ?? null);
+      setSelected(result.sheets.find((sheet) =>
+        sheet.previewable && inspection.states.some((state) => sheet.name === state.name + '.png'))?.name
+        ?? result.sheets.find((sheet) => sheet.previewable)?.name ?? null);
     }).catch((failure: unknown) => {
       if (active) setListError(normalizeStudioError(failure));
     }).finally(() => { if (active) setListing(false); });
     return () => { active = false; };
-  }, [path, refresh]);
+  }, [path, refresh, inspection]);
 
   useEffect(() => {
     let active = true;
     setImage(null);
     setImageError(null);
-    setDimensions(null);
     if (!selected) {
       setLoadingImage(false);
       return () => { active = false; };
@@ -87,27 +88,47 @@ export default function RsiPreview({ path, metadata }: { path: string; metadata:
           {[1, 2, 4, 8].map((value) => <option key={value} value={value}>{value}×</option>)}
         </select>
       </label>
+      <label>Просмотр
+        <select aria-label="Режим RSI" value={displayMode}
+          onChange={(event) => setDisplayMode(event.target.value as 'frames' | 'sheet')}>
+          <option value="frames">Кадры и анимация</option>
+          <option value="sheet">PNG целиком</option>
+        </select>
+      </label>
       <button type="button" disabled={listing} onClick={() => setRefresh((x) => x + 1)}>
         <RefreshCw size={14}/> Обновить
       </button>
     </header>
     {listError && <Failure error={listError}/>}
     {list?.warnings.map((warning) => <p key={warning} className="rsi-warning">{warning}</p>)}
+    {inspection.errors.map((error, index) => <p key={'metadata-error-' + index}
+      className="rsi-warning" role="alert">{error}</p>)}
+    {inspection.warnings.map((warning, index) => <p key={'metadata-warning-' + index}
+      className="rsi-warning">{warning}</p>)}
+    {layoutResult && isRsiLayoutError(layoutResult) && <p className="rsi-warning" role="alert">
+      {selectedState?.name}: {layoutResult.error} Показан исходный PNG без нарезки.
+    </p>}
+    {frameLayout?.warnings.map((warning, index) =>
+      <p className="rsi-warning" key={'layout-' + index}>{warning}</p>)}
     {imageError && <Failure error={imageError}/>}
     <div className="rsi-stage">
       {listing ? <p>Чтение каталога RSI…</p>
         : loadingImage ? <p>Загрузка PNG…</p>
-          : image ? <img src={image.data_url} alt={`Лист RSI: ${selected}`}
-            width={dimensions ? dimensions.width * zoom : undefined}
-            height={dimensions ? dimensions.height * zoom : undefined}
-            onLoad={(event) => setDimensions({
-              width: event.currentTarget.naturalWidth,
-              height: event.currentTarget.naturalHeight,
-            })}
-            onError={() => setImageError({
-              code: 'RSI_DECODE_FAILED', message: 'Не удалось отобразить PNG.',
-              hint: 'Изображение может быть повреждено или иметь неподдерживаемый формат.',
-            })}/>
+          : image ? <>
+            <img src={image.data_url} alt={'Лист RSI: ' + selected}
+              style={{ display: displayMode === 'frames' && frameLayout ? 'none' : 'block' }}
+              width={dimensions ? dimensions.width * zoom : undefined}
+              height={dimensions ? dimensions.height * zoom : undefined}
+              onError={() => setImageError({
+                code: 'RSI_DECODE_FAILED', message: 'Не удалось отобразить PNG.',
+                hint: 'Изображение может быть повреждено или иметь неподдерживаемый формат.',
+              })}/>
+            {displayMode === 'frames' && frameLayout && dimensions && selectedState &&
+              <RsiStatePlayer key={(selected ?? '') + ':' + refresh}
+                stateName={selectedState.name} imageUrl={image.data_url}
+                imageWidth={dimensions.width} imageHeight={dimensions.height}
+                layout={frameLayout} zoom={zoom}/>}
+          </>
             : <p>{list?.sheets.length ? 'Выберите доступный PNG.' : 'В этом RSI нет PNG-листов.'}</p>}
     </div>
     <details className="rsi-metadata">
@@ -115,6 +136,9 @@ export default function RsiPreview({ path, metadata }: { path: string; metadata:
       {states.length > 0 && <p>{states.join(', ')}</p>}
       <pre>{metadata}</pre>
     </details>
-    <p className="rsi-caveat">Показан исходный PNG-лист без нарезки кадров и воспроизведения анимации. Файлы не изменяются.</p>
+    <p className="rsi-caveat">
+      Для корректных RSI v1 доступны направления, кадры и анимация с длительностями из meta.json.
+      При повреждённых метаданных сохраняется просмотр PNG целиком. Файлы не изменяются.
+    </p>
   </section>;
 }

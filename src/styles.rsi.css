@@ -18,3 +18,29 @@
 .rsi-error pre { white-space:pre-wrap; overflow-wrap:anywhere; }
 .rsi-warning { padding:8px 16px; margin:0; color:#f3d5a8; background:#382c20; font-size:11px; }
 .rsi-caveat { margin:0; padding:9px 16px; border-top:1px solid #344960; color:#96acc6; font-size:10px; }
+
+/* Frame viewer: the PNG is moved underneath a clipped viewport.
+ * This avoids re-encoding or rewriting source sprite sheets. */
+.rsi-player { display: flex; flex-direction: column; gap: 13px; min-width: 250px; }
+.rsi-player-controls {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 9px;
+  padding: 10px; background: #0d1a29; border: 1px solid #3e566d; border-radius: 7px;
+}
+.rsi-player-controls label { display: flex; align-items: center; gap: 7px; color: #c8daf0; font-size: 11px; }
+.rsi-player-controls select,
+.rsi-player-controls button {
+  background: #214260; color: #e1eefb; border: 1px solid #597897;
+  border-radius: 5px; padding: 7px; font-size: 11px;
+}
+.rsi-player-controls button { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.rsi-player-controls button:disabled { opacity: .45; cursor: not-allowed; }
+.rsi-player-counter { color: #afc8e4; font-size: 11px; }
+.rsi-player-canvas { overflow: auto; padding: 12px; max-width: 100%; }
+.rsi-frame-viewport { display: block; position: relative; overflow: hidden; border: 1px solid #5b7995; }
+.rsi-frame-viewport img { max-width: none; max-height: none; image-rendering: pixelated; }
+.rsi-player-timeline {
+  display: flex; gap: 10px; align-items: center; color: #c5d9ef;
+  font-size: 11px; padding: 8px 10px; background: #142639; border-radius: 6px;
+}
+.rsi-player-timeline input { min-width: 80px; flex: 1; }
+.rsi-player-description { margin: 0; color: #a6bed9; font-size: 11px; }

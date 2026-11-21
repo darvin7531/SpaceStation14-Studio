@@ -200,6 +200,8 @@ export interface RsiSheetList {
 export interface RsiSheetImage {
   data_url: string;
   bytes: number;
+  width: number;
+  height: number;
 }
 
 export interface DraftSnapshot {
