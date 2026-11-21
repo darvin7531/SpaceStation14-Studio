@@ -517,9 +517,7 @@ impl CSharpCatalog {
                         // Most C# files do not declare SS14 serialization
                         // metadata. A cheap substring prefilter avoids building
                         // a syntax tree for unrelated source code.
-                        if !source.contains("RegisterComponent")
-                            && !source.contains("Prototype")
-                        {
+                        if !source.contains("RegisterComponent") && !source.contains("Prototype") {
                             continue;
                         }
                         catalog.files_parsed += 1;
@@ -692,8 +690,11 @@ mod tests {
             "[RegisterComponent]\npublic class SkipComponent {}\n",
         )
         .unwrap();
-        fs::write(root.join("Content.Shared/Unrelated.cs"), "public class Unrelated {}\n")
-            .unwrap();
+        fs::write(
+            root.join("Content.Shared/Unrelated.cs"),
+            "public class Unrelated {}\n",
+        )
+        .unwrap();
         let index = CSharpCatalog::scan(&root).unwrap();
         assert!(index.complete);
         assert_eq!(index.files_scanned, 2);
