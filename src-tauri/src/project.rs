@@ -249,7 +249,10 @@ impl ProjectIndex {
         if cached.is_none() {
             *cached = Some(Arc::new(CSharpCatalog::scan(&self.root)?));
         }
-        Ok(cached.as_ref().expect("C# cache initialized").page(query, kind, offset, limit))
+        Ok(cached
+            .as_ref()
+            .expect("C# cache initialized")
+            .page(query, kind, offset, limit))
     }
 
     pub fn is_yaml_indexed(&self, path: &str) -> bool {
