@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {closeTab, MAX_OPEN_TABS, openTab, type TabState, nextTabPath, type TabState } from '../src/lib/tabs';
+import {closeTab, MAX_OPEN_TABS, openTab, type TabState, nextTabPath } from '../src/lib/tabs';
 import type { ResourceEntry } from '../src/lib/api';
 
 const resource = (path: string): ResourceEntry => ({ path, kind: 'yaml' });
