@@ -228,8 +228,16 @@ impl ProjectIndex {
             ));
         }
         let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;
-        let result = resource_edit::save_yaml(&self.root, rel_path, expected_revision, content)?;
-        *self.prototype_catalog.lock().map_err(|_| internal_lock())? = None;
+        let mut result = resource_edit::save_yaml(&self.root, rel_path, expected_revision, content)?;
+        match self.prototype_catalog.lock() {
+            Ok(mut cache) => *cache = None,
+            Err(_) => {
+                result.durability_warning = Some(
+                    "Файл записан, но каталог прототипов обновить не удалось. Переоткройте проект."
+                        .into(),
+                );
+            }
+        }
         Ok(result)
     }
 
@@ -649,6 +657,44 @@ mod tests {
         let index = ProjectIndex::open(fx.root_str()).unwrap();
         let err = index.read_resource("secret.txt").unwrap_err();
         assert_eq!(err.code, "RESOURCE_NOT_INDEXED");
+    }
+
+    #[test]
+    fn saving_yaml_invalidates_prototype_catalog_without_reopening_project() {
+        let fx = Fixture::new();
+        fx.write("Resources/Prototypes/fixture.yml", "- type: entity\n  id: Before\n");
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        assert_eq!(index.prototypes().unwrap().search("Before", None, 0, 10).total, 1);
+
+        let before = index.read_resource("Resources/Prototypes/fixture.yml").unwrap();
+        let saved = index.save_yaml(
+            "Resources/Prototypes/fixture.yml",
+            &before.revision,
+            "- type: entity\n  id: After\n".into(),
+        ).unwrap();
+
+        assert_ne!(saved.document.revision, before.revision);
+        assert_eq!(index.prototypes().unwrap().search("Before", None, 0, 10).total, 0);
+        assert_eq!(index.prototypes().unwrap().search("After", None, 0, 10).total, 1);
+    }
+
+    #[test]
+    fn only_indexed_yaml_can_be_saved() {
+        let fx = Fixture::new();
+        fx.write("secret.yml", "secret: 1");
+        fx.write("Resources/Locale/en-US/sample.ftl", "name = Text");
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let wrong = index.save_yaml("secret.yml", &"a".repeat(64), "secret: 2".into())
+            .unwrap_err();
+        assert_eq!(wrong.code, "RESOURCE_NOT_INDEXED");
+
+        let locale = index.read_resource("Resources/Locale/en-US/sample.ftl").unwrap();
+        let wrong = index.save_yaml(
+            "Resources/Locale/en-US/sample.ftl",
+            &locale.revision,
+            "name = Changed".into(),
+        ).unwrap_err();
+        assert_eq!(wrong.code, "RESOURCE_EDIT_NOT_SUPPORTED");
     }
 
     #[cfg(unix)]
