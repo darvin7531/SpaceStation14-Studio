@@ -1,0 +1,328 @@
+//! Safe new Fluent file creation. An existing file is never overwritten.
+//! We deliberately do not claim semantic Fluent validation in this first slice.
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::path::{Component, Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+
+use crate::error::StudioError;
+
+const MAX_PATH_BYTES: usize = 512;
+const MAX_VALUE_BYTES: usize = 8 * 1024;
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct FluentDraft {
+    pub file: String,
+    pub starter_key: String,
+    pub starter_value: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FluentPreview {
+    pub file: String,
+    pub content: String,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CreatedFluent {
+    pub file: String,
+    pub warning: Option<String>,
+}
+
+fn problem(code: &'static str, message: &str, hint: &str) -> StudioError {
+    StudioError::new(code, message, hint)
+}
+
+fn validate_path(path: &str) -> Result<(), StudioError> {
+    let invalid = || problem(
+        "FTL_PATH_INVALID",
+        "Имя файла должно иметь вид Resources/Locale/<язык>/имя.ftl.",
+        "Укажите путь к .ftl внутри существующей папки языка. Запрещены .., системные символы и обратные слеши.",
+    );
+    if path.is_empty()
+        || path.len() > MAX_PATH_BYTES
+        || path.contains('\\')
+        || path.chars().any(|c| c.is_control() || matches!(c, ':' | '<' | '>' | '|' | '?' | '*' | '"'))
+    {
+        return Err(invalid());
+    }
+    let parts: Vec<_> = Path::new(path).components().collect();
+    if parts.len() < 4
+        || parts.iter().any(|part| !matches!(part, Component::Normal(_)))
+        || parts[0].as_os_str() != "Resources"
+        || parts[1].as_os_str() != "Locale"
+        || !path.to_ascii_lowercase().ends_with(".ftl")
+    {
+        return Err(invalid());
+    }
+    // Do not allow ambiguous trailing-dot/space names on Windows.
+    if path.split('/').any(|part| part.ends_with('.') || part.ends_with(' ') || part.is_empty()) {
+        return Err(invalid());
+    }
+    Ok(())
+}
+
+pub fn preview(draft: &FluentDraft) -> Result<FluentPreview, StudioError> {
+    validate_path(&draft.file)?;
+
+    let key = &draft.starter_key;
+    let key_valid = key.len() <= 128
+        && key.bytes().next().is_some_and(|b| b.is_ascii_alphabetic())
+        && key.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'));
+    if !key_valid {
+        return Err(problem(
+            "FTL_KEY_INVALID",
+            "Начальный Fluent ID должен начинаться с латинской буквы.",
+            "Разрешены латинские буквы, цифры, дефис и подчёркивание, максимум 128 символов.",
+        ));
+    }
+    if draft.starter_value.len() > MAX_VALUE_BYTES
+        || draft.starter_value.chars().any(|c| c.is_control() || matches!(c, '{' | '}'))
+    {
+        return Err(problem(
+            "FTL_VALUE_INVALID",
+            "Начальное значение слишком длинное или содержит неподдерживаемый синтаксис.",
+            "Введите однострочный текст до 8 КиБ без фигурных скобок и управляющих символов. Сложные Fluent-выражения добавьте позже в редакторе.",
+        ));
+    }
+    let content = format!("{key} = {}\n", draft.starter_value);
+    Ok(FluentPreview {
+        file: draft.file.clone(),
+        content,
+        warnings: vec![
+            "Studio ещё не проверяет полный синтаксис Fluent и ссылки на ключи локализации."
+                .into(),
+        ],
+    })
+}
+
+pub fn create(root: &Path, draft: &FluentDraft) -> Result<CreatedFluent, StudioError> {
+    let rendered = preview(draft)?;
+    let scope = root.join("Resources/Locale");
+    let canonical_scope = fs::canonicalize(&scope).map_err(|error| {
+        problem(
+            "FTL_SCOPE_MISSING",
+            "Каталог Resources/Locale недоступен.",
+            "Создайте каталог локализаций и повторно откройте проект.",
+        )
+        .with_details(error.to_string())
+    })?;
+    if !canonical_scope.starts_with(root) {
+        return Err(problem(
+            "FTL_SCOPE_INVALID",
+            "Каталог локализаций оказался за пределами проекта.",
+            "Уберите символические ссылки на внешние каталоги.",
+        ));
+    }
+
+    let target = root.join(&rendered.file);
+    let parent = target.parent().ok_or_else(|| {
+        problem(
+            "FTL_PATH_INVALID",
+            "Невозможно определить папку файла локализации.",
+            "Укажите корректный относительный путь.",
+        )
+    })?;
+    // Reject symlinks in every destination component, even if they point
+    // somewhere inside the selected project checkout.
+    let relative = parent.strip_prefix(root).map_err(|_| {
+        problem("FTL_PATH_INVALID", "Путь вышел за пределы проекта.", "Выберите каталог локализаций.")
+    })?;
+    let mut cursor = PathBuf::from(root);
+    for part in relative.components() {
+        cursor.push(part);
+        let meta = fs::symlink_metadata(&cursor).map_err(|error| {
+            problem(
+                "FTL_FOLDER_MISSING",
+                "Папка назначения отсутствует или недоступна.",
+                "Создайте нужную папку языка заранее и обновите индекс Studio.",
+            )
+            .with_details(error.to_string())
+        })?;
+        if meta.file_type().is_symlink() || !meta.is_dir() {
+            return Err(problem(
+                "FTL_FOLDER_INVALID",
+                "Путь к новой локализации содержит символическую ссылку или файл вместо каталога.",
+                "Выберите обычную существующую папку внутри Resources/Locale.",
+            ));
+        }
+    }
+    let resolved_parent = fs::canonicalize(parent).map_err(|error| {
+        problem("FTL_FOLDER_MISSING", "Невозможно открыть папку назначения.", "Проверьте структуру каталогов.")
+            .with_details(error.to_string())
+    })?;
+    if !resolved_parent.starts_with(&canonical_scope) {
+        return Err(problem(
+            "FTL_OUTSIDE_SCOPE",
+            "Новая локализация находится вне Resources/Locale.",
+            "Выберите каталог внутри Resources/Locale.",
+        ));
+    }
+
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o644);
+    }
+    let mut handle = options.open(&target).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::AlreadyExists {
+            problem(
+                "FTL_FILE_EXISTS",
+                "Такой FTL уже существует. Он не был перезаписан.",
+                "Выберите другое имя либо откройте существующий файл для редактирования.",
+            )
+        } else {
+            problem("FTL_CREATE_FAILED", "Не удалось создать файл локализации.", "Проверьте права записи и доступное место.")
+                .with_details(error.to_string())
+        }
+    })?;
+    // Always close the handle before removing an incomplete file. Deleting an
+    // open file is unreliable on Windows, even if Unix permits it.
+    let written = (|| {
+        handle.write_all(rendered.content.as_bytes()).map_err(|error| {
+            problem(
+                "FTL_WRITE_FAILED",
+                "Не удалось полностью записать новый Fluent-файл.",
+                "Проверьте диск и повторите операцию.",
+            )
+            .with_details(error.to_string())
+        })?;
+        handle.sync_all().map_err(|error| {
+            problem(
+                "FTL_SYNC_FAILED",
+                "Не удалось подтвердить запись FTL на диск.",
+                "Проверьте диск и повторите операцию.",
+            )
+            .with_details(error.to_string())
+        })
+    })();
+    drop(handle);
+    if let Err(error) = written {
+        if let Err(cleanup_error) = fs::remove_file(&target) {
+            return Err(problem(
+                "FTL_CLEANUP_FAILED",
+                "После ошибки записи не удалось удалить неполный FTL.",
+                "Проверьте файл вручную, прежде чем повторять создание.",
+            )
+            .with_details(format!("Исходная ошибка: {error:?}; удаление: {cleanup_error}")));
+        }
+        return Err(error);
+    }
+    let warning = sync_directory(parent).err().map(|error| {
+        format!("FTL создан, но синхронизация каталога не подтверждена: {error}")
+    });
+    Ok(CreatedFluent {
+        file: rendered.file,
+        warning,
+    })
+}
+
+#[cfg(unix)]
+fn sync_directory(parent: &Path) -> std::io::Result<()> {
+    fs::File::open(parent)?.sync_all()
+}
+#[cfg(not(unix))]
+fn sync_directory(_parent: &Path) -> std::io::Result<()> {
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
+
+    struct Fixture { root: PathBuf }
+    impl Fixture {
+        fn new() -> Self {
+            let id = NEXT_TEST.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!("ss14-ftl-new-{}-{id}", std::process::id()));
+            fs::create_dir_all(path.join("Resources/Prototypes")).unwrap();
+            fs::create_dir_all(path.join("Resources/Locale/en-US")).unwrap();
+            Self { root: fs::canonicalize(path).unwrap() }
+        }
+        fn draft(&self) -> FluentDraft {
+            FluentDraft {
+                file: "Resources/Locale/en-US/new.ftl".into(),
+                starter_key: "item-example".into(),
+                starter_value: "Example item".into(),
+            }
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.root); }
+    }
+
+    #[test]
+    fn creates_new_fluent_only_once() {
+        let fx = Fixture::new();
+        let draft = fx.draft();
+        let created = create(&fx.root, &draft).unwrap();
+        assert_eq!(created.file, draft.file);
+        assert_eq!(fs::read_to_string(fx.root.join(&draft.file)).unwrap(), "item-example = Example item\n");
+        let error = create(&fx.root, &draft).unwrap_err();
+        assert_eq!(error.code, "FTL_FILE_EXISTS");
+        assert_eq!(fs::read_to_string(fx.root.join(&draft.file)).unwrap(), "item-example = Example item\n");
+    }
+
+    #[test]
+    fn reject_parent_escape_and_wrong_resource_scope() {
+        let fx = Fixture::new();
+        for path in [
+            "../secret.ftl",
+            "Resources/Locale/../Prototypes/malicious.ftl",
+            "Resources/Prototypes/test.ftl",
+            "Resources/Locale/a.ftl",
+            "Resources\\Locale\\en-US\\test.ftl",
+            "/tmp/evil.ftl",
+            "Resources/Locale/en-US/test.ftl/",
+        ] {
+            let draft = FluentDraft { file: path.into(), ..fx.draft() };
+            assert_eq!(preview(&draft).unwrap_err().code, "FTL_PATH_INVALID", "{path}");
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_starter_fields() {
+        let fx = Fixture::new();
+        for key in ["", "1invalid", "with space", "bad.name"] {
+            let draft = FluentDraft { starter_key: key.into(), ..fx.draft() };
+            assert_eq!(preview(&draft).unwrap_err().code, "FTL_KEY_INVALID");
+        }
+        let invalid_value = FluentDraft { starter_value: "hello\ninjection".into(), ..fx.draft() };
+        assert_eq!(preview(&invalid_value).unwrap_err().code, "FTL_VALUE_INVALID");
+    }
+
+    #[test]
+    fn rejects_missing_parent_without_creating_anything() {
+        let fx = Fixture::new();
+        let draft = FluentDraft {
+            file: "Resources/Locale/ru-RU/new.ftl".into(),
+            ..fx.draft()
+        };
+        assert_eq!(create(&fx.root, &draft).unwrap_err().code, "FTL_FOLDER_MISSING");
+        assert!(!fx.root.join(&draft.file).exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_symlink_to_parent_inside_project() {
+        use std::os::unix::fs::symlink;
+        let fx = Fixture::new();
+        fs::create_dir_all(fx.root.join("Resources/Locale/actual")).unwrap();
+        symlink(
+            fx.root.join("Resources/Locale/actual"),
+            fx.root.join("Resources/Locale/linked"),
+        ).unwrap();
+        let draft = FluentDraft {
+            file: "Resources/Locale/linked/new.ftl".into(),
+            ..fx.draft()
+        };
+        assert_eq!(create(&fx.root, &draft).unwrap_err().code, "FTL_FOLDER_INVALID");
+    }
+}

@@ -9,6 +9,7 @@ import './styles.create-prototype.css';
 import './styles.fields.css';
 import './styles.components.css';
 import './styles.rsi.css';
+import './styles.fluent.css';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('The Studio root element is missing.');

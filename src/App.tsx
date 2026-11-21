@@ -4,7 +4,7 @@ import {
   AlertCircle, AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight,
   FileCode2, FileText, FolderOpen, Image as ImageIcon, Search, X, RotateCcw, Save, FilePlus2,
 } from 'lucide-react';
-import { studio, type DraftList, type DraftSnapshot, type CreatedPrototype, type PrototypeDeclaration, type PrototypeFieldLocator, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage } from './lib/api';
+import { studio, type DraftList, type DraftSnapshot, type CreatedPrototype, type CreatedFluent, type PrototypeDeclaration, type PrototypeFieldLocator, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage } from './lib/api';
 import { normalizeStudioError, type StudioError } from './lib/errors';
 import { closeTab, openTab, type TabState } from './lib/tabs';
 import { dirtyDocumentPaths, reconcileSavedDraft } from './lib/draft-state';
@@ -18,6 +18,7 @@ import PrototypeFieldsPanel from './components/PrototypeFieldsPanel';
 import PrototypeComponentsPanel from './components/PrototypeComponentsPanel';
 import RecoveryPanel from './components/RecoveryPanel';
 import CreatePrototypeWizard, { type PrototypeDestinationMode } from './components/CreatePrototypeWizard';
+import CreateFluentWizard from './components/CreateFluentWizard';
 import ConflictReviewPanel from './components/ConflictReviewPanel';
 
 const PAGE_SIZE = 100;
@@ -65,6 +66,7 @@ export default function App() {
   const [opening, setOpening] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [creatingPrototype, setCreatingPrototype] = useState(false);
+  const [creatingFluent, setCreatingFluent] = useState(false);
   const [fieldTarget, setFieldTarget] = useState<PrototypeFieldLocator | null>(null);
   const [prototypePanel, setPrototypePanel] = useState<'fields' | 'components'>('fields');
   const [picking, setPicking] = useState(false);
@@ -177,6 +179,7 @@ export default function App() {
 
   async function loadProject(requestedPath: string) {
     setCreatingPrototype(false);
+    setCreatingFluent(false);
     setFieldTarget(null);
     comparisonVersion.current += 1;
     setComparison(null);
@@ -226,7 +229,7 @@ export default function App() {
    * or silently taking a changed on-disk YAML revision as the draft baseline.
    */
   async function refreshProject() {
-    if (!overview || opening || reading || saving || transitioning || refreshing || creatingPrototype) return;
+    if (!overview || opening || reading || saving || transitioning || refreshing || creatingPrototype || creatingFluent) return;
     setRefreshing(true);
     cancelJournalTimers();
     setError(null);
@@ -769,7 +772,27 @@ export default function App() {
       : 'Прототип ' + result.kind + ':' + result.id + ' ' + verb + ' ' + result.file);
   }
 
+  function onFluentCreated(created: CreatedFluent) {
+    setCreatingFluent(false);
+    setFieldTarget(null);
+    if (created.overview) {
+      setOverview(created.overview);
+      setWorkspaceRevision((value) => value + 1);
+      setPage(0);
+      setKind('ftl');
+      setExplorerMode('files');
+      openResource({ path: created.file, kind: 'ftl' });
+    }
+    setNotice(created.warning
+      ? 'FTL создан: ' + created.file + '. ' + created.warning
+      : 'FTL создан: ' + created.file + '. Редактор готов для дальнейшей работы.');
+  }
+
   return <div className="app">
+    {creatingFluent && overview && <CreateFluentWizard
+      onClose={() => setCreatingFluent(false)}
+      onCreated={onFluentCreated}
+      preferredFile={selected?.kind === 'ftl' ? selected.path : undefined}/>}
     {creatingPrototype && overview && <CreatePrototypeWizard
       onClose={() => setCreatingPrototype(false)} onCreated={onPrototypeCreated}
       dirtyPaths={dirtyPaths}
@@ -794,11 +817,16 @@ export default function App() {
         <span><b>{overview.prototype_files}</b> YAML-файлов</span>
         <span><b>{overview.rsi_directories}</b> RSI</span>
         <span><b>{overview.locale_files}</b> FTL</span>
-        <button type="button" className="create-proto-open" disabled={opening || saving || transitioning || refreshing}
+        <button type="button" className="create-proto-open" disabled={opening || saving || transitioning || refreshing || creatingFluent}
           onClick={() => setCreatingPrototype(true)}>
           <FilePlus2 size={15}/> Создать прототип
         </button>
-        <button type="button" className="create-proto-open" disabled={opening || picking || saving || transitioning || reading || refreshing || creatingPrototype}
+        <button type="button" className="create-proto-open"
+          disabled={opening || saving || transitioning || refreshing || creatingPrototype || creatingFluent}
+          onClick={() => setCreatingFluent(true)}>
+          <FilePlus2 size={15}/> Создать FTL
+        </button>
+        <button type="button" className="create-proto-open" disabled={opening || picking || saving || transitioning || reading || refreshing || creatingPrototype || creatingFluent}
           title="Полностью пересканировать проект, сохранив открытые черновики"
           onClick={() => void refreshProject()}>
           <RotateCcw size={15}/>{refreshing ? 'Обновляю…' : 'Обновить индекс'}

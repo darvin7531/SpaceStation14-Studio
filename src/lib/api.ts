@@ -173,6 +173,24 @@ export interface DraftWriteResult {
   durability_warning: string | null;
 }
 
+export interface NewFluentDraft {
+  file: string;
+  starter_key: string;
+  starter_value: string;
+}
+
+export interface NewFluentPreview {
+  file: string;
+  content: string;
+  warnings: string[];
+}
+
+export interface CreatedFluent {
+  file: string;
+  warning: string | null;
+  overview: ProjectOverview | null;
+}
+
 export interface NewPrototypeDraft {
   kind: string;
   id: string;
@@ -270,6 +288,12 @@ export const studio = {
   },
   deleteDraft(path: string): Promise<void> {
     return invoke('delete_draft', { path });
+  },
+  previewNewFluent(draft: NewFluentDraft): Promise<NewFluentPreview> {
+    return invoke('preview_new_fluent', { draft });
+  },
+  createNewFluent(draft: NewFluentDraft): Promise<CreatedFluent> {
+    return invoke('create_new_fluent', { draft });
   },
   previewNewPrototype(draft: NewPrototypeDraft): Promise<NewPrototypePreview> {
     return invoke('preview_new_prototype', { draft });

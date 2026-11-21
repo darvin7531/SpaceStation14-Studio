@@ -1,5 +1,6 @@
 mod draft_journal;
 mod error;
+mod fluent_create;
 mod project;
 mod prototype_append;
 mod prototype_components;
@@ -14,6 +15,7 @@ use std::sync::{Arc, Mutex};
 
 use draft_journal::{DraftJournal, DraftList, DraftSnapshot, DraftSummary, DraftWriteResult};
 use error::{internal_lock, interrupted, StudioError};
+use fluent_create::{FluentDraft, FluentPreview};
 use project::{ProjectIndex, ProjectOverview, ProjectRefresh, ResourceDocument, ResourcePage};
 use prototype_append::AppendPreview;
 use prototype_components::{ComponentInspection, ComponentOperation};
@@ -338,6 +340,70 @@ async fn delete_draft(
 }
 
 #[derive(Debug, Serialize)]
+struct CreateFluentResult {
+    file: String,
+    warning: Option<String>,
+    overview: Option<ProjectOverview>,
+}
+
+#[tauri::command]
+async fn preview_new_fluent(
+    draft: FluentDraft,
+    state: State<'_, WorkspaceState>,
+) -> Result<FluentPreview, StudioError> {
+    let project = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || project.preview_new_fluent(&draft))
+        .await
+        .map_err(interrupted)?
+}
+
+/// Create a new FTL exclusively and publish the fresh resource index only
+/// after scanning succeeds; unrelated in-memory drafts remain untouched.
+#[tauri::command]
+async fn create_new_fluent(
+    draft: FluentDraft,
+    state: State<'_, WorkspaceState>,
+) -> Result<CreateFluentResult, StudioError> {
+    let original = current_project(&state)?;
+    let project = original.clone();
+    let (created, refreshed) = tauri::async_runtime::spawn_blocking(move || {
+        let created = project.create_new_fluent(&draft)?;
+        let refreshed = ProjectIndex::open(&project.overview().project_root);
+        Ok::<_, StudioError>((created, refreshed))
+    })
+    .await
+    .map_err(interrupted)??;
+
+    let mut warning = created.warning;
+    let mut overview = None;
+    match refreshed {
+        Ok(rebuilt) => {
+            let mut active = state.0.lock().map_err(|_| internal_lock())?;
+            if active.as_ref().is_some_and(|index| Arc::ptr_eq(index, &original)) {
+                overview = Some(rebuilt.overview().clone());
+                *active = Some(Arc::new(rebuilt));
+            } else {
+                warning = Some(
+                    "FTL записан, но активный проект сменился. Вернитесь к исходному проекту и обновите индекс."
+                        .into(),
+                );
+            }
+        }
+        Err(error) => {
+            warning = Some(format!(
+                "FTL создан, но обновить индекс не удалось: {} [{}]. Обновите индекс вручную.",
+                error.message, error.code,
+            ));
+        }
+    }
+    Ok(CreateFluentResult {
+        file: created.file,
+        warning,
+        overview,
+    })
+}
+
+#[derive(Debug, Serialize)]
 struct CreatePrototypeResult {
     file: String,
     kind: String,
@@ -534,6 +600,8 @@ pub fn run() -> Result<(), tauri::Error> {
             read_rsi_sheet,
             save_yaml_resource,
             save_ftl_resource,
+            preview_new_fluent,
+            create_new_fluent,
             preview_new_prototype,
             create_new_prototype,
             preview_append_prototype,

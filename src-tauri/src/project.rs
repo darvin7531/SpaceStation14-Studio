@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use serde::Serialize;
 
 use crate::error::{internal_lock, StudioError};
+use crate::fluent_create::{self, CreatedFluent, FluentDraft, FluentPreview};
 use crate::prototype_append::{self, AppendPreview};
 use crate::prototype_components::{self, ComponentInspection, ComponentOperation};
 use crate::prototype_create::{self, CreatedPrototype, PrototypeDraft, PrototypePreview};
@@ -246,6 +247,15 @@ impl ProjectIndex {
         Ok(cache
             .get_or_insert_with(|| Arc::new(PrototypeCatalog::build(&self.root, &self.resources)))
             .clone())
+    }
+
+    pub fn preview_new_fluent(&self, draft: &FluentDraft) -> Result<FluentPreview, StudioError> {
+        fluent_create::preview(draft)
+    }
+
+    pub fn create_new_fluent(&self, draft: &FluentDraft) -> Result<CreatedFluent, StudioError> {
+        let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;
+        fluent_create::create(&self.root, draft)
     }
 
     pub fn preview_new_prototype(
@@ -1006,6 +1016,25 @@ mod tests {
             fresh.create_new_prototype(&draft).unwrap_err().code,
             "PROTOTYPE_ID_EXISTS"
         );
+    }
+
+    #[test]
+    fn newly_created_fluent_is_visible_only_after_reindex() {
+        let fx = Fixture::new();
+        fx.write("Resources/Locale/en-US/old.ftl", "old = Before\n");
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let draft = FluentDraft {
+            file: "Resources/Locale/en-US/new.ftl".into(),
+            starter_key: "new-key".into(),
+            starter_value: "New value".into(),
+        };
+        let created = index.create_new_fluent(&draft).unwrap();
+        assert_eq!(created.file, draft.file);
+        assert_eq!(index.search("new.ftl", Some("ftl"), 0, 100).total, 0);
+        let fresh = index.refresh().unwrap().0;
+        assert_eq!(fresh.search("new.ftl", Some("ftl"), 0, 100).total, 1);
+        assert_eq!(fresh.read_resource(&draft.file).unwrap().content, "new-key = New value\n");
+        assert_eq!(fresh.create_new_fluent(&draft).unwrap_err().code, "FTL_FILE_EXISTS");
     }
 
     #[test]
