@@ -229,6 +229,13 @@ export interface DraftWriteResult {
   durability_warning: string | null;
 }
 
+export interface YamlSyntaxReport {
+  valid: boolean;
+  line: number | null;
+  column: number | null;
+  message: string | null;
+}
+
 export interface FluentDiagnostic {
   code: string;
   message: string;
@@ -465,6 +472,9 @@ export const studio = {
   },
   listPrototypeDiagnostics(offset = 0, limit = 100): Promise<PrototypeDiagnosticPage> {
     return invoke('list_prototype_diagnostics', { offset, limit });
+  },
+  analyzeYamlResource(path: string, content: string): Promise<YamlSyntaxReport> {
+    return invoke('analyze_yaml_resource', { path, content });
   },
   saveYamlResource(path: string, expectedRevision: string, content: string): Promise<SaveResult> {
     return invoke('save_yaml_resource', { path, expectedRevision, content });
