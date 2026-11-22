@@ -98,23 +98,36 @@ impl TreeBuilder {
         }
         match self.stack.last_mut() {
             Some(Frame::Seq { items, .. }) => items.push(node),
-            Some(Frame::Map { pairs, key, .. }) => {
+            Some(Frame::Map { tag, pairs, key }) => {
                 if let Some(name) = key.take() {
                     if pairs.iter().any(|(existing, _)| existing == &name) {
                         self.error
                             .get_or_insert_with(|| format!("Повтор ключа YAML: {name}"));
                     }
                     pairs.push((name, node));
-                } else if node.tag.is_none() {
-                    if let Some(name) = node.scalar() {
-                        *key = Some(name.to_owned());
-                    } else {
-                        self.error
-                            .get_or_insert_with(|| "Динамический ключ YAML.".into());
+                } else if let Some(name) = node.scalar() {
+                    // The legal RobustToolbox spelling "- !Remove type: Foo"
+                    // emits the tag on the mapping's first *key* in yaml-rust2,
+                    // not on MappingStart. Treat only this exact spelling as
+                    // the component map's !Remove operation. All other tagged
+                    // keys fail closed rather than being interpreted as data.
+                    if let Some(op) = &node.tag {
+                        if op == "Remove"
+                            && pairs.is_empty()
+                            && tag.is_none()
+                            && name == "type"
+                        {
+                            *tag = Some(op.clone());
+                        } else {
+                            self.error.get_or_insert_with(|| {
+                                format!("Тег !{op} на YAML-ключе не поддерживается.")
+                            });
+                        }
                     }
+                    *key = Some(name.to_owned());
                 } else {
                     self.error
-                        .get_or_insert_with(|| "Тег на ключе YAML недоступен для merge.".into());
+                        .get_or_insert_with(|| "Динамический ключ YAML.".into());
                 }
             }
             None => self.docs.push(node),
@@ -577,7 +590,9 @@ pub fn preview(
         }
         let Some(Ok(docs)) = files.get(&entry.file) else {
             exact = false;
-            warnings.push(format!("{}: файл не удалось разобрать.", entry.file));
+            let why = files.get(&entry.file)
+                .and_then(|result| result.as_ref().err()).map_or("Неизвестная ошибка", String::as_str);
+            warnings.push(format!("{}: {why}", entry.file));
             continue;
         };
         let Some(source) = row(docs, entry) else {
