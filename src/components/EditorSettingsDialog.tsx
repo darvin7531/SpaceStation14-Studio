@@ -27,6 +27,11 @@ export default function EditorSettingsDialog({ value, onChange, localizationSett
   const [updateProgress, setUpdateProgress] = useState<AppUpdateProgress | null>(null);
   const [localeInput, setLocaleInput] = useState(localizationSettings.requiredLocales.join(', '));
   const [appVersion, setAppVersion] = useState<string | null>(null);
+  const localeInputRef = useRef(localeInput);
+  const onLocalizationChangeRef = useRef(onLocalizationChange);
+  onLocalizationChangeRef.current = onLocalizationChange;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
     let active = true;
     void getVersion().then((version) => { if (active) setAppVersion(version); }).catch(() => {});
@@ -76,15 +81,26 @@ export default function EditorSettingsDialog({ value, onChange, localizationSett
   }
 
   const commitLocales = () => {
-    const next = sanitizeLocalizationSettings({ requiredLocales: localeInput.split(',') });
-    setLocaleInput(next.requiredLocales.join(', '));
-    onLocalizationChange(next);
+    const next = sanitizeLocalizationSettings({ requiredLocales: localeInputRef.current.split(',') });
+    localeInputRef.current = next.requiredLocales.join(', ');
+    setLocaleInput(localeInputRef.current);
+    if (next.requiredLocales.join('\u0000') !== localizationSettings.requiredLocales.join('\u0000')) {
+      onLocalizationChangeRef.current(next);
+    }
   };
+  const commitLocalesRef = useRef(commitLocales);
+  commitLocalesRef.current = commitLocales;
+  const closeSettings = () => {
+    commitLocalesRef.current();
+    onCloseRef.current();
+  };
+  const closeSettingsRef = useRef(closeSettings);
+  closeSettingsRef.current = closeSettings;
   useEffect(() => {
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     ref.current?.focus();
     function keydown(event: KeyboardEvent) {
-      if (event.key === 'Escape') { event.preventDefault(); onClose(); }
+      if (event.key === 'Escape') { event.preventDefault(); closeSettingsRef.current(); }
       if (event.key !== 'Tab' || !ref.current) return;
       const items = Array.from(ref.current.querySelectorAll<HTMLElement>('button:not(:disabled), select:not(:disabled), input:not(:disabled)'));
       if (!items.length) return;
@@ -97,11 +113,11 @@ export default function EditorSettingsDialog({ value, onChange, localizationSett
   }, [onClose]);
   const patch = (v: Partial<EditorSettings>) => onChange({ ...value, ...v });
   return <div className="settings-backdrop" onMouseDown={(event) => {
-    if (event.target === event.currentTarget) onClose();
+    if (event.target === event.currentTarget) closeSettings();
   }}>
     <div className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-heading" tabIndex={-1} ref={ref}>
       <header><h2 id="settings-heading"><Settings2 size={18}/> {t('settings.title')}</h2>
-        <button type="button" onClick={onClose} aria-label={t('settings.close')}><X size={18}/></button></header>
+        <button type="button" onClick={closeSettings} aria-label={t('settings.close')}><X size={18}/></button></header>
       <nav className="settings-tabs" aria-label={t('settings.sections')}>
         <button type="button" aria-current={section === 'general' ? 'page' : undefined} onClick={() => setSection('general')}>{t('settings.general')}</button>
         <button type="button" aria-current={section === 'editor' ? 'page' : undefined} onClick={() => setSection('editor')}>{t('settings.editor')}</button>
@@ -119,7 +135,7 @@ export default function EditorSettingsDialog({ value, onChange, localizationSett
         </label>
         <label>{t('settings.requiredLocales')}
           <input type="text" placeholder="ru-RU, en-US" value={localeInput}
-            onChange={(event) => setLocaleInput(event.target.value)}
+            onChange={(event) => { localeInputRef.current = event.target.value; setLocaleInput(event.target.value); }}
             onBlur={commitLocales}
             onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }}/>
           <small>{t('settings.requiredLocalesHint')}</small>
@@ -189,7 +205,7 @@ export default function EditorSettingsDialog({ value, onChange, localizationSett
       </div>}
       <footer>
         {section === 'editor' && <button type="button" onClick={() => onChange({ ...DEFAULT_EDITOR_SETTINGS })}>{t('settings.reset')}</button>}
-        <button type="button" onClick={onClose}>{t('settings.done')}</button>
+        <button type="button" onClick={closeSettings}>{t('settings.done')}</button>
       </footer>
     </div>
   </div>;
