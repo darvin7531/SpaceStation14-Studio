@@ -1303,6 +1303,7 @@ export default function App() {
       preferredPath={selected?.kind === 'rsi' ? selected.path : undefined}/>}
     {creatingFluent && overview && <CreateFluentWizard
       projectRoot={overview.project_root}
+      requiredLocales={localizationSettings.requiredLocales}
       onClose={() => { setCreatingFluent(false); setQuickFixFluentDraft(null); }}
       onCreated={onFluentCreated}
       onExternalCreated={onExternalFluentCreated}

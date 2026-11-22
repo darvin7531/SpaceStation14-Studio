@@ -4,25 +4,35 @@ import { projectFolderDefaultPath, relativeProjectFolder } from '../lib/project-
 import { AlertCircle, FilePlus2, X } from 'lucide-react';
 import { studio, type CreatedFluent, type ExternalCreatedFluent, type NewFluentDraft, type NewFluentPreview } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
-import { suggestedFluentDraft } from '../lib/fluent-create-defaults';
+import { moveFluentDraftToLocale, suggestedFluentDraft } from '../lib/fluent-create-defaults';
+import { localeFromFtlPath } from '../lib/localization-settings';
 
 interface Props {
   onClose: () => void;
   projectRoot: string;
+  requiredLocales: readonly string[];
   onCreated: (created: CreatedFluent) => void;
   onExternalCreated: (created: ExternalCreatedFluent) => void;
   preferredFile?: string;
   preferredDraft?: NewFluentDraft;
 }
 
-export default function CreateFluentWizard({ onClose, onCreated, onExternalCreated, projectRoot, preferredFile, preferredDraft }: Props) {
+export default function CreateFluentWizard({ onClose, onCreated, onExternalCreated, projectRoot, requiredLocales, preferredFile, preferredDraft }: Props) {
   const [draft, setDraft] = useState<NewFluentDraft>(() => suggestedFluentDraft(preferredFile, preferredDraft));
   const [destination, setDestination] = useState<'project' | 'external'>('project');
+  const [gameLocaleInput, setGameLocaleInput] = useState(() =>
+    localeFromFtlPath(preferredDraft?.file ?? preferredFile ?? '') ?? 'en-US');
   const [preview, setPreview] = useState<NewFluentPreview | null>(null);
   const [validationError, setValidationError] = useState<StudioError | null>(null);
   const [creationError, setCreationError] = useState<StudioError | null>(null);
   const [checking, setChecking] = useState(true);
   const [creating, setCreating] = useState(false);
+
+  function changeGameLocale(next: string) {
+    setGameLocaleInput(next);
+    const path = moveFluentDraftToLocale(draft.file, next);
+    if (path && path !== draft.file) change('file', path);
+  }
 
   function change<K extends keyof NewFluentDraft>(field: K, value: NewFluentDraft[K]) {
     setChecking(true);
@@ -76,6 +86,8 @@ export default function CreateFluentWizard({ onClose, onCreated, onExternalCreat
       }
       const filename = draft.file.split('/').pop() || 'StudioNew.ftl';
       change('file', folder + '/' + filename);
+      const nextLocale = localeFromFtlPath(folder + '/' + filename);
+      if (nextLocale) setGameLocaleInput(nextLocale);
     } catch (failure) {
       setCreationError(normalizeStudioError(failure));
     } finally {
@@ -124,10 +136,24 @@ export default function CreateFluentWizard({ onClose, onCreated, onExternalCreat
           <button type="button" className={destination === 'external' ? 'selected' : ''}
             onClick={() => setDestination('external')}>Вне проекта</button>
         </div>
+        {destination === 'project' && <label>Игровая локаль FTL (не язык интерфейса Studio)
+          <input list="fluent-game-locales" value={gameLocaleInput}
+            onChange={(event) => changeGameLocale(event.target.value)}
+            spellCheck={false} placeholder="ru-RU"/>
+          <datalist id="fluent-game-locales">
+            {[...new Set(['ru-RU', 'en-US', ...requiredLocales])].map((locale) =>
+              <option key={locale} value={locale}/>)}
+          </datalist>
+          <small>Язык редактора меняется отдельно в настройках. При выборе локали меняется только путь будущего FTL.</small>
+        </label>}
         <label>{destination === 'external' ? 'Имя FTL для предпросмотра (фактический путь выберете отдельно)' : 'Путь нового .ftl относительно проекта'}
           <input value={draft.file} required spellCheck={false} maxLength={512}
             placeholder="Resources/Locale/en-US/my-messages.ftl"
-            onChange={(event) => change('file', event.target.value)}/>
+            onChange={(event) => {
+              change('file', event.target.value);
+              const locale = localeFromFtlPath(event.target.value);
+              if (locale) setGameLocaleInput(locale);
+            }}/>
         </label>
         {destination === 'project' && <button type="button" disabled={creating || pickingFolder}
           onClick={() => void pickProjectFolder()}>
