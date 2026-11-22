@@ -68,7 +68,12 @@ try {
   await click('.resource-row[title="Resources/Prototypes/smoke.yml"]');
   await edit(saved, 'SmokeSaved');
   await click('[data-testid=save-resource]');
-  await until('saved file', async () => (await readFile(file, 'utf8')) === saved);
+  try {
+    await until('saved file', async () => (await readFile(file, 'utf8')) === saved);
+  } catch (error) {
+    console.error('Saved file contents:', JSON.stringify(await readFile(file, 'utf8')));
+    throw error;
+  }
   await until('save completion', () => script(`
     const button = document.querySelector('[data-testid=save-resource]');
     const editor = document.querySelector('.monaco-shell textarea.inputarea');
