@@ -217,6 +217,7 @@ export default function App() {
       if (cancelled) return;
       const match = resolvePrototypeTab(outline.declarations, target, outline.truncated);
       if (!match) {
+        lastPrototypeJump.current = null;
         setFieldTarget(null);
         setOutlineJump(null);
         setNotice('Прототип во вкладке больше не соответствует черновику. Откройте его заново из актуального индекса.');
