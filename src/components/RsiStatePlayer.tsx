@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pause, Play, SkipBack, SkipForward } from 'lucide-react';
 import {
   RSI_DIRECTIONS, type RsiFrameLayout,
@@ -11,16 +11,32 @@ interface Props {
   stateName: string;
   layout: RsiFrameLayout;
   zoom: number;
+  onZoomWheel?: (direction: -1 | 1) => void;
 }
 
 export default function RsiStatePlayer({
-  imageUrl, imageWidth, imageHeight, stateName, layout, zoom,
+  imageUrl, imageWidth, imageHeight, stateName, layout, zoom, onZoomWheel,
 }: Props) {
   const [direction, setDirection] = useState(0);
   const [frameIndex, setFrameIndex] = useState(0);
   const [playing, setPlaying] = useState(true);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const zoomWheelRef = useRef(onZoomWheel);
+  zoomWheelRef.current = onZoomWheel;
   const frames = layout.directions[direction] ?? [];
   const currentFrame = frames[frameIndex] ?? frames[0] ?? null;
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onWheel = (event: WheelEvent) => {
+      if (!zoomWheelRef.current || event.deltaY === 0) return;
+      event.preventDefault();
+      zoomWheelRef.current(event.deltaY < 0 ? 1 : -1);
+    };
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', onWheel);
+  }, []);
 
   useEffect(() => {
     setDirection(0);
@@ -75,7 +91,7 @@ export default function RsiStatePlayer({
       <span className="rsi-player-counter">Кадр {frameIndex + 1}/{frames.length} ·
         {currentFrame?.duration.toFixed(3) ?? '?'} с</span>
     </div>
-    <div className="rsi-player-canvas" aria-label={'Кадр RSI: ' + stateName}>
+    <div ref={canvasRef} className="rsi-player-canvas" aria-label={'Кадр RSI: ' + stateName}>
       {currentFrame && <div className="rsi-frame-viewport"
         style={{ width: layout.width * zoom, height: layout.height * zoom }}>
         <img src={imageUrl} alt={'Состояние ' + stateName + ', '

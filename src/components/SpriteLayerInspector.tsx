@@ -6,6 +6,8 @@ import {
   buildRsiFrameLayout, isRsiLayoutError, parseRsiMetadata, type RsiFrameLayout,
 } from '../lib/rsi-layout';
 import RsiStatePlayer from './RsiStatePlayer';
+import { useI18n } from '../i18n';
+import { spriteZoom, SPRITE_DEFAULT_ZOOM } from '../lib/sprite-zoom';
 
 interface Props {
   sprite: SourceSpriteLink | null;
@@ -60,6 +62,8 @@ function failureMessage(failure: unknown): string {
 /** Source-level Sprite preview: one explicit state at a time, never a guessed
  * runtime composite. The existing bounded Rust RSI reader owns all PNG IO. */
 export default function SpriteLayerInspector({ sprite, layers, total, busy, onOpenRsi }: Props) {
+  const { t } = useI18n();
+  const [zoom, setZoom] = useState(SPRITE_DEFAULT_ZOOM);
   const targets = targetsFor(sprite, layers);
   const [selectedKey, setSelectedKey] = useState(() => {
     const first = targets.find((item) => item.key.startsWith('layer:')
@@ -152,9 +156,17 @@ export default function SpriteLayerInspector({ sprite, layers, total, busy, onOp
         Состояние не указано напрямую. Оно может задаваться наследованием, map-кодом или другим компонентом.
       </p> : loading ? <p role="status" className="sprite-layer-hint">Чтение RSI и PNG…</p>
         : error ? <p role="alert" className="sprite-layer-error"><AlertCircle size={14}/>{error}</p>
-          : matches && preview ? <RsiStatePlayer
+          : matches && preview ? <><div className="sprite-zoom" role="group" aria-label={t('sprite.zoom')}>
+              <button type="button" disabled={zoom <= 0.5} aria-label={t('sprite.zoomOut')}
+                onClick={() => setZoom((value) => spriteZoom(value, -1))}>−</button>
+              <output aria-live="polite">{Math.round(zoom * 100)}%</output>
+              <button type="button" onClick={() => setZoom(SPRITE_DEFAULT_ZOOM)}>{t('sprite.zoomReset')}</button>
+              <button type="button" disabled={zoom >= 16} aria-label={t('sprite.zoomIn')}
+                onClick={() => setZoom((value) => spriteZoom(value, 1))}>+</button>
+            </div><RsiStatePlayer
               imageUrl={preview.dataUrl} imageWidth={preview.imageWidth} imageHeight={preview.imageHeight}
-              layout={preview.layout} stateName={preview.state} zoom={3}/>
+              layout={preview.layout} stateName={preview.state} zoom={zoom}
+              onZoomWheel={(direction) => setZoom((value) => spriteZoom(value, direction))}/></>
             : <p className="sprite-layer-hint">Выберите состояние для просмотра.</p>}
     </div>}
     <p className="sprite-layer-hint">

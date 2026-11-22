@@ -2,6 +2,10 @@
 export type Language = 'ru' | 'en';
 export const LANGUAGE_STORAGE_KEY = 'ss14-studio-language';
 const ru = {
+  "sprite.zoom": "Масштаб спрайта",
+  "sprite.zoomOut": "Уменьшить масштаб",
+  "sprite.zoomIn": "Увеличить масштаб",
+  "sprite.zoomReset": "Сбросить масштаб",
   "settings.title": "Настройки редактора",
   "wizard.common.cancel": "Отмена",
   "wizard.proto.newContent": "Новое содержимое",
@@ -240,6 +244,10 @@ const ru = {
   "quick.shortcuts": "Ctrl+P — поиск · ↑↓ — выбрать · Enter — открыть · Esc — закрыть"
 } as const;
 const en: Record<keyof typeof ru, string> = {
+  "sprite.zoom": "Sprite zoom",
+  "sprite.zoomOut": "Zoom out",
+  "sprite.zoomIn": "Zoom in",
+  "sprite.zoomReset": "Reset zoom",
   "settings.title": "Editor settings",
   "wizard.common.cancel": "Cancel",
   "wizard.proto.newContent": "New content",

@@ -212,6 +212,10 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .sprite-layer-hint { color: #a0b9d2; line-height: 1.45; font-size: 11px; margin: 5px 0; }
 .sprite-layer-error { display: flex; align-items: start; gap: 7px; color: #ffbbbd; background: #2d1e29; border: 1px solid #80515a; border-radius: 5px; padding: 7px; font-size: 11px; }
 .sprite-layer-detail .rsi-player { gap: 7px; min-width: 0; }
+.sprite-zoom { display: flex; align-items: center; gap: 8px; }
+.sprite-zoom button { border: 1px solid #456b87; border-radius: 5px; background: #214664; color: #d9efff; padding: 4px 8px; }
+.sprite-zoom button:disabled { opacity: .45; }
+.sprite-zoom output { min-width: 4em; color: #d9efff; font-size: 12px; text-align: center; }
 .sprite-layer-detail .rsi-player-controls { padding: 7px; }
 .sprite-layer-detail .rsi-player-canvas { max-height: 225px; overflow: auto; border: 1px solid #294762; border-radius: 6px; background-color: #192d40; background-image: linear-gradient(45deg,#263c50 25%,transparent 25%),linear-gradient(-45deg,#263c50 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#263c50 75%),linear-gradient(-45deg,transparent 75%,#263c50 75%); background-size: 16px 16px; background-position: 0 0,0 8px,8px -8px,-8px 0; }
 .prototype-outline { max-height: min(72vh, 670px); }
