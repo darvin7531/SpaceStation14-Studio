@@ -270,16 +270,20 @@ pub fn scan_file(file: &str, source: &str) -> FileSymbols {
 impl LocaleSnapshot {
     /// Returns every declaration, not just the first: callers must report ambiguity.
     pub fn entity_definitions(&self, id: &str) -> Vec<EntityLocaleDefinition> {
-        self.files.iter().flat_map(|file| {
-            file.definitions.iter().filter(move |entry| entry.id == id).map(|entry| {
-                EntityLocaleDefinition {
-                    file: entry.file.clone(),
-                    name: entry.has_value,
-                    description: entry.attributes.iter().any(|attr| attr == "desc"),
-                    suffix: entry.attributes.iter().any(|attr| attr == "suffix"),
-                }
+        self.files
+            .iter()
+            .flat_map(|file| {
+                file.definitions
+                    .iter()
+                    .filter(move |entry| entry.id == id)
+                    .map(|entry| EntityLocaleDefinition {
+                        file: entry.file.clone(),
+                        name: entry.has_value,
+                        description: entry.attributes.iter().any(|attr| attr == "desc"),
+                        suffix: entry.attributes.iter().any(|attr| attr == "suffix"),
+                    })
             })
-        }).collect()
+            .collect()
     }
 
     pub fn has_invalid_files(&self) -> bool {
@@ -446,6 +450,22 @@ mod tests {
 
     const FIRST: &str = "Resources/Locale/en-US/first.ftl";
     const SECOND: &str = "Resources/Locale/en-US/second.ftl";
+
+    #[test]
+    fn direct_entity_presence_tracks_value_and_attributes() {
+        let index = fixture(&[
+            (FIRST, "ent-Example = Example\n    .desc = Description\n"),
+            (SECOND, "ent-Example = Different\n"),
+        ]);
+        let definitions = index.entity_definitions("ent-Example");
+        assert_eq!(definitions.len(), 2);
+        assert!(definitions[0].name);
+        assert!(definitions[0].description);
+        assert!(!definitions[0].suffix);
+        assert!(definitions[1].name);
+        assert!(!definitions[1].description);
+        assert!(index.entity_definitions("ent-Missing").is_empty());
+    }
 
     #[test]
     fn recognizes_locale_without_leaking_across_language_boundaries() {

@@ -16,7 +16,6 @@ pub struct EntityLocalizationSource {
     pub suffix: String,
 }
 
-
 #[derive(Debug, Clone, Serialize)]
 pub struct EntityLocalePresence {
     pub name: bool,
@@ -59,12 +58,18 @@ pub fn build_analysis(
             ("description", &entity.description),
             ("suffix", &entity.suffix),
         ] {
-            if source_text.is_empty() { continue; }
-            let missing_locales: Vec<String> = targets.iter().filter(|target| match field {
-                "name" => !target.exists.name,
-                "description" => !target.exists.description,
-                _ => !target.exists.suffix,
-            }).map(|target| target.locale.clone()).collect();
+            if source_text.is_empty() {
+                continue;
+            }
+            let missing_locales: Vec<String> = targets
+                .iter()
+                .filter(|target| match field {
+                    "name" => !target.exists.name,
+                    "description" => !target.exists.description,
+                    _ => !target.exists.suffix,
+                })
+                .map(|target| target.locale.clone())
+                .collect();
             if !missing_locales.is_empty() {
                 diagnostics.push(EntityLocaleDiagnostic {
                     field,
@@ -152,6 +157,61 @@ mod tests {
             item_index: 2,
             mode: "normal".into(),
         }
+    }
+
+    #[test]
+    fn missing_entity_fields_report_only_configured_game_locales() {
+        let entity = EntityLocalizationSource {
+            localization_id: "ent-Demo".into(),
+            name: "Entity".into(),
+            description: "Description".into(),
+            suffix: String::new(),
+        };
+        let targets = vec![
+            EntityLocaleTarget {
+                locale: "ru-RU".into(),
+                path: "Resources/Locale/ru-RU/demo.ftl".into(),
+                file_exists: true,
+                exists: EntityLocalePresence {
+                    name: true,
+                    description: false,
+                    suffix: false,
+                },
+            },
+            EntityLocaleTarget {
+                locale: "en-US".into(),
+                path: "Resources/Locale/en-US/demo.ftl".into(),
+                file_exists: false,
+                exists: EntityLocalePresence {
+                    name: false,
+                    description: false,
+                    suffix: false,
+                },
+            },
+        ];
+        let report = build_analysis(entity, targets, true, Vec::new());
+        assert!(report.complete);
+        assert_eq!(report.diagnostics.len(), 2);
+        assert_eq!(report.diagnostics[0].field, "name");
+        assert_eq!(report.diagnostics[0].missing_locales, ["en-US"]);
+        assert_eq!(report.diagnostics[1].field, "description");
+        assert_eq!(report.diagnostics[1].missing_locales, ["ru-RU", "en-US"]);
+        assert!(report.targets[0].file_exists);
+        assert!(!report.targets[1].file_exists);
+    }
+
+    #[test]
+    fn incomplete_locale_index_never_reports_false_missing_translations() {
+        let entity = EntityLocalizationSource {
+            localization_id: "ent-Demo".into(),
+            name: "Value".into(),
+            description: String::new(),
+            suffix: String::new(),
+        };
+        let report = build_analysis(entity, Vec::new(), false, vec!["unreadable FTL".into()]);
+        assert!(!report.complete);
+        assert!(report.diagnostics.is_empty());
+        assert_eq!(report.warnings.len(), 1);
     }
 
     #[test]
