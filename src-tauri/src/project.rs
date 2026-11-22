@@ -16,7 +16,7 @@ use crate::prototype_components::{self, ComponentInspection, ComponentOperation}
 use crate::prototype_create::{self, CreatedPrototype, PrototypeDraft, PrototypePreview};
 use crate::prototype_fields::{self, FieldInspection, FieldLocator, FieldPatch, PrototypeFields};
 use crate::prototype_localization::{self, EntityLocalizationSource};
-use crate::prototype_merge::{self, PrototypePartialPreview};
+use crate::prototype_merge::{self, PrototypeInheritancePreview, PrototypePartialPreview};
 use crate::prototype_parents::{self, ParentInspection};
 use crate::prototype_sources::{self, PrototypeSourceReport};
 use crate::prototypes::{self, PrototypeCatalog, SourceOutline};
@@ -638,6 +638,26 @@ impl ProjectIndex {
                 .get(rsi)
                 .and_then(|index| self.resources.get(*index))
                 .is_some_and(|entry| entry.kind == "rsi")
+        })
+    }
+
+    /// Structural source inheritance + partials, read-only. C# DataField
+    /// inheritance is deliberately not treated as fully resolved.
+    pub fn prototype_inheritance_preview(
+        &self,
+        kind: &str,
+        id: &str,
+    ) -> Result<PrototypeInheritancePreview, StudioError> {
+        let catalog = self.prototypes()?;
+        prototype_merge::preview_inheritance(&catalog, kind, id, |path| {
+            if !self.is_yaml_indexed(path) {
+                return Err(StudioError::new(
+                    "PROTOTYPE_INHERITANCE_NOT_INDEXED",
+                    "YAML-источник отсутствует в индексе проекта.",
+                    "Обновите индекс и повторите просмотр цепочки.",
+                ));
+            }
+            self.read_resource(path).map(|document| document.content)
         })
     }
 
@@ -1604,6 +1624,69 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+
+    #[test]
+    fn inheritance_preview_resolves_chain_and_component_overrides_without_disk_writes() {
+        let fx = Fixture::new();
+        fx.write("Resources/Prototypes/root.yml",
+            "- type: entity\n  id: Root\n  name: Grand\n  components:\n  - type: Sprite\n    state: grand\n    shader: unshaded\n");
+        fx.write("Resources/Prototypes/parent.yml",
+            "- type: entity\n  id: Parent\n  parent: Root\n  name: Parent\n  components:\n  - type: Physics\n    mass: 5\n");
+        fx.write("Resources/Prototypes/child.yml",
+            "- type: entity\n  id: Child\n  parent: Parent\n  name: Child\n  components:\n  - type: Sprite\n    state: child\n");
+        let project = ProjectIndex::open(fx.root_str()).unwrap();
+        let report = project.prototype_inheritance_preview("entity", "Child").unwrap();
+        assert!(report.structural_complete, "{:?}", report.warnings);
+        assert!(!report.runtime_exact);
+        assert_eq!(report.lineage, ["Root", "Parent", "Child"]);
+        assert_eq!(report.direct_parents, ["Parent"]);
+        assert_eq!(report.components.len(), 2);
+        let sprite = report.components.iter().find(|component|
+            component.type_name == "Sprite").unwrap();
+        assert_eq!(sprite.keys, ["state", "shader"]);
+        assert_eq!(sprite.source_file, "Resources/Prototypes/child.yml");
+        assert_eq!(report.fields.iter().find(|field| field.key == "name")
+            .unwrap().preview, "Child");
+        assert!(project.read_resource("Resources/Prototypes/root.yml").unwrap().content.contains("grand"));
+    }
+
+    #[test]
+    fn inheritance_preview_warns_on_cycles_and_missing_parents() {
+        let fx = Fixture::new();
+        fx.write("Resources/Prototypes/cycle.yml",
+            "- type: entity\n  id: A\n  parent: B\n  name: A\n- type: entity\n  id: B\n  parent: A\n  description: B\n");
+        fx.write("Resources/Prototypes/missing.yml",
+            "- type: entity\n  id: M\n  parent: MissingParent\n  name: M\n");
+        let project = ProjectIndex::open(fx.root_str()).unwrap();
+        let cycle = project.prototype_inheritance_preview("entity", "A").unwrap();
+        assert!(!cycle.structural_complete);
+        assert!(cycle.warnings.iter().any(|warning| warning.contains("Цикл")));
+        let missing = project.prototype_inheritance_preview("entity", "M").unwrap();
+        assert!(!missing.structural_complete);
+        assert!(missing.warnings.iter().any(|warning| warning.contains("MissingParent")));
+        assert_eq!(missing.fields[0].preview, "M");
+    }
+
+    #[test]
+    fn inheritance_preview_applies_parent_partials_before_child_and_marks_multi_parent() {
+        let fx = Fixture::new();
+        fx.write("Resources/Prototypes/base.yml",
+            "- type: entity\n  id: First\n  name: First\n  components:\n  - type: Sprite\n    state: old\n- type: entity\n  id: Second\n  name: Second\n");
+        fx.write("Resources/PartialPrototypes/partialPrototypes.yml", "- /Prototypes/patches\n");
+        fx.write("Resources/Prototypes/patches/patch.yml",
+            "- type: entity\n  id: First\n  components:\n  - type: Sprite\n    state: new\n");
+        fx.write("Resources/Prototypes/child.yml",
+            "- type: entity\n  id: Child\n  parent: First\n  name: Child\n- type: entity\n  id: Multi\n  parent: [First, Second]\n");
+        let project = ProjectIndex::open(fx.root_str()).unwrap();
+        let single = project.prototype_inheritance_preview("entity", "Child").unwrap();
+        assert!(single.structural_complete, "{:?}", single.warnings);
+        assert_eq!(single.total_partials, 1);
+        assert_eq!(single.components[0].source_file,
+            "Resources/Prototypes/patches/patch.yml");
+        let multiple = project.prototype_inheritance_preview("entity", "Multi").unwrap();
+        assert!(!multiple.structural_complete);
+        assert!(multiple.warnings.iter().any(|warning| warning.contains("2 родителя")));
     }
 
     #[test]
