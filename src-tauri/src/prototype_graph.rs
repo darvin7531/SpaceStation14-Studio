@@ -295,7 +295,7 @@ impl PrototypeGraph {
             self.index_complete && status(key, by_identity, declarations) == "defined";
         let mut truncated = false;
         let mut steps = Vec::new();
-        if by_identity.get(key).is_none() {
+        if !by_identity.contains_key(key) {
             return (steps, false, false);
         }
         let mut seen: HashSet<Identity> = HashSet::new();
@@ -341,16 +341,17 @@ impl PrototypeGraph {
                 });
                 // Ambiguous target IDs have no single trustworthy source
                 // location. Let the catalog list all competing definitions.
-                let definition = (target_status == "defined")
-                    .then(|| target_declarations)
-                    .flatten()
-                    .and_then(|indices| {
+                let definition = if target_status == "defined" {
+                    target_declarations.and_then(|indices| {
                         indices
                             .iter()
                             .copied()
                             .find(|&i| declarations[i].mode == "normal")
                     })
-                    .map(|index| &declarations[index]);
+                } else {
+                    None
+                }
+                .map(|index| &declarations[index]);
                 let tentative = edge.tagged
                     || source.mode != "normal"
                     || status(&current, by_identity, declarations) != "defined";
