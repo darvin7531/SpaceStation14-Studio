@@ -251,3 +251,6 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .tab-dragging { opacity: .55; cursor: grabbing; border-top-color: #8bc2ff; }
 .tab-drop-target { box-shadow: inset 3px 0 0 #8bc2ff; }
 .tab-strip:has(.tab-dragging) { cursor: grabbing; }
+
+.tab-drop-before { box-shadow: inset 3px 0 0 #8bc2ff; }
+.tab-drop-after { box-shadow: inset -3px 0 0 #8bc2ff; }

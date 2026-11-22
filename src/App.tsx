@@ -5,7 +5,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open as openDirectoryDialog } from '@tauri-apps/plugin-dialog';
 import {
   AlertCircle, AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight,
-  FileCode2, FileText, FolderOpen, Image as ImageIcon, Search, X, RotateCcw, Save, FilePlus2, Settings2,
+  FileCode2, FileText, FolderOpen, Image as ImageIcon, Search, RotateCcw, Save, FilePlus2, Settings2,
 } from 'lucide-react';
 import { studio, type DraftList, type DraftSnapshot, type CreatedPrototype, type CreatedFluent, type CreatedRsi, type DeletedRsiState, type ImportedRsiState, RenamedRsiState, type RestoredRsiState, type PrototypeDeclaration, type PrototypeFieldLocator, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage, type NewFluentDraft } from './lib/api';
 import { normalizeStudioError, type StudioError } from './lib/errors';

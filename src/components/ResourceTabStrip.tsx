@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import type { ResourceEntry } from '../lib/api';
 import { insertionIndexForTabPointer } from '../lib/tabs';
@@ -11,7 +11,7 @@ interface Props {
   onSelect: (path: string) => void;
   onClose: (path: string) => void;
   onReorder: (path: string, index: number) => void;
-  renderIcon: (kind: ResourceEntry['kind']) => React.ReactNode;
+  renderIcon: (kind: ResourceEntry['kind']) => ReactNode;
   closeLabel: (path: string) => string;
   label: string;
 }
@@ -35,6 +35,8 @@ export default function ResourceTabStrip({
   const tabNodes = useRef(new Map<string, HTMLDivElement>());
   const drag = useRef<PendingDrag | null>(null);
   const suppressClick = useRef<string | null>(null);
+  const onReorderRef = useRef(onReorder);
+  onReorderRef.current = onReorder;
   const [dragView, setDragView] = useState<{ path: string; targetIndex: number } | null>(null);
   const dirty = new Set(dirtyPaths);
 
@@ -75,7 +77,9 @@ export default function ResourceTabStrip({
           return rect ? { path: tab.path, center: (rect.left + rect.right) / 2 } : null;
         })
         .filter((entry): entry is { path: string; center: number } => Boolean(entry));
-      state.targetIndex = insertionIndexForTabPointer(event.clientX, centers);
+      if (centers.length > 0) {
+        state.targetIndex = insertionIndexForTabPointer(event.clientX, centers);
+      }
       setDragView({ path: state.path, targetIndex: state.targetIndex });
     }
 
@@ -84,7 +88,7 @@ export default function ResourceTabStrip({
       if (!state || state.pointerId !== event.pointerId) return;
       if (state.active) {
         suppressClick.current = state.path;
-        if (!disabled) onReorder(state.path, state.targetIndex);
+        if (!disabled) onReorderRef.current(state.path, state.targetIndex);
         window.setTimeout(() => {
           if (suppressClick.current === state.path) suppressClick.current = null;
         }, 0);
@@ -94,15 +98,15 @@ export default function ResourceTabStrip({
 
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', release);
-    window.addEventListener('pointercancel', release);
+    window.addEventListener('pointercancel', cancelDrag);
     return () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', release);
-      window.removeEventListener('pointercancel', release);
+      window.removeEventListener('pointercancel', cancelDrag);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
-  }, [tabs, onReorder, disabled]);
+  }, [tabs, disabled]);
 
   const draggedIndex = dragView ? tabs.findIndex((tab) => tab.path === dragView.path) : -1;
   return <div ref={scroll} className="tab-strip" role="tablist" aria-label={label}
@@ -113,17 +117,17 @@ export default function ResourceTabStrip({
     }}>
     {tabs.map((tab, index) => {
       const isDragging = dragView?.path === tab.path;
-      const isTarget = dragView && !isDragging && (
-        draggedIndex < dragView.targetIndex
-          ? index === dragView.targetIndex
-          : index === dragView.targetIndex);
+      const isTarget = Boolean(dragView && !isDragging && index === dragView.targetIndex);
+      const targetPosition = isTarget
+        ? (draggedIndex < dragView!.targetIndex ? ' tab-drop-after' : ' tab-drop-before')
+        : '';
       return <div key={tab.path}
         ref={(node) => {
           if (node) tabNodes.current.set(tab.path, node);
           else tabNodes.current.delete(tab.path);
         }}
         className={'tab' + (activePath === tab.path ? ' active' : '')
-          + (isDragging ? ' tab-dragging' : '') + (isTarget ? ' tab-drop-target' : '')}>
+          + (isDragging ? ' tab-dragging' : '') + targetPosition}>
         <button type="button" role="tab" title={tab.path}
           aria-selected={activePath === tab.path}
           className="tab-focus" disabled={disabled}
