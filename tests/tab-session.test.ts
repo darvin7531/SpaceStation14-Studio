@@ -60,3 +60,19 @@ test('prototype sessions round trip and reject malformed locators', () => {
   assert.equal(state.tabs.length, 1);
   assert.deepEqual(state.tabs[0], valid);
 });
+
+test('large valid sessions and variant identities round trip', () => {
+  const values = new Map<string, string>();
+  const storage = { getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value); } };
+  const tabs = Array.from({ length: MAX_OPEN_TABS }, (_, i) => {
+    const file = 'Resources/Prototypes/' + 'a'.repeat(900) + i + '.yml';
+    return { path: file, kind: 'yaml' as const, prototype: { file, kind: 'entity',
+      id: 'x'.repeat(1000), document_index: 1, item_index: 1, variant_index: i, mode: 'normal' as const } };
+  });
+  writeTabSession(storage, '/repo', { tabs, active: null });
+  assert.ok(storage.getItem(sessionKey('/repo'))!.length > 32768);
+  assert.deepEqual(readTabSession(storage, '/repo').tabs, tabs);
+  const invalid = { ...tabs[0], prototype: { ...tabs[0].prototype, variant_index: -1 } };
+  assert.equal(readTabSession({ getItem: () => JSON.stringify({ tabs: [invalid] }) }, '/repo').tabs.length, 0);
+});

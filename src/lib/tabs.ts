@@ -1,8 +1,8 @@
 import type { ResourceEntry, PrototypeFieldLocator } from './api';
 
-export type EditorTab = ResourceEntry & { prototype?: PrototypeFieldLocator };
+export type EditorTab = ResourceEntry & { prototype?: PrototypeFieldLocator & { variant_index?: number | null } };
 export function tabId(tab: EditorTab): string {
-  return tab.prototype ? 'prototype:' + JSON.stringify([tab.path, tab.prototype.kind, tab.prototype.id, tab.prototype.document_index, tab.prototype.item_index, tab.prototype.mode]) : tab.path;
+  return tab.prototype ? 'prototype:' + JSON.stringify([tab.path, tab.prototype.kind, tab.prototype.id, tab.prototype.document_index, tab.prototype.item_index, tab.prototype.mode, ...(tab.prototype.variant_index == null ? [] : [tab.prototype.variant_index])]) : tab.path;
 }
 export function isLastFileView(state: TabState, id: string): boolean {
   const tab = state.tabs.find((item) => tabId(item) === id);
@@ -26,7 +26,7 @@ export type OpenTabResult =
  */
 export function openTab(state: TabState, resource: EditorTab, limit = MAX_OPEN_TABS): OpenTabResult {
   if (state.tabs.some((tab) => tabId(tab) === tabId(resource))) {
-    return { ok: true, state: { ...state, active: tabId(resource) } };
+    return { ok: true, state: { tabs: state.tabs.map((tab) => tabId(tab) === tabId(resource) ? resource : tab), active: tabId(resource) } };
   }
   if (state.tabs.length >= limit) {
     return { ok: false, reason: 'LIMIT_REACHED', state };

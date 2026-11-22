@@ -192,6 +192,7 @@ export default function App() {
 
   // Resolve persisted/indexed locators against the actual shared draft, never an old line number.
   const lastPrototypeJump = useRef<string | null>(null);
+  const [prototypeJumpRequest, setPrototypeJumpRequest] = useState(0);
   useEffect(() => {
     const target = selected?.prototype;
     if (!selected || !target || !document || document.path !== target.file) {
@@ -205,20 +206,22 @@ export default function App() {
       const matches = outline.declarations.map((item) => item.declaration).filter((item) =>
         item.file === target.file && item.kind === target.kind && item.id === target.id
         && item.document_index === target.document_index && item.item_index === target.item_index
+        && target.variant_index !== undefined && item.variant_index === target.variant_index
         && item.mode === target.mode);
       if (outline.truncated || matches.length !== 1) {
         setFieldTarget(null);
         setNotice('Прототип во вкладке больше не соответствует черновику. Откройте его заново из актуального индекса.');
         return;
       }
-      if (lastPrototypeJump.current !== id) {
-        lastPrototypeJump.current = id;
+      const jump = id + ':' + prototypeJumpRequest;
+      if (lastPrototypeJump.current !== jump) {
+        lastPrototypeJump.current = jump;
         setYamlCursor({ path: target.file, line: matches[0].line });
         setJumpTarget({ path: target.file, line: matches[0].line, token: ++jumpCounter.current });
       }
     }).catch((failure) => { if (!cancelled) setError(normalizeStudioError(failure)); });
     return () => { cancelled = true; };
-  }, [tabState.active, document, activeText]);
+  }, [tabState.active, document, activeText, prototypeJumpRequest]);
 
   // The backend emits observed phases, not fabricated percentage progress.
   // Ignore stale events for a different project when an open is superseded.
@@ -1006,7 +1009,6 @@ export default function App() {
     if (item.kind === 'rsi') {
       setRsiRequested(preferredRsiState === undefined ? null : { path: item.path, state: preferredRsiState });
     }
-    if (item.path !== fieldTarget?.file) setFieldTarget(null);
     if (selectedPathRef.current !== item.path) closeComparison();
     const outcome = openTab(tabState, item);
     if (!outcome.ok) {
@@ -1017,6 +1019,7 @@ export default function App() {
       });
       return false;
     }
+    if (tabState.active !== tabId(item)) setFieldTarget(null);
     setTabState(outcome.state);
     if (tabState.active !== tabId(item) || (!document && !reading)) {
       void focusResource(item.path);
@@ -1066,11 +1069,13 @@ export default function App() {
 
   function openPrototypeSource(file: string, line: number, entry?: PrototypeDeclaration): boolean {
     setShowYamlOutline(true);
+    const opened = openResource({ path: file, kind: 'yaml', ...(entry ? { prototype: { file, kind: entry.kind, id: entry.id, document_index: entry.document_index, item_index: entry.item_index, variant_index: entry.variant_index, mode: entry.mode } } : {}) });
+    if (!opened) return false;
     if (!entry) {
       setYamlCursor({ path: file, line });
       setJumpTarget({ path: file, line, token: ++jumpCounter.current });
-    }
-    return openResource({ path: file, kind: 'yaml', ...(entry ? { prototype: { file, kind: entry.kind, id: entry.id, document_index: entry.document_index, item_index: entry.item_index, mode: entry.mode } } : {}) });
+    } else setPrototypeJumpRequest((request) => request + 1);
+    return true;
   }
 
   /** Electron Ctrl+Click quick-fix on direct entity localization fields.

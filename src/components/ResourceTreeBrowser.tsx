@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, ChevronDown, ChevronRight, FileCode2, FileText, Folder, FolderOpen, Image as ImageIcon } from 'lucide-react';
 import { useI18n } from '../i18n';
-import { studio, type ResourceBrowserEntry, type ResourceBrowserPage, type ResourceEntry, type SourceOutline } from '../lib/api';
+import { studio, type PrototypeDeclaration, type ResourceBrowserEntry, type ResourceBrowserPage, type ResourceEntry, type SourceOutline } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 import { RESOURCE_TREE_MAX_DEPTH, RESOURCE_TREE_PAGE_SIZE, treePageOffset, treePrototypes, treePrototypeKey } from '../lib/resource-tree';
 
 interface Props {
   selectedPath: string | null;
   onOpen: (entry: ResourceEntry) => void;
-  onOpenPrototype: (path: string, line: number) => void;
+  onOpenPrototype: (path: string, line: number, entry: PrototypeDeclaration) => void;
 }
 
 function TreeIcon({ kind, expanded = false }: { kind: ResourceBrowserEntry['kind']; expanded?: boolean }) {
@@ -142,7 +142,7 @@ function TreeYaml({ entry, depth, selectedPath, onOpen, onOpenPrototype }:
         key={treePrototypeKey(item)}
         style={{ paddingLeft: 8 + (depth + 1) * 14 }}
         title={item.file + ':' + item.line}
-        onClick={() => onOpenPrototype(item.file, item.line)}>
+        onClick={() => onOpenPrototype(item.file, item.line, item)}>
         <span className="resource-tree-spacer"/><FileCode2 size={13}/>
         <span>{item.id}</span><small>{item.kind}</small>
       </button>)}

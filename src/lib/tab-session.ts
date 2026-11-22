@@ -16,6 +16,8 @@ export function validTab(value: unknown): value is EditorTab {
       || typeof p.id !== 'string' || !p.id || p.id.length > 1024
       || !Number.isSafeInteger(p.document_index) || (p.document_index as number) < 1
       || !Number.isSafeInteger(p.item_index) || (p.item_index as number) < 1
+      || (p.variant_index !== undefined && p.variant_index !== null
+        && (!Number.isSafeInteger(p.variant_index) || (p.variant_index as number) < 0))
       || !['normal', 'configured_partial', 'tagged_partial', 'partial_only'].includes(p.mode as string)) return false;
   }
   const lower = tab.path.toLowerCase();
@@ -31,7 +33,7 @@ export function readTabSession(storage: Pick<Storage, 'getItem'>, root: string):
   const empty: TabState = { tabs: [], active: null };
   try {
     const raw = storage.getItem(sessionKey(root));
-    if (!raw || raw.length > 32768) return empty;
+    if (!raw) return empty;
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return empty;
     const data = parsed as Record<string, unknown>;

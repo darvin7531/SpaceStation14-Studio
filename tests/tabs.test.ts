@@ -103,3 +103,14 @@ test('prototype views are independent while retaining one file identity', () => 
   assert.equal(remaining.active, tabId(b));
   assert.equal(isLastFileView(remaining, tabId(b)), true);
 });
+
+test('generated variants have separate identities and reopening upgrades legacy locators', () => {
+  const file = 'Resources/Prototypes/A.yml';
+  const legacy = { path: file, kind: 'yaml' as const, prototype: { file, kind: 'entity', id: 'A', document_index: 1, item_index: 1, mode: 'normal' as const } };
+  const base = { ...legacy, prototype: { ...legacy.prototype, variant_index: null } };
+  const variant = { ...legacy, prototype: { ...legacy.prototype, variant_index: 0 } };
+  const upgraded = openTab(openTab({ tabs: [], active: null }, legacy).state, base).state;
+  assert.deepEqual(upgraded.tabs, [base]);
+  assert.notEqual(tabId(base), tabId(variant));
+  assert.equal(openTab(upgraded, variant).state.tabs.length, 2);
+});

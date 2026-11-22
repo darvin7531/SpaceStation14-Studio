@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useI18n } from '../i18n';
 import { AlertTriangle, ChevronLeft, ChevronRight, Folder, FolderOpen, FileCode2, FileText, Image as ImageIcon } from 'lucide-react';
-import { studio, type ResourceBrowserPage, type ResourceEntry } from '../lib/api';
+import { studio, type PrototypeDeclaration, type ResourceBrowserPage, type ResourceEntry } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 import { resourceBreadcrumbs } from '../lib/resource-breadcrumbs';
 import ResourceTreeBrowser from './ResourceTreeBrowser';
@@ -9,7 +9,7 @@ import ResourceTreeBrowser from './ResourceTreeBrowser';
 interface Props {
   selectedPath: string | null;
   onOpen: (resource: ResourceEntry) => void;
-  onOpenPrototype: (path: string, line: number) => void;
+  onOpenPrototype: (path: string, line: number, entry: PrototypeDeclaration) => void;
 }
 
 const PAGE_SIZE = 100;
