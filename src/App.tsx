@@ -304,6 +304,7 @@ export default function App() {
     setQuickOpen(false);
     setContentSearchOpen(false);
     setFieldTarget(null);
+    setRsiRequested(null);
     comparisonVersion.current += 1;
     setComparison(null);
     cancelJournalTimers();
@@ -873,8 +874,11 @@ export default function App() {
     return () => window.removeEventListener('keydown', shortcut);
   }, [selected?.path, document?.revision, drafts, saving, refreshing]);
 
-  function openResource(item: ResourceEntry) {
+  function openResource(item: ResourceEntry, preferredRsiState?: string | null) {
     if (saving || transitioning || opening || refreshing) return;
+    if (item.kind === 'rsi') {
+      setRsiRequested(preferredRsiState === undefined ? null : { path: item.path, state: preferredRsiState });
+    }
     if (item.path !== fieldTarget?.file) setFieldTarget(null);
     if (selectedPathRef.current !== item.path) closeComparison();
     const outcome = openTab(tabState, item);
@@ -1440,10 +1444,7 @@ export default function App() {
                 path: selected.path, line, token: ++jumpCounter.current,
               })}
               onEdit={editPrototypeFields}
-              onOpenRsi={(path, state) => {
-                setRsiRequested({ path, state });
-                openResource({ path, kind: 'rsi' });
-              }}/>}
+              onOpenRsi={(path, state) => openResource({ path, kind: 'rsi' }, state)}/>}
           {selected.kind === 'yaml' && document?.path === selected.path && !reading
             && <YamlDiagnosticsPanel key={selected.path} path={selected.path} source={activeText}
               enabled={editorSettings.liveValidation} delayMs={editorSettings.validationDelay}
