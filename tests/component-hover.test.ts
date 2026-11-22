@@ -28,7 +28,7 @@ test('hover exposes C# source, required fields and example YAML', () => {
   assert.match(shown, /SpriteComponent/);
   assert.match(shown, /visible.*bool.*обязательно/);
   assert.match(shown, /\x60\x60\x60yaml\n- type: Sprite\n  visible: true/);
-  assert.match(shown, /не.*наследования/);
+  assert.match(shown, /без проверки движкового наследования/);
 });
 
 test('source field names cannot insert another markdown code fence', () => {
