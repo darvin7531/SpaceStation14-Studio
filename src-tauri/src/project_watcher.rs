@@ -4,20 +4,68 @@ use crate::error::StudioError;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
 use std::{
+    collections::BTreeSet,
     fs,
     path::Path,
-    sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
+    thread,
+    time::Duration,
 };
 use tauri::{AppHandle, Emitter};
 
 #[derive(Default)]
 pub struct ProjectWatcher(Mutex<Option<RecommendedWatcher>>);
 
+const MAX_EVENT_PATHS: usize = 256;
+
 #[derive(Clone, Serialize)]
 struct ProjectChange {
     project_root: String,
+    paths: Vec<String>,
+    full: bool,
 }
+
+#[derive(Default)]
+struct ChangeBatch {
+    paths: BTreeSet<String>,
+    full: bool,
+}
+
+impl ChangeBatch {
+    fn merge(&mut self, root: &Path, event: notify::Result<notify::Event>) {
+        let Ok(event) = event else {
+            self.full = true;
+            return;
+        };
+        if !relevant(&event.kind) {
+            return;
+        }
+        if event.paths.is_empty() {
+            self.full = true;
+        }
+        for absolute in &event.paths {
+            let Some(relative) = absolute.strip_prefix(root).ok().and_then(Path::to_str) else {
+                self.full = true;
+                break;
+            };
+            let normalized = relative.replace('\\', "/");
+            if normalized.is_empty() || normalized.len() > 1024 {
+                self.full = true;
+                break;
+            }
+            self.paths.insert(normalized);
+            if self.paths.len() > MAX_EVENT_PATHS {
+                self.full = true;
+                self.paths.clear();
+                break;
+            }
+        }
+    }
+}
+
 
 fn relevant(kind: &EventKind) -> bool {
     matches!(
@@ -37,26 +85,43 @@ impl ProjectWatcher {
         })?;
         *active = None; // Release old inotify handles on project switch.
 
-        let signal = ProjectChange {
-            project_root: root.to_string_lossy().into_owned(),
-        };
-        let gate = Arc::new(Mutex::new(None::<Instant>));
+        let project_root = root.to_string_lossy().into_owned();
+        let watcher_root = root.to_path_buf();
+        let batch = Arc::new(Mutex::new(ChangeBatch::default()));
+        let scheduled = Arc::new(AtomicBool::new(false));
         let app = app.clone();
         let mut watcher =
-            notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
-                let Ok(event) = result else { return };
-                if !relevant(&event.kind) {
+            notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+                if event.as_ref().is_ok_and(|item| !relevant(&item.kind)) {
                     return;
                 }
-                let Ok(mut last) = gate.lock() else { return };
-                let now = Instant::now();
-                if last.is_some_and(|previous| {
-                    now.duration_since(previous) < Duration::from_millis(350)
-                }) {
-                    return;
+                let Ok(mut changes) = batch.lock() else { return };
+                changes.merge(&watcher_root, event);
+                // Keep every path from a burst. A throttle that discards later
+                // events silently misses new and deleted files.
+                if !scheduled.swap(true, Ordering::SeqCst) {
+                    let pending = Arc::clone(&batch);
+                    let flag = Arc::clone(&scheduled);
+                    let app = app.clone();
+                    let root = project_root.clone();
+                    thread::spawn(move || {
+                        thread::sleep(Duration::from_millis(350));
+                        let Ok(mut pending) = pending.lock() else { return };
+                        let collected = std::mem::take(&mut *pending);
+                        // Clear the scheduling flag while holding the same lock:
+                        // any event after this point schedules another flush.
+                        flag.store(false, Ordering::SeqCst);
+                        drop(pending);
+                        let _ = app.emit(
+                            "studio:project-changed",
+                            ProjectChange {
+                                project_root: root,
+                                paths: collected.paths.into_iter().collect(),
+                                full: collected.full,
+                            },
+                        );
+                    });
                 }
-                *last = Some(now);
-                let _ = app.emit("studio:project-changed", signal.clone());
             })
             .map_err(|error| {
                 StudioError::new(
@@ -133,4 +198,38 @@ mod tests {
         assert!(!relevant(&EventKind::Access(AccessKind::Any)));
         assert!(!relevant(&EventKind::Other));
     }
+    #[test]
+    fn batch_keeps_all_paths_from_notify_burst() {
+        use notify::event::ModifyKind;
+        let root = Path::new("/tmp/studio-project");
+        let mut batch = ChangeBatch::default();
+        for name in ["one.yml", "two.yml", "one.yml"] {
+            batch.merge(
+                root,
+                Ok(notify::Event::new(EventKind::Modify(ModifyKind::Any))
+                    .add_path(root.join("Resources/Prototypes").join(name))),
+            );
+        }
+        assert!(!batch.full);
+        assert_eq!(batch.paths.len(), 2);
+        assert!(batch.paths.contains("Resources/Prototypes/one.yml"));
+        assert!(batch.paths.contains("Resources/Prototypes/two.yml"));
+    }
+
+    #[test]
+    fn missing_or_external_paths_require_full_scan() {
+        use notify::event::CreateKind;
+        let root = Path::new("/tmp/studio-project");
+        let mut batch = ChangeBatch::default();
+        batch.merge(root, Ok(notify::Event::new(EventKind::Create(CreateKind::Any))));
+        assert!(batch.full);
+        let mut outside = ChangeBatch::default();
+        outside.merge(
+            root,
+            Ok(notify::Event::new(EventKind::Create(CreateKind::Any))
+                .add_path(Path::new("/tmp/outside").to_path_buf())),
+        );
+        assert!(outside.full);
+    }
+
 }
