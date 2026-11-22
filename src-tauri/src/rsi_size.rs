@@ -370,13 +370,13 @@ mod tests {
     #[test]
     fn no_op_and_revision_conflict_never_rewrite_metadata() {
         let fixture = Fixture::new();
-        let before = fs::read(&fixture.file()).unwrap();
+        let before = fs::read(fixture.file()).unwrap();
         let mut same = fixture.request();
         same.size_x = 32;
         same.size_y = 32;
         let result = update(&fixture.root, &same).unwrap();
         assert_eq!(result.revision, same.expected_revision);
-        assert_eq!(fs::read(&fixture.file()).unwrap(), before);
+        assert_eq!(fs::read(fixture.file()).unwrap(), before);
         let stale = fixture.request();
         fs::write(fixture.file(), b"external update").unwrap();
         assert_eq!(
@@ -388,7 +388,7 @@ mod tests {
     #[test]
     fn rejects_non_divisible_sheets_and_frame_count_changes() {
         let fixture = Fixture::new();
-        let before = fs::read(&fixture.file()).unwrap();
+        let before = fs::read(fixture.file()).unwrap();
         let mut request = fixture.request();
         request.size_x = 31;
         assert_eq!(
@@ -401,7 +401,7 @@ mod tests {
             update(&fixture.root, &request).unwrap_err().code,
             "RSI_SIZE_FRAME_COUNT_MISMATCH"
         );
-        assert_eq!(fs::read(&fixture.file()).unwrap(), before);
+        assert_eq!(fs::read(fixture.file()).unwrap(), before);
     }
 
     #[test]
