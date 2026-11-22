@@ -207,6 +207,15 @@ fn merge(dst: &mut Node, src: &Node, components: bool) -> Result<(), String> {
     if components {
         return merge_components(dst, src);
     }
+    // Scalar/sequence combination must keep the prior scalar as the first
+    // element; handle before mutably borrowing the destination shape.
+    if let (Value::Scalar(_), Value::Seq(additions)) = (&dst.value, &src.value) {
+        let original = dst.clone();
+        let mut combined = vec![original];
+        merge_sequence(&mut combined, additions)?;
+        *dst = Node { tag: None, value: Value::Seq(combined) };
+        return Ok(());
+    }
     match (&mut dst.value, &src.value) {
         (Value::Map(old), Value::Map(new)) => {
             for (key, value) in new {
@@ -230,12 +239,6 @@ fn merge(dst: &mut Node, src: &Node, components: bool) -> Result<(), String> {
         }
         (Value::Seq(old), Value::Seq(new)) => merge_sequence(old, new)?,
         (Value::Seq(old), Value::Scalar(_)) => old.push(clean(src.clone())?),
-        (Value::Scalar(_), Value::Seq(new)) => {
-            let original = dst.clone();
-            let mut combined = vec![original];
-            merge_sequence(&mut combined, new)?;
-            *dst = Node { tag: None, value: Value::Seq(combined) };
-        }
         (_, _) => *dst = clean(src.clone())?,
     }
     Ok(())
@@ -429,7 +432,13 @@ pub fn preview(
         let Some(composed_ref) = composed.as_mut() else { continue; };
         // A failed operation must not leak a partly applied partial into the result.
         let mut candidate = composed_ref.clone();
-        match merge(&mut candidate, source, false) {
+        // The tagged type/id nodes identify a partial declaration; they must
+        // not be interpreted as modifications to the prototype's data.
+        let mut overlay = source.clone();
+        if let Value::Map(pairs) = &mut overlay.value {
+            pairs.retain(|(key, _)| key != "type" && key != "id");
+        }
+        match merge(&mut candidate, &overlay, false) {
             Ok(()) => {
                 if let Value::Map(fields) = &source.value {
                     for (key, value) in fields {
