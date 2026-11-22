@@ -374,7 +374,7 @@ export default function App() {
     }
   }
 
-  /** Manual full rescan: refresh the index without discarding in-memory drafts
+  /** Manual full scan or bounded automatic refresh without discarding in-memory drafts
    * or silently taking a changed on-disk YAML revision as the draft baseline.
    */
   async function refreshProject(automatic = false) {
