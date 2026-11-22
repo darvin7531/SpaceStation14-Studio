@@ -290,6 +290,7 @@ pub struct PrototypeCatalog {
     diagnostics: Vec<PrototypeDiagnostic>,
     search_keys: Vec<String>,
     by_identity: HashMap<(String, String), Vec<usize>>,
+    by_id: HashMap<String, Vec<usize>>,
     graph: PrototypeGraph,
 }
 
@@ -306,6 +307,18 @@ impl PrototypeCatalog {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    /// Electron Inspector compatibility: resolve a reference by ID, first
+    /// preferring the same prototype kind, then entity, then another indexed
+    /// kind. A partial-only declaration cannot be a safe navigation target.
+    pub fn linked_prototype(&self, preferred_kind: &str, id: &str) -> Option<&PrototypeDeclaration> {
+        let pick = |indices: &Vec<usize>| indices.iter().copied()
+            .find(|&i| self.declarations[i].mode == "normal")
+            .map(|i| &self.declarations[i]);
+        self.by_identity.get(&(preferred_kind.to_owned(), id.to_owned())).and_then(pick)
+            .or_else(|| self.by_identity.get(&("entity".to_owned(), id.to_owned())).and_then(pick))
+            .or_else(|| self.by_id.get(id).and_then(pick))
     }
 
     pub fn has_identity(&self, kind: &str, id: &str) -> bool {
@@ -416,6 +429,7 @@ impl PrototypeCatalog {
                 .entry((item.kind.clone(), item.id.clone()))
                 .or_default()
                 .push(index);
+            catalog.by_id.entry(item.id.clone()).or_default().push(index);
             catalog
                 .search_keys
                 .push(format!("{} {} {}", item.kind, item.id, item.file).to_lowercase());
