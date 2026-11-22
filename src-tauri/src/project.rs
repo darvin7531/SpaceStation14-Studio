@@ -22,8 +22,8 @@ use crate::rsi_credits::{self, RsiCreditsUpdate};
 use crate::rsi_delete::{self, DeletedRsiState, RsiDeleteRequest};
 use crate::rsi_import::{self, ImportedRsiState, RsiStateImport};
 use crate::rsi_preview::{self, RsiSheetImage, RsiSheetList};
-use crate::rsi_replace;
 use crate::rsi_rename::{self, RenamedRsiState, RsiRenameRequest};
+use crate::rsi_replace;
 use crate::rsi_restore::{self, RestoredRsiState, RsiArchiveList, RsiRestoreRequest};
 use crate::rsi_timing::{self, RsiTimingUpdate};
 

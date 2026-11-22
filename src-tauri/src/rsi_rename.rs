@@ -11,9 +11,7 @@ use serde_json::{json, Value};
 
 use crate::error::StudioError;
 use crate::resource_edit::{self, revision};
-use crate::rsi_delete::{
-    archive_dir, read_png, sync_directory, write_backup_file,
-};
+use crate::rsi_delete::{archive_dir, read_png, sync_directory, write_backup_file};
 use crate::rsi_import::{bounded_metadata, safe_import_directory};
 
 const MAX_META_BYTES: usize = 4 * 1024 * 1024;
@@ -78,7 +76,10 @@ fn validate(request: &RsiRenameRequest) -> Result<(), StudioError> {
     Ok(())
 }
 
-fn metadata_after_rename(original: &[u8], request: &RsiRenameRequest) -> Result<String, StudioError> {
+fn metadata_after_rename(
+    original: &[u8],
+    request: &RsiRenameRequest,
+) -> Result<String, StudioError> {
     let mut metadata: Value = serde_json::from_slice(original).map_err(|error| {
         issue(
             "RSI_RENAME_META_INVALID",
@@ -96,13 +97,16 @@ fn metadata_after_rename(original: &[u8], request: &RsiRenameRequest) -> Result<
             "Проверьте version и size в meta.json.",
         ));
     }
-    let states = metadata.get_mut("states")
+    let states = metadata
+        .get_mut("states")
         .and_then(Value::as_array_mut)
-        .ok_or_else(|| issue(
-            "RSI_RENAME_META_INVALID",
-            "В meta.json нет массива states.",
-            "Исправьте структуру файла.",
-        ))?;
+        .ok_or_else(|| {
+            issue(
+                "RSI_RENAME_META_INVALID",
+                "В meta.json нет массива states.",
+                "Исправьте структуру файла.",
+            )
+        })?;
     if states.len() > 512 {
         return Err(issue(
             "RSI_RENAME_STATES_LIMIT",
@@ -111,15 +115,16 @@ fn metadata_after_rename(original: &[u8], request: &RsiRenameRequest) -> Result<
         ));
     }
 
-    let mut matches = states.iter().enumerate()
-        .filter_map(|(index, state)| {
-            (state.get("name").and_then(Value::as_str) == Some(&request.old_name)).then_some(index)
-        });
-    let index = matches.next().ok_or_else(|| issue(
-        "RSI_RENAME_STATE_NOT_FOUND",
-        "Исходное состояние уже отсутствует в meta.json.",
-        "Обновите RSI.",
-    ))?;
+    let mut matches = states.iter().enumerate().filter_map(|(index, state)| {
+        (state.get("name").and_then(Value::as_str) == Some(&request.old_name)).then_some(index)
+    });
+    let index = matches.next().ok_or_else(|| {
+        issue(
+            "RSI_RENAME_STATE_NOT_FOUND",
+            "Исходное состояние уже отсутствует в meta.json.",
+            "Обновите RSI.",
+        )
+    })?;
     if matches.next().is_some() {
         return Err(issue(
             "RSI_RENAME_STATE_AMBIGUOUS",
@@ -127,9 +132,10 @@ fn metadata_after_rename(original: &[u8], request: &RsiRenameRequest) -> Result<
             "Устраните дубликаты, чтобы избежать неверной правки.",
         ));
     }
-    if states.iter().any(|state| {
-        state.get("name").and_then(Value::as_str) == Some(&request.new_name)
-    }) {
+    if states
+        .iter()
+        .any(|state| state.get("name").and_then(Value::as_str) == Some(&request.new_name))
+    {
         return Err(issue(
             "RSI_RENAME_STATE_EXISTS",
             "Состояние с новым именем уже есть в meta.json.",
@@ -138,11 +144,13 @@ fn metadata_after_rename(original: &[u8], request: &RsiRenameRequest) -> Result<
     }
     states[index]
         .as_object_mut()
-        .ok_or_else(|| issue(
-            "RSI_RENAME_META_INVALID",
-            "Исходное состояние не является JSON-объектом.",
-            "Исправьте meta.json.",
-        ))?
+        .ok_or_else(|| {
+            issue(
+                "RSI_RENAME_META_INVALID",
+                "Исходное состояние не является JSON-объектом.",
+                "Исправьте meta.json.",
+            )
+        })?
         .insert("name".into(), Value::String(request.new_name.clone()));
 
     let content = serde_json::to_string_pretty(&metadata).map_err(|error| {
@@ -176,7 +184,8 @@ fn clean_own_png(path: &Path, expected: &[u8]) -> Result<(), StudioError> {
             "RSI_RENAME_CLEANUP_FAILED",
             "Не удалось удалить временно созданный PNG.",
             "Проверьте каталог RSI вручную; оригинал не был перезаписан.",
-        ).with_details(error.to_string())
+        )
+        .with_details(error.to_string())
     })
 }
 
@@ -206,26 +215,36 @@ pub fn rename(root: &Path, request: &RsiRenameRequest) -> Result<RenamedRsiState
 
     // Check symlinks (including dangling ones) before making the archive.
     match fs::symlink_metadata(&target_path) {
-        Ok(_) => return Err(issue(
-            "RSI_RENAME_TARGET_EXISTS",
-            "PNG с новым именем уже существует и не будет перезаписан.",
-            "Выберите свободное имя состояния.",
-        )),
+        Ok(_) => {
+            return Err(issue(
+                "RSI_RENAME_TARGET_EXISTS",
+                "PNG с новым именем уже существует и не будет перезаписан.",
+                "Выберите свободное имя состояния.",
+            ))
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(issue(
-            "RSI_RENAME_TARGET_UNREADABLE",
-            "Не удалось проверить путь к новому PNG.",
-            "Проверьте права доступа.",
-        ).with_details(error.to_string())),
+        Err(error) => {
+            return Err(issue(
+                "RSI_RENAME_TARGET_UNREADABLE",
+                "Не удалось проверить путь к новому PNG.",
+                "Проверьте права доступа.",
+            )
+            .with_details(error.to_string()))
+        }
     }
 
-    if fs::metadata(&meta_path).map_err(|error| {
-        issue(
-            "RSI_RENAME_META_UNREADABLE",
-            "Не удалось проверить права meta.json.",
-            "Проверьте каталог RSI.",
-        ).with_details(error.to_string())
-    })?.permissions().readonly() {
+    if fs::metadata(&meta_path)
+        .map_err(|error| {
+            issue(
+                "RSI_RENAME_META_UNREADABLE",
+                "Не удалось проверить права meta.json.",
+                "Проверьте каталог RSI.",
+            )
+            .with_details(error.to_string())
+        })?
+        .permissions()
+        .readonly()
+    {
         return Err(issue(
             "RSI_RENAME_META_READONLY",
             "meta.json доступен только для чтения.",
@@ -247,12 +266,14 @@ pub fn rename(root: &Path, request: &RsiRenameRequest) -> Result<RenamedRsiState
         "operation": "rename",
         "new_name": request.new_name,
         "recovery": "Restore the old-name state using Studio's RSI archive panel if needed."
-    })).map_err(|error| {
+    }))
+    .map_err(|error| {
         issue(
             "RSI_RENAME_ARCHIVE_FAILED",
             "Не удалось записать манифест резервной копии.",
             "Исходные файлы не изменены.",
-        ).with_details(error.to_string())
+        )
+        .with_details(error.to_string())
     })?;
     write_backup_file(&archive.join("manifest.json"), &manifest)?;
     for directory in [&archive, archive.parent().unwrap_or(&folder)] {
@@ -261,11 +282,14 @@ pub fn rename(root: &Path, request: &RsiRenameRequest) -> Result<RenamedRsiState
                 "RSI_RENAME_ARCHIVE_FAILED",
                 "Не удалось синхронизировать архив. Переименование отменено.",
                 "Проверьте свободное место и права.",
-            ).with_details(error.to_string())
+            )
+            .with_details(error.to_string())
         })?;
     }
 
-    let mut output = OpenOptions::new().write(true).create_new(true)
+    let mut output = OpenOptions::new()
+        .write(true)
+        .create_new(true)
         .open(&target_path)
         .map_err(|error| {
             if error.kind() == std::io::ErrorKind::AlreadyExists {
@@ -279,42 +303,48 @@ pub fn rename(root: &Path, request: &RsiRenameRequest) -> Result<RenamedRsiState
                     "RSI_RENAME_WRITE_FAILED",
                     "Не удалось создать PNG с новым именем.",
                     "Проверьте свободное место и права.",
-                ).with_details(error.to_string())
+                )
+                .with_details(error.to_string())
             }
         })?;
     let wrote = output.write_all(&old_png).and_then(|_| output.sync_all());
     drop(output);
-    let prepared = wrote.map_err(|error| {
-        issue(
-            "RSI_RENAME_WRITE_FAILED",
-            "Не удалось полностью записать PNG с новым именем.",
-            "Оригинальный PNG не удалён. Проверьте неполный файл вручную.",
-        ).with_details(error.to_string())
-    }).and_then(|_| {
-        sync_directory(&folder).map_err(|error| {
+    let prepared = wrote
+        .map_err(|error| {
             issue(
-                "RSI_RENAME_DURABILITY_FAILED",
-                "Синхронизация нового PNG перед обновлением meta.json не удалась.",
-                "Исходный PNG сохранён. Проверьте состояние диска.",
-            ).with_details(error.to_string())
+                "RSI_RENAME_WRITE_FAILED",
+                "Не удалось полностью записать PNG с новым именем.",
+                "Оригинальный PNG не удалён. Проверьте неполный файл вручную.",
+            )
+            .with_details(error.to_string())
         })
-    }).and_then(|_| {
-        if revision(&bounded_metadata(&meta_path)?) != request.expected_revision {
-            return Err(issue(
-                "RSI_RENAME_META_CONFLICT",
-                "meta.json изменился во время копирования PNG.",
-                "Обновите RSI перед повторной попыткой.",
-            ));
-        }
-        if revision(&read_png(&source_path)?) != request.expected_png_revision {
-            return Err(issue(
-                "RSI_RENAME_PNG_CONFLICT",
-                "Исходный PNG изменился во время копирования.",
-                "Обновите RSI перед повторной попыткой.",
-            ));
-        }
-        Ok(())
-    });
+        .and_then(|_| {
+            sync_directory(&folder).map_err(|error| {
+                issue(
+                    "RSI_RENAME_DURABILITY_FAILED",
+                    "Синхронизация нового PNG перед обновлением meta.json не удалась.",
+                    "Исходный PNG сохранён. Проверьте состояние диска.",
+                )
+                .with_details(error.to_string())
+            })
+        })
+        .and_then(|_| {
+            if revision(&bounded_metadata(&meta_path)?) != request.expected_revision {
+                return Err(issue(
+                    "RSI_RENAME_META_CONFLICT",
+                    "meta.json изменился во время копирования PNG.",
+                    "Обновите RSI перед повторной попыткой.",
+                ));
+            }
+            if revision(&read_png(&source_path)?) != request.expected_png_revision {
+                return Err(issue(
+                    "RSI_RENAME_PNG_CONFLICT",
+                    "Исходный PNG изменился во время копирования.",
+                    "Обновите RSI перед повторной попыткой.",
+                ));
+            }
+            Ok(())
+        });
 
     if let Err(error) = prepared {
         if let Err(cleanup) = clean_own_png(&target_path, &old_png) {
@@ -322,7 +352,8 @@ pub fn rename(root: &Path, request: &RsiRenameRequest) -> Result<RenamedRsiState
                 "RSI_RENAME_CLEANUP_REQUIRED",
                 "Переименование не завершено, и новый PNG остался в каталоге.",
                 "Исходный PNG не удалён. Проверьте новый файл вручную.",
-            ).with_details(format!("Ошибка: {error:?}; очистка: {cleanup:?}")));
+            )
+            .with_details(format!("Ошибка: {error:?}; очистка: {cleanup:?}")));
         }
         return Err(error);
     }
@@ -341,7 +372,8 @@ pub fn rename(root: &Path, request: &RsiRenameRequest) -> Result<RenamedRsiState
                     "RSI_RENAME_CLEANUP_REQUIRED",
                     "Сохранение meta.json не удалось, и новый PNG остался в каталоге.",
                     "Исходное состояние сохранено. Проверьте файлы вручную.",
-                ).with_details(format!("Ошибка: {error:?}; очистка: {cleanup:?}")));
+                )
+                .with_details(format!("Ошибка: {error:?}; очистка: {cleanup:?}")));
             }
             return Err(error);
         }
@@ -351,24 +383,31 @@ pub fn rename(root: &Path, request: &RsiRenameRequest) -> Result<RenamedRsiState
     if let Some(warning) = result.durability_warning {
         warnings.push(warning);
     }
-    let safe_folder = safe_import_directory(root, &request.path)
-        .is_ok_and(|candidate| candidate == folder);
+    let safe_folder =
+        safe_import_directory(root, &request.path).is_ok_and(|candidate| candidate == folder);
     if !safe_folder {
-        warnings.push("Каталог RSI изменился во время переименования; исходный PNG оставлен на месте.".to_owned());
+        warnings.push(
+            "Каталог RSI изменился во время переименования; исходный PNG оставлен на месте."
+                .to_owned(),
+        );
     } else {
         match read_png(&source_path) {
             Ok(bytes) if revision(&bytes) == request.expected_png_revision => {
                 if let Err(error) = fs::remove_file(&source_path) {
-                    warnings.push(format!("Новый файл записан, но исходный PNG остался: {error}"));
+                    warnings.push(format!(
+                        "Новый файл записан, но исходный PNG остался: {error}"
+                    ));
                 }
             }
             _ => warnings.push(
-                "Исходный PNG изменился после обновления meta.json и оставлен на месте.".to_owned()
+                "Исходный PNG изменился после обновления meta.json и оставлен на месте.".to_owned(),
             ),
         }
     }
     if let Err(error) = sync_directory(&folder) {
-        warnings.push(format!("Не удалось подтвердить синхронизацию каталога RSI: {error}"));
+        warnings.push(format!(
+            "Не удалось подтвердить синхронизацию каталога RSI: {error}"
+        ));
     }
 
     Ok(RenamedRsiState {
@@ -376,8 +415,11 @@ pub fn rename(root: &Path, request: &RsiRenameRequest) -> Result<RenamedRsiState
         old_name: request.old_name.clone(),
         content: result.document.content,
         revision: result.document.revision,
-        archive_path: archive.strip_prefix(root).unwrap_or(&archive)
-            .to_string_lossy().replace('\\', "/"),
+        archive_path: archive
+            .strip_prefix(root)
+            .unwrap_or(&archive)
+            .to_string_lossy()
+            .replace('\\', "/"),
         warning: (!warnings.is_empty()).then(|| warnings.join(" ")),
     })
 }
@@ -397,8 +439,8 @@ mod tests {
     impl Fixture {
         fn new() -> Self {
             let seq = NEXT.fetch_add(1, Ordering::Relaxed);
-            let root = std::env::temp_dir()
-                .join(format!("ss14-rsi-rename-{}-{seq}", std::process::id()));
+            let root =
+                std::env::temp_dir().join(format!("ss14-rsi-rename-{}-{seq}", std::process::id()));
             let path = "Resources/Textures/sample.rsi".to_string();
             let folder = root.join(&path);
             fs::create_dir_all(&folder).unwrap();
@@ -406,7 +448,10 @@ mod tests {
                 r#"{"version":1,"size":{"x":32,"y":32},"custom":{"preserve":true},"states":[{"name":"idle","directions":1,"delays":[[0.25]],"customState":"keep"},{"name":"other","directions":1}]}"#).unwrap();
             fs::write(folder.join("idle.png"), b"original-idle-image").unwrap();
             fs::write(folder.join("other.png"), b"other-image").unwrap();
-            Self { root: fs::canonicalize(root).unwrap(), path }
+            Self {
+                root: fs::canonicalize(root).unwrap(),
+                path,
+            }
         }
 
         fn request(&self) -> RsiRenameRequest {
@@ -445,21 +490,35 @@ mod tests {
         assert_eq!(doc["states"][1]["name"], "other");
         assert_eq!(renamed.revision, revision(renamed.content.as_bytes()));
         assert!(!fixture.folder().join("idle.png").exists());
-        assert_eq!(fs::read(fixture.folder().join("idle_new.png")).unwrap(), b"original-idle-image");
-        assert_eq!(fs::read(fixture.folder().join("other.png")).unwrap(), b"other-image");
+        assert_eq!(
+            fs::read(fixture.folder().join("idle_new.png")).unwrap(),
+            b"original-idle-image"
+        );
+        assert_eq!(
+            fs::read(fixture.folder().join("other.png")).unwrap(),
+            b"other-image"
+        );
         let archive = fixture.root.join(&renamed.archive_path);
-        assert_eq!(fs::read(archive.join("idle.png")).unwrap(), b"original-idle-image");
-        let manifest: Value = serde_json::from_slice(&fs::read(archive.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(
+            fs::read(archive.join("idle.png")).unwrap(),
+            b"original-idle-image"
+        );
+        let manifest: Value =
+            serde_json::from_slice(&fs::read(archive.join("manifest.json")).unwrap()).unwrap();
         assert_eq!(manifest["operation"], "rename");
 
         // The old-name backup is restorable without overwriting the renamed state.
         let archives = rsi_restore::list(&fixture.root, &fixture.path).unwrap();
         assert_eq!(archives.archives.len(), 1);
-        let restored = rsi_restore::restore(&fixture.root, &RsiRestoreRequest {
-            path: fixture.path.clone(),
-            expected_revision: renamed.revision,
-            archive_id: archives.archives[0].id.clone(),
-        }).unwrap();
+        let restored = rsi_restore::restore(
+            &fixture.root,
+            &RsiRestoreRequest {
+                path: fixture.path.clone(),
+                expected_revision: renamed.revision,
+                archive_id: archives.archives[0].id.clone(),
+            },
+        )
+        .unwrap();
         let recovered: Value = serde_json::from_str(&restored.content).unwrap();
         assert_eq!(recovered["states"][0]["name"], "idle");
         assert_eq!(recovered["states"][1]["name"], "idle_new");
@@ -470,14 +529,23 @@ mod tests {
         let fixture = Fixture::new();
         let request = fixture.request();
         fs::write(fixture.folder().join("idle_new.png"), b"external").unwrap();
-        assert_eq!(rename(&fixture.root, &request).unwrap_err().code, "RSI_RENAME_TARGET_EXISTS");
-        assert_eq!(fs::read(fixture.folder().join("idle_new.png")).unwrap(), b"external");
+        assert_eq!(
+            rename(&fixture.root, &request).unwrap_err().code,
+            "RSI_RENAME_TARGET_EXISTS"
+        );
+        assert_eq!(
+            fs::read(fixture.folder().join("idle_new.png")).unwrap(),
+            b"external"
+        );
         assert!(!fixture.folder().join(".ss14-studio-archive").exists());
 
         let fixture = Fixture::new();
         let mut request = fixture.request();
         request.new_name = "other".into();
-        assert_eq!(rename(&fixture.root, &request).unwrap_err().code, "RSI_RENAME_STATE_EXISTS");
+        assert_eq!(
+            rename(&fixture.root, &request).unwrap_err().code,
+            "RSI_RENAME_STATE_EXISTS"
+        );
         assert!(!fixture.folder().join(".ss14-studio-archive").exists());
     }
 
@@ -486,19 +554,31 @@ mod tests {
         let fixture = Fixture::new();
         let mut request = fixture.request();
         request.new_name = "../escape".into();
-        assert_eq!(rename(&fixture.root, &request).unwrap_err().code, "RSI_RENAME_NAME_INVALID");
+        assert_eq!(
+            rename(&fixture.root, &request).unwrap_err().code,
+            "RSI_RENAME_NAME_INVALID"
+        );
         request.new_name = "idle".into();
-        assert_eq!(rename(&fixture.root, &request).unwrap_err().code, "RSI_RENAME_NO_CHANGE");
+        assert_eq!(
+            rename(&fixture.root, &request).unwrap_err().code,
+            "RSI_RENAME_NO_CHANGE"
+        );
 
         request.new_name = "idle_new".into();
         fs::write(fixture.folder().join("idle.png"), b"changed externally").unwrap();
-        assert_eq!(rename(&fixture.root, &request).unwrap_err().code, "RSI_RENAME_PNG_CONFLICT");
+        assert_eq!(
+            rename(&fixture.root, &request).unwrap_err().code,
+            "RSI_RENAME_PNG_CONFLICT"
+        );
         assert!(!fixture.folder().join(".ss14-studio-archive").exists());
 
         let fixture = Fixture::new();
         let request = fixture.request();
         fs::write(fixture.folder().join("meta.json"), b"external").unwrap();
-        assert_eq!(rename(&fixture.root, &request).unwrap_err().code, "RSI_RENAME_META_CONFLICT");
+        assert_eq!(
+            rename(&fixture.root, &request).unwrap_err().code,
+            "RSI_RENAME_META_CONFLICT"
+        );
         assert!(!fixture.folder().join(".ss14-studio-archive").exists());
     }
 
@@ -509,7 +589,10 @@ mod tests {
         let fixture = Fixture::new();
         let request = fixture.request();
         symlink("missing.png", fixture.folder().join("idle_new.png")).unwrap();
-        assert_eq!(rename(&fixture.root, &request).unwrap_err().code, "RSI_RENAME_TARGET_EXISTS");
+        assert_eq!(
+            rename(&fixture.root, &request).unwrap_err().code,
+            "RSI_RENAME_TARGET_EXISTS"
+        );
         assert!(!fixture.folder().join(".ss14-studio-archive").exists());
     }
 }
