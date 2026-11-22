@@ -16,8 +16,8 @@ use crate::prototype_components::{self, ComponentInspection, ComponentOperation}
 use crate::prototype_create::{self, CreatedPrototype, PrototypeDraft, PrototypePreview};
 use crate::prototype_fields::{self, FieldInspection, FieldLocator, FieldPatch, PrototypeFields};
 use crate::prototypes::PrototypeCatalog;
-use crate::resource_edit::{self, SaveResult};
 use crate::resource_browser::{self, ResourceBrowserPage};
+use crate::resource_edit::{self, SaveResult};
 use crate::rsi_create::{self, CreatedRsi, RsiCreationPreview, RsiDraft};
 use crate::rsi_credits::{self, RsiCreditsUpdate};
 use crate::rsi_delete::{self, DeletedRsiState, RsiDeleteRequest};
@@ -1426,31 +1426,52 @@ mod tests {
     #[test]
     fn folder_browser_navigates_indexed_resources_with_page_limits() {
         let fx = Fixture::new();
-        fx.write("Resources/Prototypes/Entities/a.yml", "- type: entity\n  id: A");
-        fx.write("Resources/Prototypes/Entities/b.yml", "- type: entity\n  id: B");
-        fx.write("Resources/Prototypes/Weapons/gun.yml", "- type: entity\n  id: Gun");
-        fx.write("Resources/Prototypes/root.yml", "- type: entity\n  id: Root");
+        fx.write(
+            "Resources/Prototypes/Entities/a.yml",
+            "- type: entity\n  id: A",
+        );
+        fx.write(
+            "Resources/Prototypes/Entities/b.yml",
+            "- type: entity\n  id: B",
+        );
+        fx.write(
+            "Resources/Prototypes/Weapons/gun.yml",
+            "- type: entity\n  id: Gun",
+        );
+        fx.write(
+            "Resources/Prototypes/root.yml",
+            "- type: entity\n  id: Root",
+        );
         fx.write("Resources/Textures/Human/body.rsi/meta.json", "{}");
         fx.write("Resources/Locale/en-US/ui.ftl", "label = Hello");
         let index = ProjectIndex::open(fx.root_str()).unwrap();
         let root = index.browse_resource_folder("Resources", 0, 50).unwrap();
         assert_eq!(root.total, 3);
         assert!(root.items.iter().all(|item| item.kind == "folder"));
-        let proto = index.browse_resource_folder("Resources/Prototypes", 0, 50).unwrap();
+        let proto = index
+            .browse_resource_folder("Resources/Prototypes", 0, 50)
+            .unwrap();
         assert_eq!(proto.total, 3);
         assert_eq!(proto.parent.as_deref(), Some("Resources"));
         assert_eq!(proto.items[0].name, "Entities");
         assert_eq!(proto.items[0].descendant_resources, 2);
         assert_eq!(proto.items[1].name, "Weapons");
         assert_eq!(proto.items[2].name, "root.yml");
-        let first = index.browse_resource_folder("Resources/Prototypes/Entities", 0, 1).unwrap();
-        let second = index.browse_resource_folder("Resources/Prototypes/Entities", 1, 1).unwrap();
+        let first = index
+            .browse_resource_folder("Resources/Prototypes/Entities", 0, 1)
+            .unwrap();
+        let second = index
+            .browse_resource_folder("Resources/Prototypes/Entities", 1, 1)
+            .unwrap();
         assert_eq!(first.total, 2);
         assert_eq!(first.items[0].name, "a.yml");
         assert_eq!(first.items[0].kind, "yaml");
         assert_eq!(second.items[0].name, "b.yml");
-        assert!(index.browse_resource_folder("Resources/Prototypes/Entities", 2, 10)
-            .unwrap().items.is_empty());
+        assert!(index
+            .browse_resource_folder("Resources/Prototypes/Entities", 2, 10)
+            .unwrap()
+            .items
+            .is_empty());
     }
 
     #[test]
@@ -1459,17 +1480,35 @@ mod tests {
         fx.write("Resources/Prototypes/Item.yml", "id: Item");
         fx.write("secrets.txt", "hidden");
         let index = ProjectIndex::open(fx.root_str()).unwrap();
-        for invalid in ["../", "/", "/Resources", "Resources/../secrets", 
-            "Resources\\Prototypes", "Resources//Prototypes", "Resources/Prototypes/", "Other"] {
+        for invalid in [
+            "../",
+            "/",
+            "/Resources",
+            "Resources/../secrets",
+            "Resources\\Prototypes",
+            "Resources//Prototypes",
+            "Resources/Prototypes/",
+            "Other",
+        ] {
             assert_eq!(
-                index.browse_resource_folder(invalid, 0, 100).unwrap_err().code,
+                index
+                    .browse_resource_folder(invalid, 0, 100)
+                    .unwrap_err()
+                    .code,
                 "RESOURCE_BROWSER_PATH_INVALID",
             );
         }
-        assert!(index.browse_resource_folder("Resources/Nonexistent", 0, 100)
-            .unwrap().items.is_empty());
-        assert!(index.browse_resource_folder("Resources", 0, 100)
-            .unwrap().items.iter().all(|item| !item.path.contains("secrets")));
+        assert!(index
+            .browse_resource_folder("Resources/Nonexistent", 0, 100)
+            .unwrap()
+            .items
+            .is_empty());
+        assert!(index
+            .browse_resource_folder("Resources", 0, 100)
+            .unwrap()
+            .items
+            .iter()
+            .all(|item| !item.path.contains("secrets")));
     }
 
     #[test]

@@ -31,7 +31,9 @@ fn normalized_directory(raw: &str) -> Result<&str, StudioError> {
     let dir = if raw.is_empty() { "Resources" } else { raw };
     if dir.len() > 1024
         || (dir != "Resources" && !dir.starts_with("Resources/"))
-        || dir.split('/').any(|part| part.is_empty() || part == "." || part == "..")
+        || dir
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
         || dir.contains('\\')
         || dir.bytes().any(|byte| byte == 0 || byte == b':')
     {
