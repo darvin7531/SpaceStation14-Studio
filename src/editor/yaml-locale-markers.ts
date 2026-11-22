@@ -6,7 +6,7 @@ export interface LocaleUnderline {
   startColumn: number;
   endColumn: number;
   field: EntityLocaleDiagnostic['field'];
-  locales: string[];
+  locales: readonly string[];
 }
 
 /** Electron's missing-locale inline marks, limited to a single native-indexed
