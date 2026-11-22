@@ -19,6 +19,7 @@ mod rsi_delete;
 mod rsi_import;
 mod rsi_preview;
 mod rsi_replace;
+mod rsi_rename;
 mod rsi_restore;
 mod rsi_timing;
 
@@ -46,6 +47,7 @@ use rsi_credits::RsiCreditsUpdate;
 use rsi_delete::{DeletedRsiState, RsiDeleteRequest};
 use rsi_import::{ImportedRsiState, RsiStateImport};
 use rsi_preview::{RsiSheetImage, RsiSheetList};
+use rsi_rename::{RenamedRsiState, RsiRenameRequest};
 use rsi_restore::{RestoredRsiState, RsiArchiveList, RsiRestoreRequest};
 use rsi_timing::RsiTimingUpdate;
 use serde::Serialize;
@@ -271,6 +273,17 @@ async fn import_rsi_state(
 ) -> Result<ImportedRsiState, StudioError> {
     let index = current_project(&state)?;
     tauri::async_runtime::spawn_blocking(move || index.import_rsi_state(&request))
+        .await
+        .map_err(interrupted)?
+}
+
+#[tauri::command]
+async fn rename_rsi_state(
+    request: RsiRenameRequest,
+    state: State<'_, WorkspaceState>,
+) -> Result<RenamedRsiState, StudioError> {
+    let index = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || index.rename_rsi_state(&request))
         .await
         .map_err(interrupted)?
 }
@@ -878,6 +891,7 @@ pub fn run() -> Result<(), tauri::Error> {
             read_rsi_sheet,
             import_rsi_state,
             replace_rsi_state,
+            rename_rsi_state,
             update_rsi_timing,
             update_rsi_credits,
             delete_rsi_state,

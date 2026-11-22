@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, RefreshCw } from 'lucide-react';
-import { studio, type DeletedRsiState, type ImportedRsiState, type RestoredRsiState, type RsiSheetImage, type RsiSheetList } from '../lib/api';
+import { studio, type DeletedRsiState, type ImportedRsiState, type RestoredRsiState, type RenamedRsiState, type RsiSheetImage, type RsiSheetList } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 import { buildRsiFrameLayout, isRsiLayoutError, parseRsiMetadata } from '../lib/rsi-layout';
 import RsiStatePlayer from './RsiStatePlayer';
@@ -9,6 +9,7 @@ import RsiTimingPanel from './RsiTimingPanel';
 import RsiDeletePanel from './RsiDeletePanel';
 import RsiRestorePanel from './RsiRestorePanel';
 import RsiCreditsPanel from './RsiCreditsPanel';
+import RsiRenamePanel from './RsiRenamePanel';
 
 function Failure({ error }: { error: StudioError }) {
   return <div className="rsi-error" role="alert"><AlertCircle size={16}/>
@@ -19,7 +20,7 @@ function Failure({ error }: { error: StudioError }) {
 
 /** Load one PNG at a time; do not expose project paths to the webview filesystem. */
 export default function RsiPreview({
-  path, metadata, revision, onImported, onTimingUpdated, onCreditsUpdated, onDeleted, onRestored,
+  path, metadata, revision, onImported, onTimingUpdated, onCreditsUpdated, onDeleted, onRestored, onRenamed,
 }: {
   path: string;
   metadata: string;
@@ -29,6 +30,7 @@ export default function RsiPreview({
   onCreditsUpdated: (updated: ImportedRsiState) => void;
   onDeleted: (result: DeletedRsiState) => void;
   onRestored: (result: RestoredRsiState) => void;
+  onRenamed: (result: RenamedRsiState) => void;
 }) {
   const [refresh, setRefresh] = useState(0);
   const [listing, setListing] = useState(true);
@@ -135,6 +137,11 @@ export default function RsiPreview({
         path={path} revision={revision} replaceState={selectedState}
         expectedPngRevision={image.revision} onImported={onImported}/>}
 
+    {selectedState && image?.revision && !loadingImage && !imageError && selected === selectedState.name + '.png'
+      && <RsiRenamePanel key={'rename:' + path + ':' + selectedState.name + ':' + revision}
+        path={path} revision={revision} name={selectedState.name}
+        expectedPngRevision={image.revision} onRenamed={onRenamed}/>}
+
     {frameLayout && selectedState && <RsiTimingPanel
       key={path + ':' + selectedState.name + ':' + revision}
       path={path} revision={revision} state={selectedState} onUpdated={onTimingUpdated}/>}
@@ -170,9 +177,10 @@ export default function RsiPreview({
     </details>
     <p className="rsi-caveat">
       Для корректных RSI v1 доступны направления, кадры и анимация с длительностями из meta.json.
-      При повреждённых метаданных сохраняется просмотр PNG целиком. Импорт создаёт только
-      новые PNG и требует подтверждения текущей ревизии meta.json.
-      Удаление состояния возможно только после сохранения его резервной копии.
+      При повреждённых метаданных сохраняется просмотр PNG целиком.
+      Добавление, замена и переименование PNG защищены проверкой ревизий;
+      исходные версии при замене и переименовании архивируются.
+      Переименование не обновляет упоминания имени состояния в других ресурсах.
       Восстановление из архива не перезаписывает существующие PNG.
     </p>
   </section>;

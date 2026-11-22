@@ -4,7 +4,7 @@ import {
   AlertCircle, AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight,
   FileCode2, FileText, FolderOpen, Image as ImageIcon, Search, X, RotateCcw, Save, FilePlus2, Settings2,
 } from 'lucide-react';
-import { studio, type DraftList, type DraftSnapshot, type CreatedPrototype, type CreatedFluent, type CreatedRsi, type DeletedRsiState, type ImportedRsiState, type RestoredRsiState, type PrototypeDeclaration, type PrototypeFieldLocator, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage } from './lib/api';
+import { studio, type DraftList, type DraftSnapshot, type CreatedPrototype, type CreatedFluent, type CreatedRsi, type DeletedRsiState, type ImportedRsiState, RenamedRsiState, type RestoredRsiState, type PrototypeDeclaration, type PrototypeFieldLocator, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage } from './lib/api';
 import { normalizeStudioError, type StudioError } from './lib/errors';
 import { closeTab, openTab, nextTabPath, type TabState } from './lib/tabs';
 import { dirtyDocumentPaths, reconcileSavedDraft } from './lib/draft-state';
@@ -899,6 +899,16 @@ export default function App() {
     setNotice(result.warning ? baseNotice + '. ' + result.warning : baseNotice);
   }
 
+  function onRsiRenamed(path: string, result: RenamedRsiState) {
+    onRsiImported(path, result, 'import');
+    setNotice(
+      'Состояние RSI «' + result.old_name + '» переименовано в «' + result.name
+      + '». Резервная копия: ' + result.archive_path
+      + (result.warning ? '. Внимание: ' + result.warning : '')
+      + '. Проверьте ссылки на старое имя в других ресурсах.',
+    );
+  }
+
   function onRsiDeleted(path: string, result: DeletedRsiState) {
     onRsiImported(path, result, 'timing');
     setNotice(
@@ -1204,6 +1214,7 @@ export default function App() {
                 onCreditsUpdated={(result) => onRsiImported(selected.path, result, 'credits')}
                 onDeleted={(result) => onRsiDeleted(selected.path, result)}
                 onRestored={(result) => onRsiRestored(selected.path, result)}/>
+            onRenamed={(result) => onRsiRenamed(selected.path, result)}
               : document ? <MonacoPreview settings={editorSettings} key={document.path} resource={selected} document={document}
               value={activeText} editable={isEditableText(selected.kind) && !saving && !refreshing}
               onChange={isEditableText(selected.kind) ? (value) => {

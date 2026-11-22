@@ -181,7 +181,7 @@ pub(crate) fn read_png(path: &Path) -> Result<Vec<u8>, StudioError> {
     Ok(png)
 }
 
-fn write_backup_file(path: &Path, bytes: &[u8]) -> Result<(), StudioError> {
+pub(crate) fn write_backup_file(path: &Path, bytes: &[u8]) -> Result<(), StudioError> {
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -206,7 +206,7 @@ fn write_backup_file(path: &Path, bytes: &[u8]) -> Result<(), StudioError> {
         })
 }
 
-fn archive_dir(folder: &Path, name: &str) -> Result<std::path::PathBuf, StudioError> {
+pub(crate) fn archive_dir(folder: &Path, name: &str) -> Result<std::path::PathBuf, StudioError> {
     let archive_root = folder.join(ARCHIVE_DIRECTORY);
     match fs::create_dir(&archive_root) {
         Ok(()) => {}
@@ -260,11 +260,11 @@ fn archive_dir(folder: &Path, name: &str) -> Result<std::path::PathBuf, StudioEr
 }
 
 #[cfg(unix)]
-fn sync_directory(path: &Path) -> std::io::Result<()> {
+pub(crate) fn sync_directory(path: &Path) -> std::io::Result<()> {
     fs::File::open(path)?.sync_all()
 }
 #[cfg(not(unix))]
-fn sync_directory(_path: &Path) -> std::io::Result<()> {
+pub(crate) fn sync_directory(_path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 

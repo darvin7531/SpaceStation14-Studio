@@ -318,6 +318,23 @@ export interface RestoredRsiState {
   warning: string | null;
 }
 
+export interface RsiRenameRequest {
+  path: string;
+  expected_revision: string;
+  expected_png_revision: string;
+  old_name: string;
+  new_name: string;
+}
+
+export interface RenamedRsiState {
+  name: string;
+  old_name: string;
+  content: string;
+  revision: string;
+  archive_path: string;
+  warning: string | null;
+}
+
 export interface RsiDeleteRequest {
   path: string;
   expected_revision: string;
@@ -580,6 +597,9 @@ export const studio = {
   },
   updateRsiTiming(request: RsiTimingUpdate): Promise<ImportedRsiState> {
     return invoke('update_rsi_timing', { request });
+  },
+  renameRsiState(request: RsiRenameRequest): Promise<RenamedRsiState> {
+    return invoke('rename_rsi_state', { request });
   },
   deleteRsiState(request: RsiDeleteRequest): Promise<DeletedRsiState> {
     return invoke('delete_rsi_state', { request });

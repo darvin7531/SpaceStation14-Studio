@@ -23,6 +23,7 @@ use crate::rsi_delete::{self, DeletedRsiState, RsiDeleteRequest};
 use crate::rsi_import::{self, ImportedRsiState, RsiStateImport};
 use crate::rsi_preview::{self, RsiSheetImage, RsiSheetList};
 use crate::rsi_replace;
+use crate::rsi_rename::{self, RenamedRsiState, RsiRenameRequest};
 use crate::rsi_restore::{self, RestoredRsiState, RsiArchiveList, RsiRestoreRequest};
 use crate::rsi_timing::{self, RsiTimingUpdate};
 
@@ -942,6 +943,15 @@ impl ProjectIndex {
         self.verify_indexed_rsi(&request.path)?;
         let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;
         rsi_replace::replace(&self.root, request)
+    }
+
+    pub fn rename_rsi_state(
+        &self,
+        request: &RsiRenameRequest,
+    ) -> Result<RenamedRsiState, StudioError> {
+        self.verify_indexed_rsi(&request.path)?;
+        let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;
+        rsi_rename::rename(&self.root, request)
     }
 
     pub fn update_rsi_credits(
