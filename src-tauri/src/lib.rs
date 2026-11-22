@@ -13,6 +13,7 @@ mod prototype_fields;
 mod prototype_graph;
 mod prototype_localization;
 mod prototype_parents;
+mod prototype_sources;
 mod prototypes;
 mod resource_browser;
 mod resource_drift;
@@ -47,6 +48,7 @@ use prototype_fields::{FieldInspection, FieldLocator, FieldPatch, PrototypeField
 use prototype_graph::PrototypeRelations;
 use prototype_localization::EntityLocalizationSource;
 use prototype_parents::ParentInspection;
+use prototype_sources::PrototypeSourceReport;
 use prototypes::{DiagnosticPage, PrototypePage, SourceOutline};
 use resource_browser::ResourceBrowserPage;
 use resource_drift::{OpenRevision, ResourceDriftReport};
@@ -470,6 +472,20 @@ async fn list_prototype_diagnostics(
 }
 
 /// Source relationships are informational and do not perform YAML inheritance.
+/// Inspect explicit field and component declarations through the ancestry
+/// graph. This does not apply YAML inheritance or partial merging.
+#[tauri::command]
+async fn prototype_sources(
+    kind: String,
+    id: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<PrototypeSourceReport, StudioError> {
+    let project = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || project.prototype_sources(&kind, &id))
+        .await
+        .map_err(interrupted)?
+}
+
 #[tauri::command]
 async fn prototype_relations(
     kind: String,
@@ -1031,6 +1047,7 @@ pub fn run() -> Result<(), tauri::Error> {
             inspect_component_schemas,
             search_prototypes,
             prototype_relations,
+            prototype_sources,
             list_prototype_diagnostics,
             read_resource,
             list_rsi_sheets,
