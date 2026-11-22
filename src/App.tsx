@@ -22,6 +22,7 @@ import CreateRsiWizard from './components/CreateRsiWizard';
 import PrototypeExplorer from './components/PrototypeExplorer';
 import PrototypeFieldsPanel from './components/PrototypeFieldsPanel';
 import PrototypeParentsPanel from './components/PrototypeParentsPanel';
+import PrototypeOutlinePanel from './components/PrototypeOutlinePanel';
 import PrototypeLocalizationPanel from './components/PrototypeLocalizationPanel';
 import PrototypeComponentsPanel from './components/PrototypeComponentsPanel';
 import RecoveryPanel from './components/RecoveryPanel';
@@ -120,6 +121,8 @@ export default function App() {
   const [showingUiSources, setShowingUiSources] = useState(false);
   const [fieldTarget, setFieldTarget] = useState<PrototypeFieldLocator | null>(null);
   const [prototypePanel, setPrototypePanel] = useState<'fields' | 'components' | 'localization' | 'parents'>('fields');
+  const [showYamlOutline, setShowYamlOutline] = useState(false);
+  const [rsiRequested, setRsiRequested] = useState<{ path: string; state: string | null } | null>(null);
   const [picking, setPicking] = useState(false);
   const [explorerMode, setExplorerMode] = useState<'files' | 'prototypes'>('files');
   const [workspaceRevision, setWorkspaceRevision] = useState(0);
@@ -1405,6 +1408,12 @@ export default function App() {
           <div className="editor-heading">
             <div><ResourceIcon kind={selected.kind}/><span>{selected.path}</span></div>
             <div className="editor-tools">
+              {selected.kind === 'yaml' && <button type="button"
+                aria-pressed={showYamlOutline}
+                disabled={reading || refreshing}
+                onClick={() => setShowYamlOutline((value) => !value)}>
+                <FileCode2 size={14}/>{showYamlOutline ? 'Скрыть инспектор' : 'Инспектор'}
+              </button>}
               <button type="button" onClick={reloadCurrent} disabled={reading || saving || refreshing} title={t('app.reloadHint')}>
                 <RotateCcw size={14}/> {t('app.reload')}
               </button>
@@ -1424,6 +1433,17 @@ export default function App() {
               </span>
             </div>
           </div>
+          {showYamlOutline && selected.kind === 'yaml' && document?.path === selected.path && !reading
+            && <PrototypeOutlinePanel key={selected.path} path={selected.path} source={activeText}
+              busy={saving || refreshing || transitioning}
+              onJump={(line) => setJumpTarget({
+                path: selected.path, line, token: ++jumpCounter.current,
+              })}
+              onEdit={editPrototypeFields}
+              onOpenRsi={(path, state) => {
+                setRsiRequested({ path, state });
+                openResource({ path, kind: 'rsi' });
+              }}/>}
           {selected.kind === 'yaml' && document?.path === selected.path && !reading
             && <YamlDiagnosticsPanel key={selected.path} path={selected.path} source={activeText}
               enabled={editorSettings.liveValidation} delayMs={editorSettings.validationDelay}
@@ -1469,6 +1489,7 @@ export default function App() {
           {reading ? <div className="placeholder">Чтение ресурса…</div> :
             document && selected.kind === 'rsi'
               ? <RsiPreview key={document.path + ':' + document.revision + ':' + workspaceRevision}
+                initialState={rsiRequested?.path === selected.path ? rsiRequested.state : null}
                 path={selected.path} metadata={document.content} revision={document.revision}
                 onImported={(result) => onRsiImported(selected.path, result)}
                 onTimingUpdated={(result) => onRsiImported(selected.path, result, 'timing')}
