@@ -59,7 +59,8 @@ export function buildEntityLocalePatch(
   const alreadyPresent = unique.filter((field) => present.has(field));
   const added = unique.filter((field) => !present.has(field));
   if (added.length === 0) return { content: original, added, alreadyPresent, changed: false };
-  const patch = added.map((field) => {
+  // Fluent requires the message value before indented attributes, regardless of checkbox order.
+  const patch = (['name', 'description', 'suffix'] as const).filter((field) => added.includes(field)).map((field) => {
     const value = safeValue(values[field]);
     return field === 'name' ? key + ' = ' + value
       : '    .' + (field === 'description' ? 'desc' : 'suffix') + ' = ' + value;
