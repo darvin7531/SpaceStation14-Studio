@@ -192,3 +192,26 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .prototype-outline-footnote { display: block; margin-top: 7px; }
 .prototype-outline-issue, .prototype-outline-warning, .prototype-outline-error { display: flex; width: 100%; gap: 6px; align-items: start; text-align: left; padding: 6px; margin: 5px 0; border: 1px solid #79613c; border-radius: 5px; background: #30281c; color: #f4d7a9; font-size: 11px; }
 .prototype-outline-error { border-color: #835159; background: #30202a; color: #ffbdc9; }
+
+
+/* Source-level Sprite preview. Keep the Monaco workspace visible. */
+.sprite-layer-inspector { border: 1px solid #36536c; border-radius: 6px; background: #102031; padding: 10px; margin: 10px 0; min-width: 0; }
+.sprite-layer-title { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; font-size: 12px; }
+.sprite-layer-title strong { display: inline-flex; gap: 6px; align-items: center; color: #e1f1ff; }
+.sprite-layer-title small { color: #98b3cd; }
+.sprite-layer-options { display: flex; gap: 5px; flex-wrap: wrap; max-height: 100px; overflow-y: auto; margin: 7px 0; }
+.sprite-layer-options button { border: 1px solid #385371; background: #1a344c; color: #bbd6f0; border-radius: 5px; padding: 5px 8px; font-size: 11px; }
+.sprite-layer-options button.selected { border-color: #7eb5e6; background: #305778; color: white; }
+.sprite-layer-detail { display: grid; gap: 8px; padding: 9px; background: #0b1624; border: 1px solid #30475f; border-radius: 6px; min-width: 0; }
+.sprite-layer-summary { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.sprite-layer-summary > div { flex: 1; min-width: 0; }
+.sprite-layer-summary strong, .sprite-layer-summary small { display: block; overflow-wrap: anywhere; }
+.sprite-layer-summary strong { font-size: 12px; color: #e0efff; }
+.sprite-layer-summary small { font-size: 10px; color: #9fb8cf; margin-top: 3px; }
+.sprite-layer-summary button { display: flex; align-items: center; gap: 5px; padding: 5px 8px; border: 1px solid #456b87; border-radius: 5px; background: #214664; color: #d9efff; font-size: 11px; }
+.sprite-layer-hint { color: #a0b9d2; line-height: 1.45; font-size: 11px; margin: 5px 0; }
+.sprite-layer-error { display: flex; align-items: start; gap: 7px; color: #ffbbbd; background: #2d1e29; border: 1px solid #80515a; border-radius: 5px; padding: 7px; font-size: 11px; }
+.sprite-layer-detail .rsi-player { gap: 7px; min-width: 0; }
+.sprite-layer-detail .rsi-player-controls { padding: 7px; }
+.sprite-layer-detail .rsi-player-canvas { max-height: 225px; overflow: auto; border: 1px solid #294762; border-radius: 6px; background-color: #192d40; background-image: linear-gradient(45deg,#263c50 25%,transparent 25%),linear-gradient(-45deg,#263c50 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#263c50 75%),linear-gradient(-45deg,transparent 75%,#263c50 75%); background-size: 16px 16px; background-position: 0 0,0 8px,8px -8px,-8px 0; }
+.prototype-outline { max-height: min(72vh, 670px); }
