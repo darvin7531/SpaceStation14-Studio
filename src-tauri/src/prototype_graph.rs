@@ -482,6 +482,7 @@ mod tests {
         PrototypeDeclaration {
             kind: kind.into(),
             id: id.into(),
+            search_name: None,
             parents: parents.iter().map(|value| (*value).to_owned()).collect(),
             abstract_prototype: false,
             file: format!("Resources/Prototypes/{id}.yml"),

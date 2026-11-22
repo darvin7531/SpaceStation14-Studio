@@ -240,6 +240,7 @@ mod tests {
         let mut declaration = PrototypeDeclaration {
             kind: "entity".into(),
             id: "Other".into(),
+            search_name: None,
             parents: Vec::new(),
             abstract_prototype: false,
             file: "Resources/Prototypes/test.yml".into(),

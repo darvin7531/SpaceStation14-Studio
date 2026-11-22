@@ -7,6 +7,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 
 use serde::Serialize;
 use yaml_rust2::parser::{Event, MarkedEventReceiver, Parser, Tag};
@@ -27,6 +28,9 @@ const MAX_PAGE: usize = 200;
 pub struct PrototypeDeclaration {
     pub kind: String,
     pub id: String,
+    /// Lowercased declared scalar name, shared by generated variants.
+    #[serde(skip)]
+    pub(crate) search_name: Option<Arc<str>>,
     pub parents: Vec<String>,
     pub abstract_prototype: bool,
     pub file: String,
@@ -518,7 +522,12 @@ impl PrototypeCatalog {
         let page_limit = limit.clamp(1, MAX_PAGE);
         for (index, declaration) in self.declarations.iter().enumerate() {
             if kind.is_some_and(|value| !declaration.kind.eq_ignore_ascii_case(value))
-                || (!query.is_empty() && !self.search_keys[index].contains(&query))
+                || (!query.is_empty()
+                    && !self.search_keys[index].contains(&query)
+                    && !declaration
+                        .search_name
+                        .as_deref()
+                        .is_some_and(|name| name.contains(&query)))
             {
                 continue;
             }
@@ -926,6 +935,7 @@ fn partial_order_for(path: &str, scopes: &[PartialScope]) -> Option<usize> {
 struct Draft {
     kind: Option<String>,
     id: Option<String>,
+    name: Option<String>,
     parents: Vec<String>,
     abstract_prototype: bool,
     type_tag: Option<String>,
@@ -1075,6 +1085,7 @@ impl DeclarationCollector {
             vec![(id, None)]
         };
 
+        let search_name: Option<Arc<str>> = draft.name.map(|name| Arc::from(name.to_lowercase()));
         for (id, variant_index) in identifiers {
             if id.trim().is_empty() {
                 self.note(
@@ -1087,6 +1098,7 @@ impl DeclarationCollector {
             self.declarations.push(PrototypeDeclaration {
                 kind: kind.clone(),
                 id,
+                search_name: search_name.clone(),
                 parents: draft.parents.clone(),
                 abstract_prototype: draft.abstract_prototype,
                 file: self.file.clone(),
@@ -1149,6 +1161,9 @@ impl MarkedEventReceiver for DeclarationCollector {
                     Some(Frame::Prototype(draft)) => {
                         let key = draft.pending_key.take();
                         draft.expected_key = true;
+                        if key.as_deref() == Some("name") {
+                            draft.name = None;
+                        }
                         if key.as_deref() == Some("parent") {
                             Frame::ParentSequence
                         } else {
@@ -1194,6 +1209,7 @@ impl MarkedEventReceiver for DeclarationCollector {
                     self.frames.push(Frame::Prototype(Box::new(Draft {
                         kind: None,
                         id: None,
+                        name: None,
                         parents: Vec::new(),
                         abstract_prototype: false,
                         type_tag: None,
@@ -1224,6 +1240,9 @@ impl MarkedEventReceiver for DeclarationCollector {
                     } else if let Some(Frame::Prototype(draft)) = self.frames.last_mut() {
                         let key = draft.pending_key.take();
                         draft.expected_key = true;
+                        if key.as_deref() == Some("name") {
+                            draft.name = None;
+                        }
                         if key.as_deref() == Some("id") {
                             draft.id_is_mapping = true;
                             draft.id_tag = tag.as_ref().map(tag_name);
@@ -1291,6 +1310,9 @@ impl MarkedEventReceiver for DeclarationCollector {
                                 draft.id = Some(value);
                                 draft.id_tag = tag.as_ref().map(tag_name);
                             }
+                            Some("name") => {
+                                draft.name = tag.is_none().then_some(value);
+                            }
                             Some("parent") => {
                                 draft.parents.push(value);
                                 draft.parent_tag = tag.as_ref().map(tag_name);
@@ -1329,7 +1351,11 @@ impl MarkedEventReceiver for DeclarationCollector {
                 } else {
                     let mut parent_alias = false;
                     if let Some(Frame::Prototype(draft)) = self.frames.last_mut() {
-                        if !draft.expected_key && draft.pending_key.as_deref() == Some("id") {
+                        if !draft.expected_key && draft.pending_key.as_deref() == Some("name") {
+                            draft.name = None;
+                            draft.pending_key = None;
+                            draft.expected_key = true;
+                        } else if !draft.expected_key && draft.pending_key.as_deref() == Some("id") {
                             draft.id_alias = true;
                         } else if !draft.expected_key
                             && draft.pending_key.as_deref() == Some("parent")
@@ -1793,6 +1819,44 @@ mod tests {
             .iter()
             .any(|item| item.code == "MULTIPLE_BASE_DECLARATIONS"));
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn catalog_searches_declared_names_without_nested_or_inherited_matches() {
+        let root = std::env::temp_dir().join(format!(
+            "ss14-prototype-name-search-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let directory = root.join("Resources/Prototypes");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(
+            directory.join("names.yml"),
+            "- type: entity\n  id: Parent\n  name: Bright Wrench\n- type: entity\n  id: Child\n  parent: Parent\n  components:\n  - type: Sprite\n    name: NestedOnly\n- type: entity\n  id: !type:CreateVariants\n    values: [VariantA, VariantB]\n  name: Bright Wrench\n- type: other\n  id: Other\n  name: Bright Wrench\n",
+        )
+        .unwrap();
+        let workspace = crate::project::ProjectIndex::open(root.to_str().unwrap()).unwrap();
+        let catalog = workspace.prototypes().unwrap();
+        let page = catalog.search("  BRIGHT wrench  ", Some("ENTITY"), 1, 1);
+        assert_eq!(page.total, 3);
+        assert_eq!(page.items.len(), 1);
+        assert_eq!(page.items[0].id, "VariantA");
+        assert_eq!(catalog.search("bright", None, 0, 500).total, 4);
+        assert_eq!(catalog.search("nestedonly", None, 0, 10).total, 0);
+        assert!(catalog
+            .search("bright", Some("entity"), usize::MAX, 10)
+            .items
+            .is_empty());
+        let variants: Vec<_> = catalog
+            .declarations
+            .iter()
+            .filter(|item| item.id.starts_with("Variant"))
+            .collect();
+        assert!(Arc::ptr_eq(
+            variants[0].search_name.as_ref().unwrap(),
+            variants[1].search_name.as_ref().unwrap()
+        ));
         let _ = fs::remove_dir_all(root);
     }
 }
