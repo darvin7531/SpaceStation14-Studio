@@ -66,7 +66,6 @@ impl ChangeBatch {
     }
 }
 
-
 fn relevant(kind: &EventKind) -> bool {
     matches!(
         kind,
@@ -95,7 +94,9 @@ impl ProjectWatcher {
                 if event.as_ref().is_ok_and(|item| !relevant(&item.kind)) {
                     return;
                 }
-                let Ok(mut changes) = batch.lock() else { return };
+                let Ok(mut changes) = batch.lock() else {
+                    return;
+                };
                 changes.merge(&watcher_root, event);
                 // Keep every path from a burst. A throttle that discards later
                 // events silently misses new and deleted files.
@@ -106,7 +107,9 @@ impl ProjectWatcher {
                     let root = project_root.clone();
                     thread::spawn(move || {
                         thread::sleep(Duration::from_millis(350));
-                        let Ok(mut pending) = pending.lock() else { return };
+                        let Ok(mut pending) = pending.lock() else {
+                            return;
+                        };
                         let collected = std::mem::take(&mut *pending);
                         // Clear the scheduling flag while holding the same lock:
                         // any event after this point schedules another flush.
@@ -221,7 +224,10 @@ mod tests {
         use notify::event::CreateKind;
         let root = Path::new("/tmp/studio-project");
         let mut batch = ChangeBatch::default();
-        batch.merge(root, Ok(notify::Event::new(EventKind::Create(CreateKind::Any))));
+        batch.merge(
+            root,
+            Ok(notify::Event::new(EventKind::Create(CreateKind::Any))),
+        );
         assert!(batch.full);
         let mut outside = ChangeBatch::default();
         outside.merge(
@@ -231,5 +237,4 @@ mod tests {
         );
         assert!(outside.full);
     }
-
 }
