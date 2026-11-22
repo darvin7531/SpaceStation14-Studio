@@ -115,7 +115,9 @@ pub fn preview(draft: &FluentDraft) -> Result<FluentPreview, StudioError> {
             continue;
         };
         if value.len() > MAX_VALUE_BYTES
-            || value.chars().any(|c| c.is_control() || matches!(c, '{' | '}'))
+            || value
+                .chars()
+                .any(|c| c.is_control() || matches!(c, '{' | '}'))
         {
             return Err(problem(
                 "FTL_VALUE_INVALID",
@@ -347,11 +349,18 @@ mod tests {
             starter_suffix: Some("Special".into()),
             ..fx.draft()
         };
-        let expected = "ent-Example = Example name\n    .desc = Entity description\n    .suffix = Special\n";
+        let expected =
+            "ent-Example = Example name\n    .desc = Entity description\n    .suffix = Special\n";
         assert_eq!(preview(&draft).unwrap().content, expected);
         create(&fx.root, &draft).unwrap();
-        assert_eq!(fs::read_to_string(fx.root.join(&draft.file)).unwrap(), expected);
-        assert_eq!(create(&fx.root, &draft).unwrap_err().code, "FTL_FILE_EXISTS");
+        assert_eq!(
+            fs::read_to_string(fx.root.join(&draft.file)).unwrap(),
+            expected
+        );
+        assert_eq!(
+            create(&fx.root, &draft).unwrap_err().code,
+            "FTL_FILE_EXISTS"
+        );
     }
 
     #[test]
