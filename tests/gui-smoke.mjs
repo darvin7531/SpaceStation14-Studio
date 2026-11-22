@@ -51,6 +51,7 @@ async function edit(value, token) {
   await script("document.querySelector('.monaco-shell textarea.inputarea').focus();");
   await keys(editor, '\uE009a\uE000'); // Ctrl+A, then release modifiers
   await keys(editor, value);
+  await keys(editor, '\uE017\uE017'); // Remove Monaco's auto-inserted closing brackets.
   await until('edited draft', () => script(`return document.querySelector('.monaco-shell .view-lines')?.textContent?.includes(${JSON.stringify(token)});`));
   await until('enabled save', () => script("const button = document.querySelector('[data-testid=save-resource]'); return !!button && !button.disabled;"));
 }
