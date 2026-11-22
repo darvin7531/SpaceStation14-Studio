@@ -147,11 +147,9 @@ async fn refresh_project(
 ) -> Result<ProjectRefresh, StudioError> {
     let original = current_project(&state)?;
     let source = original.clone();
-    let (rebuilt, summary) = tauri::async_runtime::spawn_blocking(move || {
-        match changed_paths {
-            Some(paths) => source.refresh_paths(&paths),
-            None => source.refresh(),
-        }
+    let (rebuilt, summary) = tauri::async_runtime::spawn_blocking(move || match changed_paths {
+        Some(paths) => source.refresh_paths(&paths),
+        None => source.refresh(),
     })
     .await
     .map_err(interrupted)??;
