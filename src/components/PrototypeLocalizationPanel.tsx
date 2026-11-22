@@ -158,6 +158,8 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, requ
                         file: target.path,
                         starter_key: entity.localization_id,
                         starter_value: entity.name,
+                        starter_description: entity.description,
+                        starter_suffix: entity.suffix,
                       })}>Создать FTL {target.locale}</button>}
                   </span>)}
             </div>)}

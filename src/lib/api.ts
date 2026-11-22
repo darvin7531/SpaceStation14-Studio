@@ -584,6 +584,8 @@ export interface NewFluentDraft {
   file: string;
   starter_key: string;
   starter_value: string;
+  starter_description?: string;
+  starter_suffix?: string;
 }
 
 export interface NewFluentPreview {

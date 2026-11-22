@@ -16,6 +16,10 @@ pub struct FluentDraft {
     pub file: String,
     pub starter_key: String,
     pub starter_value: String,
+    #[serde(default)]
+    pub starter_description: Option<String>,
+    #[serde(default)]
+    pub starter_suffix: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -102,7 +106,25 @@ pub fn preview(draft: &FluentDraft) -> Result<FluentPreview, StudioError> {
             "Введите непустой однострочный текст до 8 КиБ без фигурных скобок и управляющих символов. Сложные Fluent-выражения добавьте позже в редакторе.",
         ));
     }
-    let content = format!("{key} = {}\n", draft.starter_value);
+    let mut content = format!("{key} = {}\n", draft.starter_value);
+    for (attribute, value) in [
+        ("desc", draft.starter_description.as_deref()),
+        ("suffix", draft.starter_suffix.as_deref()),
+    ] {
+        let Some(value) = value.filter(|value| !value.trim().is_empty()) else {
+            continue;
+        };
+        if value.len() > MAX_VALUE_BYTES
+            || value.chars().any(|c| c.is_control() || matches!(c, '{' | '}'))
+        {
+            return Err(problem(
+                "FTL_VALUE_INVALID",
+                "Дополнительное значение Fluent слишком длинное или содержит неподдерживаемый синтаксис.",
+                "Для .desc и .suffix используйте однострочный текст без фигурных скобок.",
+            ));
+        }
+        content.push_str(&format!("    .{attribute} = {value}\n"));
+    }
     Ok(FluentPreview {
         file: draft.file.clone(),
         content,
@@ -286,6 +308,8 @@ mod tests {
                 file: "Resources/Locale/en-US/new.ftl".into(),
                 starter_key: "item-example".into(),
                 starter_value: "Example item".into(),
+                starter_description: None,
+                starter_suffix: None,
             }
         }
     }
@@ -311,6 +335,36 @@ mod tests {
             fs::read_to_string(fx.root.join(&draft.file)).unwrap(),
             "item-example = Example item\n"
         );
+    }
+
+    #[test]
+    fn restores_electron_entity_quickfix_with_full_fluent_block() {
+        let fx = Fixture::new();
+        let draft = FluentDraft {
+            starter_key: "ent-Example".into(),
+            starter_value: "Example name".into(),
+            starter_description: Some("Entity description".into()),
+            starter_suffix: Some("Special".into()),
+            ..fx.draft()
+        };
+        let expected = "ent-Example = Example name\n    .desc = Entity description\n    .suffix = Special\n";
+        assert_eq!(preview(&draft).unwrap().content, expected);
+        create(&fx.root, &draft).unwrap();
+        assert_eq!(fs::read_to_string(fx.root.join(&draft.file)).unwrap(), expected);
+        assert_eq!(create(&fx.root, &draft).unwrap_err().code, "FTL_FILE_EXISTS");
+    }
+
+    #[test]
+    fn rejects_unsafe_optional_entity_attributes_before_any_write() {
+        let fx = Fixture::new();
+        for unsafe_value in ["bad\nnew-key = injected", "{ variable }", "bad\rvalue"] {
+            let draft = FluentDraft {
+                starter_description: Some(unsafe_value.into()),
+                ..fx.draft()
+            };
+            assert_eq!(preview(&draft).unwrap_err().code, "FTL_VALUE_INVALID");
+            assert!(!fx.root.join(&draft.file).exists());
+        }
     }
 
     #[test]

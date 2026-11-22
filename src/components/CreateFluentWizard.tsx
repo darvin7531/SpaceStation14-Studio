@@ -91,6 +91,16 @@ export default function CreateFluentWizard({ onClose, onCreated, preferredFile, 
             placeholder="Example"
             onChange={(event) => change('starter_value', event.target.value)}/>
         </label>
+        {preferredDraft && <div className="fluent-create-entity-fields">
+          <label>Описание entity (.desc)
+            <input value={draft.starter_description ?? ''} spellCheck={false}
+              onChange={(event) => change('starter_description', event.target.value)}/>
+          </label>
+          <label>Суффикс entity (.suffix)
+            <input value={draft.starter_suffix ?? ''} spellCheck={false}
+              onChange={(event) => change('starter_suffix', event.target.value)}/>
+          </label>
+        </div>}
         <div className="fluent-create-preview">
           <strong>Содержимое нового файла</strong>
           {checking ? <p>Проверяю…</p> : validationError
