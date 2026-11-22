@@ -4,7 +4,7 @@
 use std::sync::Mutex;
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Url};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 use crate::error::{internal_lock, StudioError};
@@ -59,9 +59,17 @@ pub async fn check(app: AppHandle, pending: &PendingUpdate) -> Result<UpdateStat
         });
     }
 
+    let endpoint = Url::parse(MANIFEST_URL).map_err(|reason| {
+        issue(
+            "UPDATE_CONFIG_FAILED",
+            "Некорректный URL Tauri-манифеста.",
+            "Исправьте адрес файла обновлений в релизной конфигурации.",
+        )
+        .with_details(reason.to_string())
+    })?;
     let update = app
         .updater_builder()
-        .endpoints(vec![MANIFEST_URL.into()])
+        .endpoints(vec![endpoint])
         .map_err(|reason| {
             issue(
                 "UPDATE_CONFIG_FAILED",
@@ -164,10 +172,13 @@ pub async fn install(app: AppHandle, pending: &PendingUpdate) -> Result<(), Stud
             .with_details(reason.to_string())
         })?;
     #[cfg(not(target_os = "windows"))]
-    app.restart();
+    {
+        app.restart()
+    }
     #[cfg(target_os = "windows")]
-    let _ = app;
-    Ok(())
+    {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
