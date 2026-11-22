@@ -101,9 +101,14 @@ pub fn preview(draft: &FluentDraft) -> Result<FluentPreview, StudioError> {
             "Разрешены латинские буквы, цифры, дефис и подчёркивание, максимум 128 символов.",
         ));
     }
-    if (draft.starter_value.trim().is_empty() && (!draft.allow_empty_value
-        || ![draft.starter_description.as_deref(), draft.starter_suffix.as_deref()]
-            .iter().any(|value| value.is_some_and(|value| !value.trim().is_empty()))))
+    if (draft.starter_value.trim().is_empty()
+        && (!draft.allow_empty_value
+            || ![
+                draft.starter_description.as_deref(),
+                draft.starter_suffix.as_deref(),
+            ]
+            .iter()
+            .any(|value| value.is_some_and(|value| !value.trim().is_empty()))))
         || draft.starter_value.len() > MAX_VALUE_BYTES
         || draft
             .starter_value
@@ -194,11 +199,14 @@ pub fn create(root: &Path, draft: &FluentDraft) -> Result<CreatedFluent, StudioE
             match fs::create_dir(&cursor) {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-                Err(error) => return Err(problem(
-                    "FTL_FOLDER_MISSING",
-                    "Не удалось создать папку назначения.",
-                    "Проверьте права записи и структуру каталогов.",
-                ).with_details(error.to_string())),
+                Err(error) => {
+                    return Err(problem(
+                        "FTL_FOLDER_MISSING",
+                        "Не удалось создать папку назначения.",
+                        "Проверьте права записи и структуру каталогов.",
+                    )
+                    .with_details(error.to_string()))
+                }
             }
         }
         let meta = fs::symlink_metadata(&cursor).map_err(|error| {
@@ -498,10 +506,19 @@ mod tests {
             allow_empty_value: true,
             ..fx.draft()
         };
-        assert_eq!(preview(&draft).unwrap().content, "item-example =\n    .desc = Description\n");
+        assert_eq!(
+            preview(&draft).unwrap().content,
+            "item-example =\n    .desc = Description\n"
+        );
         create(&fx.root, &draft).unwrap();
-        assert_eq!(create(&fx.root, &draft).unwrap_err().code, "FTL_FILE_EXISTS");
-        let empty = FluentDraft { starter_description: None, ..draft };
+        assert_eq!(
+            create(&fx.root, &draft).unwrap_err().code,
+            "FTL_FILE_EXISTS"
+        );
+        let empty = FluentDraft {
+            starter_description: None,
+            ..draft
+        };
         assert_eq!(preview(&empty).unwrap_err().code, "FTL_VALUE_INVALID");
     }
 
@@ -603,9 +620,19 @@ mod tests {
         let fx = Fixture::new();
         let first = fx.draft();
         create(&fx.root, &first).unwrap();
-        let second = FluentDraft { starter_value: "{invalid}".into(), file: "Resources/Locale/en-US/other.ftl".into(), ..fx.draft() };
-        assert_eq!(create(&fx.root, &second).unwrap_err().code, "FTL_VALUE_INVALID");
-        assert_eq!(fs::read_to_string(fx.root.join(&first.file)).unwrap(), "item-example = Example item\n");
+        let second = FluentDraft {
+            starter_value: "{invalid}".into(),
+            file: "Resources/Locale/en-US/other.ftl".into(),
+            ..fx.draft()
+        };
+        assert_eq!(
+            create(&fx.root, &second).unwrap_err().code,
+            "FTL_VALUE_INVALID"
+        );
+        assert_eq!(
+            fs::read_to_string(fx.root.join(&first.file)).unwrap(),
+            "item-example = Example item\n"
+        );
         assert!(!fx.root.join(&second.file).exists());
     }
 
@@ -617,8 +644,14 @@ mod tests {
         let outside = fx.root.join("outside");
         fs::create_dir(&outside).unwrap();
         symlink(&outside, fx.root.join("Resources/Locale/link")).unwrap();
-        let draft = FluentDraft { file: "Resources/Locale/link/nested/new.ftl".into(), ..fx.draft() };
-        assert_eq!(create(&fx.root, &draft).unwrap_err().code, "FTL_FOLDER_INVALID");
+        let draft = FluentDraft {
+            file: "Resources/Locale/link/nested/new.ftl".into(),
+            ..fx.draft()
+        };
+        assert_eq!(
+            create(&fx.root, &draft).unwrap_err().code,
+            "FTL_FOLDER_INVALID"
+        );
         assert!(!outside.join("nested").exists());
     }
 
