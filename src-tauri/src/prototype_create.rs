@@ -19,6 +19,8 @@ pub struct PrototypeDraft {
     pub parent: String,
     pub name: String,
     pub description: String,
+    #[serde(default)]
+    pub suffix: String,
     pub abstract_prototype: bool,
     pub sprite: String,
     pub sprite_state: String,
@@ -95,6 +97,7 @@ pub fn preview(draft: &PrototypeDraft) -> Result<PrototypePreview, StudioError> 
     for text in [
         &draft.name,
         &draft.description,
+        &draft.suffix,
         &draft.sprite,
         &draft.sprite_state,
     ] {
@@ -150,6 +153,9 @@ pub fn preview(draft: &PrototypeDraft) -> Result<PrototypePreview, StudioError> 
             "  description: {}",
             yaml_string(&draft.description)?
         ));
+    }
+    if !draft.suffix.is_empty() {
+        lines.push(format!("  suffix: {}", yaml_string(&draft.suffix)?));
     }
     let has_components = !draft.sprite.is_empty()
         || draft.include_item
@@ -505,6 +511,7 @@ mod tests {
                 parent: "BaseItem".into(),
                 name: "Test".into(),
                 description: String::new(),
+                suffix: String::new(),
                 abstract_prototype: false,
                 sprite: String::new(),
                 sprite_state: String::new(),
@@ -563,6 +570,7 @@ mod tests {
         let mut draft = fixture.draft("Sample");
         draft.name = "hello: \"world\" # comment".into();
         draft.description = "line 1\nline 2: value".into();
+        draft.suffix = "New: [item]".into();
         let yaml = preview(&draft).unwrap().yaml;
         let documents = yaml_rust2::YamlLoader::load_from_str(&yaml).unwrap();
         assert_eq!(documents[0][0]["name"].as_str(), Some(draft.name.as_str()));
@@ -570,6 +578,7 @@ mod tests {
             documents[0][0]["description"].as_str(),
             Some(draft.description.as_str())
         );
+        assert_eq!(documents[0][0]["suffix"].as_str(), Some(draft.suffix.as_str()));
     }
 
     #[test]

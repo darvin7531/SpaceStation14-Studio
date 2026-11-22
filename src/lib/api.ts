@@ -614,6 +614,7 @@ export interface NewPrototypeDraft {
   parent: string;
   name: string;
   description: string;
+  suffix: string;
   abstract_prototype: boolean;
   sprite: string;
   sprite_state: string;

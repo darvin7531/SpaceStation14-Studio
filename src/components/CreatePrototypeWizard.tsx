@@ -33,6 +33,7 @@ const INITIAL: NewPrototypeDraft = {
   parent: '',
   name: '',
   description: '',
+  suffix: '',
   abstract_prototype: false,
   sprite: '',
   sprite_state: '',
@@ -254,6 +255,10 @@ export default function CreatePrototypeWizard({
             <label>Описание
               <textarea rows={3} value={draft.description}
                 onChange={(event) => update('description', event.target.value)}/>
+            </label>
+            <label>Суффикс
+              <input value={draft.suffix}
+                onChange={(event) => update('suffix', event.target.value)}/>
             </label>
           </fieldset>
 
