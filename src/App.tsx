@@ -1090,7 +1090,7 @@ export default function App() {
 
   /** Explicit localization write: never clobber an open FTL draft or stale file. */
   async function applyEntityLocalization(
-    file: string, baseline: ResourceDocument, content: string,
+    file: string, baseline: ResourceDocument, content: string, keepSource = false,
   ): Promise<boolean> {
     if (!overview || !file.startsWith('Resources/Locale/') || !file.endsWith('.ftl')
         || baseline.path !== file || saving || opening || refreshing || transitioning) {
@@ -1125,9 +1125,11 @@ export default function App() {
       setWorkspaceRevision((previous) => previous + 1);
       setNotice(['Fluent-ключи добавлены. Проверьте FTL в редакторе.',
         result.durability_warning].filter(Boolean).join(' '));
-      setFieldTarget(null);
-      setSaving(false);
-      openResource({ path: file, kind: 'ftl' });
+      if (!keepSource) {
+        setFieldTarget(null);
+        setSaving(false);
+        openResource({ path: file, kind: 'ftl' });
+      }
       return true;
     } finally {
       setSaving(false);
