@@ -2,7 +2,7 @@
 //! separate from RobustToolbox's resolved inherited/DataField semantics.
 //! Tag-aware event parsing prevents YamlLoader from silently dropping !Clear,
 //! !Remove, !Index and !CombineIndex on source operations.
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
 use yaml_rust2::parser::{MarkedEventReceiver, Parser, Tag};
@@ -1116,6 +1116,165 @@ pub fn preview_inheritance(
         fields,
         components,
         total_partials: result.partials_by_identity.values().sum(),
+        warnings: solver.warnings,
+    })
+}
+
+
+/// Compatibility with the existing Electron Inspector "Linked prototypes"
+/// section: strings inside a resolved source tree may refer to prototype IDs.
+/// This is a read-only navigation index, not a semantic PrototypeId checker.
+#[derive(Debug, Serialize)]
+pub struct LinkedPrototype {
+    pub kind: String,
+    pub id: String,
+    pub field: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LinkedPrototypeReport {
+    pub kind: String,
+    pub id: String,
+    pub items: Vec<LinkedPrototype>,
+    pub total: usize,
+    pub limited: bool,
+    pub source_complete: bool,
+    pub warnings: Vec<String>,
+}
+
+const MAX_LINKED_ROWS: usize = 24;
+const MAX_LINKED_VISITS: usize = 8192;
+
+struct LinkCollector {
+    visited: usize,
+    total: usize,
+    limited: bool,
+    seen: HashSet<(String, String)>,
+    items: Vec<LinkedPrototype>,
+}
+
+/// Mirror Electron's path notation (components[0].state) and deduplication
+/// by prototype identity. Avoid scanning arbitrary files; all target IDs
+/// come from the existing in-memory prototype catalog.
+fn collect_links(
+    node: &Node,
+    catalog: &PrototypeCatalog,
+    kind: &str,
+    path: &str,
+    collector: &mut LinkCollector,
+) {
+    if collector.visited >= MAX_LINKED_VISITS {
+        collector.limited = true;
+        return;
+    }
+    collector.visited += 1;
+    match &node.value {
+        Value::Seq(items) => {
+            for (index, item) in items.iter().enumerate() {
+                let next = if path.is_empty() {
+                    format!("[{index}]")
+                } else {
+                    format!("{path}[{index}]")
+                };
+                collect_links(item, catalog, kind, &next, collector);
+                if collector.limited { break; }
+            }
+        }
+        Value::Map(fields) => {
+            for (key, item) in fields {
+                if key.starts_with('_') { continue; }
+                let next = if path.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{path}.{key}")
+                };
+                collect_links(item, catalog, kind, &next, collector);
+                if collector.limited { break; }
+            }
+        }
+        Value::Scalar(text) => {
+            let candidate = text.trim();
+            if candidate.len() < 2
+                || candidate.contains('/')
+                || candidate.contains(".rsi")
+                || candidate.contains(' ')
+                || candidate.contains('{')
+                || candidate.contains('}')
+            {
+                return;
+            }
+            let Some(target) = catalog.linked_prototype(kind, candidate) else { return; };
+            let identity = (target.kind.clone(), target.id.clone());
+            if !collector.seen.insert(identity.clone()) { return; }
+            collector.total += 1;
+            if collector.items.len() < MAX_LINKED_ROWS {
+                collector.items.push(LinkedPrototype {
+                    kind: identity.0,
+                    id: identity.1,
+                    field: if path.is_empty() { "reference".into() } else { path.into() },
+                });
+            } else {
+                collector.limited = true;
+            }
+        }
+        Value::Alias => collector.limited = true,
+    }
+}
+
+pub fn linked_prototypes(
+    catalog: &PrototypeCatalog,
+    kind: &str,
+    id: &str,
+    read: impl FnMut(&str) -> Result<String, StudioError>,
+) -> Result<LinkedPrototypeReport, StudioError> {
+    if !catalog.has_identity(kind, id) {
+        return Err(StudioError::new(
+            "PROTOTYPE_NOT_INDEXED",
+            "Прототип не найден в каталоге проекта.",
+            "Обновите индекс и повторите просмотр связей.",
+        ));
+    }
+    let mut solver = InheritanceSolver {
+        catalog,
+        kind,
+        reader: read,
+        file_cache: HashMap::new(),
+        bytes: 0,
+        stack: Vec::new(),
+        calculated: HashMap::new(),
+        warnings: Vec::new(),
+    };
+    let snapshot = solver.resolve(id).map_err(|details| {
+        StudioError::new(
+            "PROTOTYPE_LINKS_SOURCE_UNAVAILABLE",
+            "Не удалось прочитать YAML прототипа для поиска ссылок.",
+            "Проверьте индекс и исходные YAML-файлы.",
+        ).with_details(details)
+    })?;
+    let mut collector = LinkCollector {
+        visited: 0,
+        total: 0,
+        limited: false,
+        seen: HashSet::new(),
+        items: Vec::new(),
+    };
+    collect_links(&snapshot.node, catalog, kind, "", &mut collector);
+    let index_complete = catalog.relations(kind, id)
+        .is_some_and(|value| value.index_complete);
+    let source_complete = snapshot.complete && index_complete && !collector.limited;
+    if !index_complete {
+        solver.warn("Часть YAML-файлов не вошла в индекс: некоторые ссылки могут отсутствовать.".into());
+    }
+    if collector.limited {
+        solver.warn("В Electron показывались первые 24 ссылки; просмотр ограничен 24 результатами и 8192 YAML-узлами.".into());
+    }
+    Ok(LinkedPrototypeReport {
+        kind: kind.into(),
+        id: id.into(),
+        items: collector.items,
+        total: collector.total,
+        limited: collector.limited,
+        source_complete,
         warnings: solver.warnings,
     })
 }
