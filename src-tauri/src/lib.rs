@@ -18,8 +18,8 @@ mod rsi_credits;
 mod rsi_delete;
 mod rsi_import;
 mod rsi_preview;
-mod rsi_restore;
 mod rsi_replace;
+mod rsi_restore;
 mod rsi_timing;
 
 use std::sync::{Arc, Mutex};
