@@ -544,8 +544,8 @@ export const studio = {
   probeOpenRevisions(opened: OpenRevision[]): Promise<ResourceDriftReport> {
     return invoke('probe_open_revisions', { opened });
   },
-  refreshProject(): Promise<ProjectRefresh> {
-    return invoke('refresh_project');
+  refreshProject(changedPaths?: string[]): Promise<ProjectRefresh> {
+    return invoke('refresh_project', { changedPaths });
   },
   searchResources(query: string, kind: ResourceKind, offset: number, limit = 100): Promise<ResourcePage> {
     return invoke('search_resources', { query, kind, offset, limit });
