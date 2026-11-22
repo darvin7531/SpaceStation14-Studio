@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 
 use serde::Serialize;
 use yaml_rust2::parser::{Event, MarkedEventReceiver, Parser, Tag};
@@ -170,6 +170,7 @@ impl PrototypeCatalog {
                 a.line,
                 a.document_index,
                 a.item_index,
+                a.variant_index,
             )
                 .cmp(&(
                     &b.kind,
@@ -178,6 +179,7 @@ impl PrototypeCatalog {
                     b.line,
                     b.document_index,
                     b.item_index,
+                    b.variant_index,
                 ))
         });
         for (index, item) in catalog.declarations.iter().enumerate() {
@@ -658,6 +660,7 @@ struct Draft {
     id_alias: bool,
     variant_ids: Vec<String>,
     variant_alias: bool,
+    variant_values_invalid: bool,
     parent_tag: Option<String>,
     expected_key: bool,
     pending_key: Option<String>,
@@ -756,7 +759,7 @@ impl DeclarationCollector {
         let identifiers: Vec<(String, Option<usize>)> = if draft.id_is_mapping
             && draft.id_tag.as_deref() == Some("type:CreateVariants")
         {
-            if draft.variant_alias || draft.variant_ids.is_empty() {
+            if draft.variant_alias || draft.variant_values_invalid || draft.variant_ids.is_empty() {
                 self.note(
                         "PROTOTYPE_VARIANTS_INVALID",
                         draft.line,
@@ -867,6 +870,7 @@ impl MarkedEventReceiver for DeclarationCollector {
                     self.frames.push(Frame::RootSequence);
                     return;
                 }
+                let mut invalid_variant_child = false;
                 let next = match self.frames.last_mut() {
                     Some(Frame::Prototype(draft)) => {
                         let key = draft.pending_key.take();
@@ -876,6 +880,10 @@ impl MarkedEventReceiver for DeclarationCollector {
                         } else {
                             Frame::OtherSequence
                         }
+                    }
+                    Some(Frame::VariantValuesSequence) => {
+                        invalid_variant_child = true;
+                        Frame::OtherSequence
                     }
                     Some(Frame::VariantMapping {
                         expected_key,
@@ -891,6 +899,16 @@ impl MarkedEventReceiver for DeclarationCollector {
                     }
                     _ => Frame::OtherSequence,
                 };
+                if invalid_variant_child {
+                    if let Some(Frame::Prototype(draft)) = self
+                        .frames
+                        .iter_mut()
+                        .rev()
+                        .find(|frame| matches!(frame, Frame::Prototype(_)))
+                    {
+                        draft.variant_values_invalid = true;
+                    }
+                }
                 self.frames.push(next);
             }
             Event::SequenceEnd => {
@@ -910,6 +928,7 @@ impl MarkedEventReceiver for DeclarationCollector {
                         id_alias: false,
                         variant_ids: Vec::new(),
                         variant_alias: false,
+                        variant_values_invalid: false,
                         parent_tag: None,
                         expected_key: true,
                         pending_key: None,
@@ -919,7 +938,16 @@ impl MarkedEventReceiver for DeclarationCollector {
                     })));
                 } else {
                     let mut create_variants = false;
-                    if let Some(Frame::Prototype(draft)) = self.frames.last_mut() {
+                    if matches!(self.frames.last(), Some(Frame::VariantValuesSequence)) {
+                        if let Some(Frame::Prototype(draft)) = self
+                            .frames
+                            .iter_mut()
+                            .rev()
+                            .find(|frame| matches!(frame, Frame::Prototype(_)))
+                        {
+                            draft.variant_values_invalid = true;
+                        }
+                    } else if let Some(Frame::Prototype(draft)) = self.frames.last_mut() {
                         let key = draft.pending_key.take();
                         draft.expected_key = true;
                         if key.as_deref() == Some("id") {
@@ -1022,25 +1050,30 @@ impl MarkedEventReceiver for DeclarationCollector {
                         .find(|frame| matches!(frame, Frame::Prototype(_)))
                     {
                         draft.variant_alias = true;
+                        draft.variant_values_invalid = true;
                     }
-                } else if let Some(Frame::Prototype(draft)) = self.frames.last_mut() {
-                    if !draft.expected_key && draft.pending_key.as_deref() == Some("id") {
-                        draft.id_alias = true;
-                    } else if !draft.expected_key && draft.pending_key.as_deref() == Some("parent")
-                    {
+                } else {
+                    let mut parent_alias = false;
+                    if let Some(Frame::Prototype(draft)) = self.frames.last_mut() {
+                        if !draft.expected_key && draft.pending_key.as_deref() == Some("id") {
+                            draft.id_alias = true;
+                        } else if !draft.expected_key
+                            && draft.pending_key.as_deref() == Some("parent")
+                        {
+                            parent_alias = true;
+                        }
+                    } else if matches!(self.frames.last(), Some(Frame::ParentSequence)) {
+                        parent_alias = true;
+                    }
+                    if parent_alias {
                         self.note(
                             "PARENT_ALIAS_UNRESOLVED",
                             mark.line(),
                             "Ссылка parent задана YAML alias; исходный граф не разрешает anchors и aliases.",
                         );
                     }
-                } else if matches!(self.frames.last(), Some(Frame::ParentSequence)) {
-                    self.note(
-                        "PARENT_ALIAS_UNRESOLVED",
-                        mark.line(),
-                        "Список parent содержит YAML alias; исходный граф не разрешает anchors и aliases.",
-                    );
                 }
+                /* Parent-sequence aliases are reported by the branch above. */
             }
             Event::StreamStart | Event::StreamEnd | Event::Nothing => {}
         }

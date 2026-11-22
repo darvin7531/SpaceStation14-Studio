@@ -65,7 +65,6 @@ fn index_is_complete(issues: &[PrototypeDiagnostic]) -> bool {
                 | "PARTIAL_CONFIG_OUTSIDE_PROJECT"
                 | "PARTIAL_CONFIG_PATH_INVALID"
                 | "PARTIAL_CONFIG_MISSING"
-                | "PARTIAL_CONFIG_PATH_INVALID"
                 | "PARTIAL_CONFIG_LIMIT"
                 | "PARTIAL_CONFIG_SYMLINK"
                 | "PARTIAL_TAG_INVALID"
