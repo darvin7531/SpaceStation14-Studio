@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import { open as openDirectoryDialog } from '@tauri-apps/plugin-dialog';
 import {
   AlertCircle, AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight,
@@ -7,6 +8,7 @@ import {
 import { studio, type DraftList, type DraftSnapshot, type CreatedPrototype, type CreatedFluent, type CreatedRsi, type DeletedRsiState, type ImportedRsiState, RenamedRsiState, type RestoredRsiState, type PrototypeDeclaration, type PrototypeFieldLocator, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage } from './lib/api';
 import { normalizeStudioError, type StudioError } from './lib/errors';
 import { closeTab, openTab, nextTabPath, type TabState } from './lib/tabs';
+import { readTabSession, retainAvailableTabs, writeTabSession } from './lib/tab-session';
 import { dirtyDocumentPaths, reconcileSavedDraft } from './lib/draft-state';
 import { DraftWriteQueue, journalKey } from './lib/draft-queue';
 import { reviewDecision } from './lib/review-guard';
@@ -86,6 +88,8 @@ export default function App() {
     try { window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(editorSettings)); } catch { /* storage may be blocked */ }
   }, [editorSettings]);
   const [refreshing, setRefreshing] = useState(false);
+  const [autoRefreshTick, setAutoRefreshTick] = useState(0);
+  const autoRefreshHandled = useRef(0);
   const [driftReport, setDriftReport] = useState<ResourceDriftReport | null>(null);
   const [driftChecking, setDriftChecking] = useState(false);
   const [driftError, setDriftError] = useState<StudioError | null>(null);
@@ -206,6 +210,40 @@ export default function App() {
     }
   }, [overview, drafts, draftBases, document, saving, transitioning, opening, refreshing]);
 
+  // OS filesystem events are hints, never direct commands to accept an
+  // external revision. Coalesce bursts and reuse draft-aware refresh.
+  useEffect(() => {
+    if (!overview) return;
+    let active = true;
+    let unlisten: (() => void) | undefined;
+    let debounce: number | undefined;
+    void listen<{ project_root: string }>('studio:project-changed', (event) => {
+      if (!active || event.payload.project_root !== overview.project_root) return;
+      if (debounce !== undefined) window.clearTimeout(debounce);
+      debounce = window.setTimeout(() => {
+        if (active) setAutoRefreshTick((value) => value + 1);
+      }, 1100);
+    }).then((dispose) => {
+      if (active) unlisten = dispose;
+      else dispose();
+    }).catch((failure: unknown) => {
+      if (active) setDriftError(normalizeStudioError(failure));
+    });
+    return () => {
+      active = false;
+      if (debounce !== undefined) window.clearTimeout(debounce);
+      unlisten?.();
+    };
+  }, [overview?.project_root]);
+
+  // The local session stores only tab identities, never unsaved YAML/FTL data.
+  useEffect(() => {
+    if (!overview || opening) return;
+    try {
+      writeTabSession(window.localStorage, overview.project_root, tabState);
+    } catch { /* Unavailable storage must not block the editor. */ }
+  }, [overview?.project_root, opening, tabState]);
+
   async function loadProject(requestedPath: string) {
     setCreatingPrototype(false);
     setCreatingFluent(false);
@@ -227,6 +265,17 @@ export default function App() {
       } catch {
         // Saving a recent path is optional and must not block opening.
       }
+      // Old sessions are revalidated against the current immutable Rust index.
+      // Unavailable files remain recoverable through the separate draft journal.
+      const storedTabs = readTabSession(window.localStorage, next.project_root);
+      const verifiedPaths = await Promise.all(storedTabs.tabs.map(async (tab) => {
+        try {
+          await studio.readResource(tab.path);
+          return tab.path;
+        } catch { return null; }
+      }));
+      const restored = retainAvailableTabs(storedTabs,
+        new Set(verifiedPaths.filter((item): item is string => item !== null)));
       let available: DraftList = { items: [], warnings: [] };
       try {
         available = await studio.listDrafts();
@@ -245,8 +294,11 @@ export default function App() {
       setPendingAction(null);
       setOverview(next);
       setResults({ total: 0, items: [] });
-      setTabState({ tabs: [], active: null });
+      setTabState(restored);
+      if (restored.active) void focusResource(restored.active);
       setDriftReport(null);
+      autoRefreshHandled.current = 0;
+      setAutoRefreshTick(0);
       setDriftError(null);
       setDocument(null);
       setReading(false);
@@ -263,7 +315,7 @@ export default function App() {
   /** Manual full rescan: refresh the index without discarding in-memory drafts
    * or silently taking a changed on-disk YAML revision as the draft baseline.
    */
-  async function refreshProject() {
+  async function refreshProject(automatic = false) {
     if (!overview || opening || reading || saving || transitioning || refreshing || creatingPrototype || creatingFluent) return;
     setRefreshing(true);
     cancelJournalTimers();
@@ -324,11 +376,14 @@ export default function App() {
           warnings: [...previous.warnings, explained.message + ' ' + explained.hint],
         }));
       }
-      setNotice(
-        'Индекс обновлён: +' + changed.added_resources + ' / −' + changed.removed_resources
-        + ' ресурсов. Перечитано вкладок: ' + result.reloaded.length
-        + '. Черновики сохранены в памяти.',
-      );
+      if (!automatic || changed.added_resources || changed.removed_resources || result.reloaded.length) {
+        setNotice(
+          (automatic ? 'Внешние изменения обнаружены. ' : '')
+          + 'Индекс обновлён: +' + changed.added_resources + ' / −' + changed.removed_resources
+          + ' ресурсов. Перечитано вкладок: ' + result.reloaded.length
+          + '. Черновики сохранены в памяти.',
+        );
+      }
       if (result.conflicting.length || result.unavailable.length) {
         const unavailable = reads.filter((item) => item.error !== null);
         setError({
@@ -348,6 +403,16 @@ export default function App() {
       setRefreshing(false);
     }
   }
+
+  // If the app is busy, retain the pending signal and refresh once idle.
+  // The handled counter prevents an endless refresh loop on setRefreshing(false).
+  useEffect(() => {
+    if (!overview || autoRefreshTick <= autoRefreshHandled.current || opening || reading
+      || saving || transitioning || refreshing || creatingPrototype || creatingFluent || creatingRsi) return;
+    autoRefreshHandled.current = autoRefreshTick;
+    void refreshProject(true);
+  }, [autoRefreshTick, overview?.project_root, opening, reading, saving, transitioning,
+      refreshing, creatingPrototype, creatingFluent, creatingRsi]);
 
   // Poll open resources only; Rust never accepts revisions or modifies drafts.
   // The submitted baseline is checked again after IPC to suppress stale alerts.
