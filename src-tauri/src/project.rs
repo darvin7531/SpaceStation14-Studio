@@ -15,6 +15,7 @@ use crate::prototype_append::{self, AppendPreview};
 use crate::prototype_components::{self, ComponentInspection, ComponentOperation};
 use crate::prototype_create::{self, CreatedPrototype, PrototypeDraft, PrototypePreview};
 use crate::prototype_fields::{self, FieldInspection, FieldLocator, FieldPatch, PrototypeFields};
+use crate::prototype_parents::{self, ParentInspection};
 use crate::prototype_localization::{self, EntityLocalizationSource};
 use crate::prototypes::PrototypeCatalog;
 use crate::resource_browser::{self, ResourceBrowserPage};
@@ -708,6 +709,39 @@ impl ProjectIndex {
     ) -> Result<FieldPatch, StudioError> {
         self.inspect_prototype_components(locator, source)?;
         prototype_components::patch(source, locator, operation)
+    }
+
+    /// Ordered explicit parent IDs; never guesses partial-prototype merging.
+    pub fn inspect_prototype_parents(
+        &self,
+        locator: &FieldLocator,
+        source: &str,
+    ) -> Result<ParentInspection, StudioError> {
+        if !self.is_yaml_indexed(&locator.file) {
+            return Err(StudioError::new(
+                "PARENT_NOT_INDEXED",
+                "YAML-файл не входит в индекс проекта.",
+                "Откройте прототип из каталога Studio.",
+            ));
+        }
+        if self.prototypes()?.has_partial_declarations(&locator.file) {
+            return Err(StudioError::new(
+                "PARENT_PARTIAL_UNSUPPORTED",
+                "Редактор родителей не поддерживает Partial Prototypes.",
+                "Используйте Monaco для сложных объявлений.",
+            ));
+        }
+        prototype_parents::inspect(source, locator)
+    }
+
+    pub fn patch_prototype_parents(
+        &self,
+        locator: &FieldLocator,
+        source: &str,
+        parents: &[String],
+    ) -> Result<FieldPatch, StudioError> {
+        self.inspect_prototype_parents(locator, source)?;
+        prototype_parents::patch(source, locator, parents)
     }
 
     /// Both operations only transform in-memory text: the user commits through
