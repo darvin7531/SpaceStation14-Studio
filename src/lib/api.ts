@@ -144,6 +144,21 @@ export interface PrototypeDeclaration {
   source_count: number;
 }
 
+export interface SourceSpriteLink {
+  path: string;
+  state: string | null;
+  indexed: boolean;
+}
+export interface SourceOutlineEntry {
+  declaration: PrototypeDeclaration;
+  sprite: SourceSpriteLink | null;
+}
+export interface SourceOutline {
+  declarations: SourceOutlineEntry[];
+  diagnostics: PrototypeDiagnostic[];
+  truncated: boolean;
+}
+
 export interface PrototypeFieldLocator {
   file: string;
   kind: string;
@@ -573,6 +588,9 @@ export const studio = {
   },
   searchPrototypes(query: string, kind: string, offset: number, limit = 100): Promise<PrototypePage> {
     return invoke('search_prototypes', { query, kind: kind || null, offset, limit });
+  },
+  inspectYamlOutline(path: string, source: string): Promise<SourceOutline> {
+    return invoke('inspect_yaml_outline', { path, source });
   },
   inspectEntityLocalization(locator: PrototypeFieldLocator, source: string): Promise<EntityLocalizationSource> {
     return invoke('inspect_entity_localization', { locator, source });
