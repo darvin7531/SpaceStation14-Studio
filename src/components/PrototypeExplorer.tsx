@@ -15,7 +15,7 @@ const PAGE_SIZE = 80;
 interface Props {
   workspaceKey: string;
   onOpen: (path: string, line: number) => void;
-  onEdit: (entry: PrototypeDeclaration, panel: 'fields' | 'components') => void;
+  onEdit: (entry: PrototypeDeclaration, panel: 'fields' | 'components' | 'localization') => void;
 }
 
 export default function PrototypeExplorer({ workspaceKey, onOpen, onEdit }: Props) {
@@ -123,6 +123,12 @@ export default function PrototypeExplorer({ workspaceKey, onOpen, onEdit }: Prop
             title="Просмотр, добавление и удаление явно объявленных компонентов"
             onClick={() => onEdit(entry, 'components')}>
             Компоненты
+          </button>}
+          {entry.kind === 'entity' && entry.mode === 'normal' && entry.variant_index === null && <button
+            type="button" className="prototype-relations-trigger"
+            title="Проверить исходные name / description / suffix и создать Fluent-ключи"
+            onClick={() => onEdit(entry, 'localization')}>
+            Локализация
           </button>}
           <button type="button" className="prototype-relations-trigger"
             aria-label={'Показать связи прототипа ' + entry.kind + ':' + entry.id}
