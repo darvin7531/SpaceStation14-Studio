@@ -1659,7 +1659,7 @@ export default function App() {
                 title={t('app.compareHint')}>
                 <FileCode2 size={14}/>{comparing ? t('app.comparing') : t('app.compare')}
               </button>}
-              {isEditableText(selected.kind) && <button type="button" onClick={() => void saveCurrent()}
+              {isEditableText(selected.kind) && <button type="button" data-testid="save-resource" onClick={() => void saveCurrent()}
                 disabled={saving || reading || refreshing || !isDirty(selected.path)} title={t('app.saveHint')}>
                 <Save size={14}/>{saving ? t('app.saving') : t('app.save')}
               </button>}
