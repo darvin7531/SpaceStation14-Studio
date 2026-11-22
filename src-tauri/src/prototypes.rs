@@ -294,6 +294,20 @@ pub struct PrototypeCatalog {
 }
 
 impl PrototypeCatalog {
+    /// Original YAML declarations for a particular kind/ID. No merge or
+    /// inherited property resolution is implied by their order.
+    pub fn source_declarations(&self, kind: &str, id: &str) -> Vec<PrototypeDeclaration> {
+        self.by_identity
+            .get(&(kind.to_owned(), id.to_owned()))
+            .map(|indices| {
+                indices
+                    .iter()
+                    .map(|&index| self.declarations[index].clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     pub fn has_identity(&self, kind: &str, id: &str) -> bool {
         self.by_identity
             .contains_key(&(kind.to_owned(), id.to_owned()))
