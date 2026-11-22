@@ -1342,7 +1342,10 @@ mod tests {
             "Resources/Prototypes/Example.yml",
             "- type: entity\n  id: Example\n",
         );
-        fx.write("Resources/Locale/en-US/Example.ftl", "ent-Example = Example\n");
+        fx.write(
+            "Resources/Locale/en-US/Example.ftl",
+            "ent-Example = Example\n",
+        );
         let mut observed = Vec::new();
         let index = ProjectIndex::open_with_progress(fx.root_str(), |phase, count| {
             observed.push((phase, count));
@@ -1353,10 +1356,7 @@ mod tests {
             vec!["prototypes", "textures", "locale", "finalizing"]
         );
         assert!(observed.windows(2).all(|window| window[0].1 <= window[1].1));
-        assert_eq!(
-            observed.last().unwrap().1,
-            index.overview().total_resources
-        );
+        assert_eq!(observed.last().unwrap().1, index.overview().total_resources);
     }
 
     #[test]
