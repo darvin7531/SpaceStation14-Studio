@@ -1,5 +1,6 @@
 //! Read-only, bounded RSI sprite-sheet access. Only indexed directories reach this module.
 use crate::error::StudioError;
+use crate::resource_edit::revision;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::Serialize;
 use serde_json::Value;
@@ -65,6 +66,7 @@ pub struct RsiSheetImage {
     pub bytes: usize,
     pub width: u32,
     pub height: u32,
+    pub revision: String,
 }
 
 pub(crate) fn directory(root: &Path, relative: &str) -> Result<PathBuf, StudioError> {
@@ -359,11 +361,13 @@ pub fn read(root: &Path, relative: &str, name: &str) -> Result<RsiSheetImage, St
         ));
     }
     let (width, height) = png_dimensions(&bytes)?;
+    let image_revision = revision(&bytes);
     Ok(RsiSheetImage {
         data_url: format!("data:image/png;base64,{}", STANDARD.encode(&bytes)),
         bytes: bytes.len(),
         width,
         height,
+        revision: image_revision,
     })
 }
 

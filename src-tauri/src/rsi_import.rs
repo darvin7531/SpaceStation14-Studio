@@ -29,6 +29,12 @@ pub struct RsiStateImport {
     pub frames_per_direction: u32,
     pub delay_seconds: f64,
     pub data_url: String,
+    /// Required only when replacing an existing state; protects against external PNG edits.
+    #[serde(default)]
+    pub expected_png_revision: Option<String>,
+    /// Preserve per-frame timings when a replacement keeps the same grid.
+    #[serde(default)]
+    pub delays: Option<Vec<Vec<f64>>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -37,13 +43,15 @@ pub struct ImportedRsiState {
     pub content: String,
     pub revision: String,
     pub warning: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub archive_path: Option<String>,
 }
 
 fn issue(code: &'static str, message: &str, hint: &str) -> StudioError {
     StudioError::new(code, message, hint)
 }
 
-fn validate_request(request: &RsiStateImport) -> Result<(), StudioError> {
+pub(crate) fn validate_request(request: &RsiStateImport) -> Result<(), StudioError> {
     if request.expected_revision.len() != 64
         || !request
             .expected_revision
@@ -80,6 +88,22 @@ fn validate_request(request: &RsiStateImport) -> Result<(), StudioError> {
             "Некорректные направления, количество кадров или задержка.",
             "Используйте 1/4/8 направлений, до 128 кадров на направление (всего до 256) и длительность 0.01–60 с.",
         ));
+    }
+    if let Some(delays) = &request.delays {
+        if delays.len() != request.directions as usize
+            || delays.iter().any(|direction| {
+                direction.len() != request.frames_per_direction as usize
+                    || direction.iter().any(|seconds| {
+                        !seconds.is_finite() || !(0.01..=60.0).contains(seconds)
+                    })
+            })
+        {
+            return Err(issue(
+                "RSI_IMPORT_TIMING_INVALID",
+                "Массив задержек не совпадает с числом направлений и кадров.",
+                "Передавайте одну длительность для каждого кадра либо оставьте прежние задержки без изменения.",
+            ));
+        }
     }
     if !request.data_url.starts_with(PNG_DATA_PREFIX) || request.data_url.len() > MAX_DATA_URL_CHARS
     {
@@ -242,6 +266,15 @@ fn updated_metadata(
     request: &RsiStateImport,
     png: &[u8],
 ) -> Result<String, StudioError> {
+    updated_metadata_at(bytes, request, png, None)
+}
+
+pub(crate) fn updated_metadata_at(
+    bytes: &[u8],
+    request: &RsiStateImport,
+    png: &[u8],
+    insert_at: Option<usize>,
+) -> Result<String, StudioError> {
     let mut meta: Value = serde_json::from_slice(bytes).map_err(|e| {
         issue(
             "RSI_IMPORT_META_INVALID",
@@ -330,18 +363,32 @@ fn updated_metadata(
             "Укажите новое имя состояния.",
         ));
     }
-    let delays = (0..request.directions)
-        .map(|_| {
-            (0..request.frames_per_direction)
-                .map(|_| request.delay_seconds)
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-    states.push(json!({
+    let delays = request.delays.clone().unwrap_or_else(|| {
+        (0..request.directions)
+            .map(|_| {
+                (0..request.frames_per_direction)
+                    .map(|_| request.delay_seconds)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
+    });
+    let new_state = json!({
         "name": request.name,
         "directions": request.directions,
         "delays": delays,
-    }));
+    });
+    if let Some(index) = insert_at {
+        if index > states.len() {
+            return Err(issue(
+                "RSI_IMPORT_META_INVALID",
+                "Невозможно сохранить исходный порядок состояния RSI.",
+                "Обновите ресурс и повторите замену.",
+            ));
+        }
+        states.insert(index, new_state);
+    } else {
+        states.push(new_state);
+    }
     let serialized = serde_json::to_string_pretty(&meta).map_err(|e| {
         issue(
             "RSI_IMPORT_META_INVALID",
@@ -399,6 +446,14 @@ pub(crate) fn safe_import_directory(
 /// revision check catches external edits during PNG staging. Power loss can
 /// leave an orphan PNG, which is intentionally never deleted on startup.
 pub fn import(root: &Path, request: &RsiStateImport) -> Result<ImportedRsiState, StudioError> {
+    import_at(root, request, None)
+}
+
+pub(crate) fn import_at(
+    root: &Path,
+    request: &RsiStateImport,
+    insert_at: Option<usize>,
+) -> Result<ImportedRsiState, StudioError> {
     validate_request(request)?;
     let folder = safe_import_directory(root, &request.path)?;
     let meta_path = folder.join("meta.json");
@@ -419,7 +474,7 @@ pub fn import(root: &Path, request: &RsiStateImport) -> Result<ImportedRsiState,
         )
         .with_details(e.to_string())
     })?;
-    let content = updated_metadata(&original, request, &png)?;
+    let content = updated_metadata_at(&original, request, &png, insert_at)?;
     let target_png = folder.join(format!("{}.png", request.name));
     if target_png.exists() {
         return Err(issue(
@@ -585,6 +640,7 @@ pub fn import(root: &Path, request: &RsiStateImport) -> Result<ImportedRsiState,
         revision: revision(content.as_bytes()),
         content,
         warning,
+        archive_path: None,
     })
 }
 
@@ -636,6 +692,8 @@ mod tests {
                 frames_per_direction: 1,
                 delay_seconds: 0.1,
                 data_url: format!("{PNG_DATA_PREFIX}{}", STANDARD.encode(Self::png())),
+                expected_png_revision: None,
+                delays: None,
             }
         }
     }

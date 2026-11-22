@@ -124,6 +124,7 @@ pub fn update(root: &Path, request: &RsiCreditsUpdate) -> Result<ImportedRsiStat
             })?,
             revision: request.expected_revision.clone(),
             warning: None,
+            archive_path: None,
         });
     };
     let result = resource_edit::save_rsi_metadata(
@@ -137,6 +138,7 @@ pub fn update(root: &Path, request: &RsiCreditsUpdate) -> Result<ImportedRsiStat
         content: result.document.content,
         revision: result.document.revision,
         warning: result.durability_warning,
+        archive_path: None,
     })
 }
 

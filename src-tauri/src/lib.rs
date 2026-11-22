@@ -19,6 +19,7 @@ mod rsi_delete;
 mod rsi_import;
 mod rsi_preview;
 mod rsi_restore;
+mod rsi_replace;
 mod rsi_timing;
 
 use std::sync::{Arc, Mutex};
@@ -245,6 +246,18 @@ async fn read_rsi_sheet(
 ) -> Result<RsiSheetImage, StudioError> {
     let index = current_project(&state)?;
     tauri::async_runtime::spawn_blocking(move || index.read_rsi_sheet(&path, &name))
+        .await
+        .map_err(interrupted)?
+}
+
+/// Replace an existing PNG and rebuild its frame grid, preserving a restorable archive.
+#[tauri::command]
+async fn replace_rsi_state(
+    request: RsiStateImport,
+    state: State<'_, WorkspaceState>,
+) -> Result<ImportedRsiState, StudioError> {
+    let index = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || index.replace_rsi_state(&request))
         .await
         .map_err(interrupted)?
 }
@@ -864,6 +877,7 @@ pub fn run() -> Result<(), tauri::Error> {
             list_rsi_sheets,
             read_rsi_sheet,
             import_rsi_state,
+            replace_rsi_state,
             update_rsi_timing,
             update_rsi_credits,
             delete_rsi_state,

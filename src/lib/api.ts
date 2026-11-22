@@ -216,6 +216,7 @@ export interface RsiSheetImage {
   bytes: number;
   width: number;
   height: number;
+  revision: string;
 }
 
 export interface DraftSnapshot {
@@ -353,6 +354,8 @@ export interface RsiImportRequest {
   frames_per_direction: number;
   delay_seconds: number;
   data_url: string;
+  expected_png_revision?: string;
+  delays?: number[][];
 }
 
 export interface ImportedRsiState {
@@ -360,6 +363,7 @@ export interface ImportedRsiState {
   content: string;
   revision: string;
   warning: string | null;
+  archive_path?: string | null;
 }
 
 export interface NewRsiDraft {
@@ -567,6 +571,9 @@ export const studio = {
   },
   importRsiState(request: RsiImportRequest): Promise<ImportedRsiState> {
     return invoke('import_rsi_state', { request });
+  },
+  replaceRsiState(request: RsiImportRequest): Promise<ImportedRsiState> {
+    return invoke('replace_rsi_state', { request });
   },
   updateRsiCredits(request: RsiCreditsUpdate): Promise<ImportedRsiState> {
     return invoke('update_rsi_credits', { request });

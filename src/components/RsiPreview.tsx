@@ -130,6 +130,11 @@ export default function RsiPreview({
     <RsiCreditsPanel key={'credits:' + path + ':' + revision}
       path={path} revision={revision} metadata={metadata} onSaved={onCreditsUpdated}/>
     <RsiImportPanel path={path} revision={revision} onImported={onImported}/>
+    {selectedState && image?.revision && list?.sheets.some((sheet) => sheet.name === selectedState.name + '.png')
+      && <RsiImportPanel key={'replace:' + path + ':' + selectedState.name + ':' + revision}
+        path={path} revision={revision} replaceState={selectedState}
+        expectedPngRevision={image.revision} onImported={onImported}/>}
+
     {frameLayout && selectedState && <RsiTimingPanel
       key={path + ':' + selectedState.name + ':' + revision}
       path={path} revision={revision} state={selectedState} onUpdated={onTimingUpdated}/>}

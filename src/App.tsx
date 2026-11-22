@@ -889,13 +889,14 @@ export default function App() {
     documents.current.set(path, updated);
     setDocument((current) => current?.path === path ? updated : current);
     setDrafts((previous) => ({ ...previous, [path]: result.content }));
-    setNotice(result.warning
-      ? 'RSI обновлён: ' + result.name + '. ' + result.warning
+    const baseNotice = result.archive_path
+      ? 'Состояние RSI «' + result.name + '» заменено. Предыдущая версия сохранена: ' + result.archive_path
       : action === 'credits'
         ? 'Лицензия и авторство RSI сохранены. PNG не изменены.'
         : action === 'timing'
           ? 'Сохранены задержки RSI: ' + result.name + '. PNG не изменены.'
-        : 'Добавлено состояние RSI: ' + result.name + '. PNG и meta.json записаны.');
+          : 'Добавлено состояние RSI: ' + result.name + '. PNG и meta.json записаны.';
+    setNotice(result.warning ? baseNotice + '. ' + result.warning : baseNotice);
   }
 
   function onRsiDeleted(path: string, result: DeletedRsiState) {

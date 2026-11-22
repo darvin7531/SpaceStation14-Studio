@@ -244,6 +244,7 @@ pub fn update(root: &Path, request: &RsiTimingUpdate) -> Result<ImportedRsiState
                 .with_details(error.to_string())
             })?,
             warning: None,
+            archive_path: None,
         });
     };
     let result = resource_edit::save_rsi_metadata(
@@ -257,6 +258,7 @@ pub fn update(root: &Path, request: &RsiTimingUpdate) -> Result<ImportedRsiState
         revision: result.document.revision,
         content: result.document.content,
         warning: result.durability_warning,
+        archive_path: None,
     })
 }
 

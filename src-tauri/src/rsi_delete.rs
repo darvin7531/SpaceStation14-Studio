@@ -144,7 +144,7 @@ fn metadata_after_deletion(original: &[u8], state_name: &str) -> Result<String, 
     Ok(content)
 }
 
-fn read_png(path: &Path) -> Result<Vec<u8>, StudioError> {
+pub(crate) fn read_png(path: &Path) -> Result<Vec<u8>, StudioError> {
     let stat = fs::symlink_metadata(path).map_err(|error| {
         issue(
             "RSI_DELETE_PNG_MISSING",
@@ -274,7 +274,24 @@ fn sync_directory(_path: &Path) -> std::io::Result<()> {
 /// There is no automatic restoration, and external cross-process writers
 /// can still race with the final check.
 pub fn delete(root: &Path, request: &RsiDeleteRequest) -> Result<DeletedRsiState, StudioError> {
+    delete_checked(root, request, None)
+}
+
+pub(crate) fn delete_checked(
+    root: &Path,
+    request: &RsiDeleteRequest,
+    expected_png_revision: Option<&str>,
+) -> Result<DeletedRsiState, StudioError> {
     validate(request)?;
+    if expected_png_revision.is_some_and(|expected| {
+        expected.len() != 64 || !expected.bytes().all(|byte| byte.is_ascii_hexdigit())
+    }) {
+        return Err(issue(
+            "RSI_DELETE_PNG_REVISION_INVALID",
+            "Ревизия PNG отсутствует или некорректна.",
+            "Перечитайте выбранный PNG и повторите операцию.",
+        ));
+    }
     let folder = safe_import_directory(root, &request.path)?;
     let metadata_path = folder.join("meta.json");
     let original = bounded_metadata(&metadata_path)?;
@@ -289,6 +306,13 @@ pub fn delete(root: &Path, request: &RsiDeleteRequest) -> Result<DeletedRsiState
     let png_path = folder.join(format!("{}.png", request.name));
     let png = read_png(&png_path)?;
     let png_revision = revision(&png);
+    if expected_png_revision.is_some_and(|expected| expected != png_revision) {
+        return Err(issue(
+            "RSI_DELETE_PNG_CONFLICT",
+            "PNG изменился после открытия и не будет заменён.",
+            "Обновите предпросмотр RSI и повторите операцию.",
+        ));
+    }
 
     let backup_path = archive_dir(&folder, &request.name)?;
     write_backup_file(&backup_path.join("meta.json.before"), &original)?;
