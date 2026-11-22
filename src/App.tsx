@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useI18n } from './i18n';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open as openDirectoryDialog } from '@tauri-apps/plugin-dialog';
 import {
   AlertCircle, AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight,
@@ -14,6 +15,7 @@ import { readTabSession, retainAvailableTabs, writeTabSession } from './lib/tab-
 import { readRecentProjects, rememberRecentProject, writeRecentProjects } from './lib/recent-projects';
 import { dirtyDocumentPaths, reconcileSavedDraft } from './lib/draft-state';
 import { DraftWriteQueue, journalKey } from './lib/draft-queue';
+import { persistExitRecovery } from './lib/exit-recovery';
 import { reviewDecision } from './lib/review-guard';
 import { reconcileWorkspaceRefresh } from './lib/workspace-refresh';
 import MonacoPreview from './editor/MonacoPreview';
@@ -156,14 +158,21 @@ export default function App() {
   const comparisonVersion = useRef(0);
   const [saving, setSaving] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [exitDialogOpen, setExitDialogOpen] = useState(false);
+  const [exitSaving, setExitSaving] = useState(false);
+  const [exitFailure, setExitFailure] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const draftsRef = useRef(drafts);
   draftsRef.current = drafts;
+  const draftBasesRef = useRef(draftBases);
+  draftBasesRef.current = draftBases;
   const selectedPathRef = useRef(selected?.path ?? null);
   selectedPathRef.current = selected?.path ?? null;
   const projectRootRef = useRef(overview?.project_root ?? null);
   projectRootRef.current = overview?.project_root ?? null;
   const dirtyPaths = dirtyDocumentPaths(drafts, documents.current);
+  const dirtyPathsRef = useRef(dirtyPaths);
+  dirtyPathsRef.current = dirtyPaths;
   const isDirty = (file: string) => dirtyPaths.includes(file);
   const activeConflict = selected && document?.path === selected.path
     && draftBases[selected.path] !== undefined
@@ -207,6 +216,49 @@ export default function App() {
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
   }, [dirtyPaths.length]);
+
+  // The OS close control must not silently discard a webview's dirty buffers.
+  useEffect(() => {
+    let active = true;
+    let stop: (() => void) | undefined;
+    void getCurrentWindow().onCloseRequested((event) => {
+      if (dirtyPathsRef.current.length > 0) {
+        event.preventDefault();
+        if (active) {
+          setExitFailure(null);
+          setExitDialogOpen(true);
+        }
+      }
+    }).then((unlisten) => {
+      if (active) stop = unlisten;
+      else unlisten();
+    }).catch((failure) => {
+      if (active) setError(normalizeStudioError(failure));
+    });
+    return () => { active = false; stop?.(); };
+  }, []);
+
+  async function closeAfterRecovery() {
+    if (exitSaving || !overview) return;
+    setExitSaving(true);
+    setExitFailure(null);
+    try {
+      await persistExitRecovery({
+        root: overview.project_root,
+        paths: dirtyPathsRef.current,
+        documents: documents.current,
+        drafts: draftsRef.current,
+        bases: draftBasesRef.current,
+        queue: journal.current,
+        persist: (file, base, content) => studio.persistDraft(file, base, content),
+      });
+      cancelJournalTimers();
+      await getCurrentWindow().destroy();
+    } catch (failure) {
+      setExitFailure(failure instanceof Error ? failure.message : String(failure));
+      setExitSaving(false);
+    }
+  }
 
   function cancelJournalTimers() {
     journalEpoch.current += 1;
@@ -1354,6 +1406,22 @@ export default function App() {
     {notice && <div className="save-notice" role="status">
       <CheckCircle2 size={16}/><span>{notice}</span>
       <button type="button" onClick={() => setNotice(null)}>Закрыть</button>
+    </div>}
+    {exitDialogOpen && <div className="discard-confirmation" role="alertdialog"
+      aria-label="Закрытие приложения с несохранёнными черновиками">
+      <AlertTriangle size={18}/>
+      <div>
+        <strong>Остались несохранённые изменения ({dirtyPaths.length})</strong>
+        <p>Перед выходом черновики будут сохранены в хранилище восстановления SS14 Studio.
+          Игровые YAML/FTL на диске не изменятся.</p>
+        {exitFailure && <p role="alert">Не удалось сохранить черновики: {exitFailure}. Приложение не закрыто.</p>}
+      </div>
+      <button type="button" disabled={exitSaving} onClick={() => { setExitDialogOpen(false); setExitFailure(null); }}>
+        Остаться
+      </button>
+      <button type="button" disabled={exitSaving} onClick={() => void closeAfterRecovery()}>
+        {exitSaving ? 'Сохраняю…' : 'Сохранить черновики и выйти'}
+      </button>
     </div>}
     {pendingAction && <div className="discard-confirmation" role="alertdialog"
       aria-label="Подтверждение удаления черновика">
