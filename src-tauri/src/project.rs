@@ -16,6 +16,7 @@ use crate::prototype_components::{self, ComponentInspection, ComponentOperation}
 use crate::prototype_create::{self, CreatedPrototype, PrototypeDraft, PrototypePreview};
 use crate::prototype_fields::{self, FieldInspection, FieldLocator, FieldPatch, PrototypeFields};
 use crate::prototype_localization::{self, EntityLocalizationSource};
+use crate::prototype_merge::{self, PrototypePartialPreview};
 use crate::prototype_parents::{self, ParentInspection};
 use crate::prototype_sources::{self, PrototypeSourceReport};
 use crate::prototypes::{self, PrototypeCatalog, SourceOutline};
@@ -637,6 +638,26 @@ impl ProjectIndex {
                 .get(rsi)
                 .and_then(|index| self.resources.get(*index))
                 .is_some_and(|entry| entry.kind == "rsi")
+        })
+    }
+
+    /// Preview base + partial modifications without mutating project files.
+    /// Does not apply parent inheritance or C# DataField defaults.
+    pub fn prototype_partial_preview(
+        &self,
+        kind: &str,
+        id: &str,
+    ) -> Result<PrototypePartialPreview, StudioError> {
+        let catalog = self.prototypes()?;
+        prototype_merge::preview(&catalog, kind, id, |path| {
+            if !self.is_yaml_indexed(path) {
+                return Err(StudioError::new(
+                    "PROTOTYPE_PARTIAL_NOT_INDEXED",
+                    "YAML-источник отсутствует в индексе проекта.",
+                    "Обновите каталог и повторите вычисление partial-правок.",
+                ));
+            }
+            self.read_resource(path).map(|document| document.content)
         })
     }
 
@@ -1583,6 +1604,26 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+
+    #[test]
+    fn prototype_partial_preview_applies_clear_and_component_modifications_without_writing() {
+        let fx = Fixture::new();
+        fx.write("Resources/Prototypes/base.yml",
+            "- type: entity\n  id: Item\n  parent: [Old]\n  name: Before\n  components:\n  - type: Sprite\n    state: old\n  - type: Physics\n");
+        fx.write("Resources/PartialPrototypes/partialPrototypes.yml",
+            "- /Prototypes/patches\n");
+        fx.write("Resources/Prototypes/patches/patch.yml",
+            "- type: entity\n  id: Item\n  parent: !Clear [New]\n  name: After\n  components:\n  - !Remove type: Physics\n  - type: Sprite\n    state: new\n");
+        let project = ProjectIndex::open(fx.root_str()).unwrap();
+        let report = project.prototype_partial_preview("entity", "Item").unwrap();
+        assert!(report.exact, "{:?}", report.warnings);
+        assert_eq!(report.parents, ["New"]);
+        assert_eq!(report.applied_partials, 1);
+        assert_eq!(report.components.len(), 1);
+        assert_eq!(report.components[0].type_name, "Sprite");
+        assert_eq!(report.fields.iter().find(|field| field.key == "name").unwrap().preview, "After");
+        assert!(project.read_resource("Resources/Prototypes/base.yml").unwrap().content.contains("Before"));
     }
 
     #[test]
