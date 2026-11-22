@@ -3,6 +3,7 @@ import { AlertCircle, AlertTriangle, CheckCircle2, FilePlus2, X } from 'lucide-r
 import {
   studio,
   type CreatedPrototype,
+  type ExternalCreatedPrototype,
   type AppendPrototypePreview,
   type NewPrototypeDraft,
   type NewPrototypePreview,
@@ -14,6 +15,7 @@ export type PrototypeDestinationMode = 'new' | 'append';
 interface Props {
   onClose: () => void;
   onCreated: (result: CreatedPrototype, mode: PrototypeDestinationMode) => void;
+  onExternalCreated: (result: ExternalCreatedPrototype) => void;
   dirtyPaths: readonly string[];
   preferredExistingFile?: string;
 }
@@ -38,9 +40,10 @@ const INITIAL: NewPrototypeDraft = {
 };
 
 export default function CreatePrototypeWizard({
-  onClose, onCreated, dirtyPaths, preferredExistingFile,
+  onClose, onCreated, onExternalCreated, dirtyPaths, preferredExistingFile,
 }: Props) {
   const [mode, setMode] = useState<PrototypeDestinationMode>('new');
+  const [destination, setDestination] = useState<'project' | 'external'>('project');
   const [availableFiles, setAvailableFiles] = useState<string[]>([]);
   const [draft, setDraft] = useState<NewPrototypeDraft>(INITIAL);
   const [preview, setPreview] = useState<NewPrototypePreview | AppendPrototypePreview | null>(null);
@@ -137,10 +140,15 @@ export default function CreatePrototypeWizard({
     setCreating(true);
     setCreateError(null);
     try {
-      const result = mode === 'append'
-        ? await studio.appendPrototype(draft, (preview as AppendPrototypePreview).expected_revision)
-        : await studio.createNewPrototype(draft);
-      onCreated(result, mode);
+      if (mode === 'new' && destination === 'external') {
+        const result = await studio.createExternalPrototype(draft);
+        if (result) onExternalCreated(result);
+      } else {
+        const result = mode === 'append'
+          ? await studio.appendPrototype(draft, (preview as AppendPrototypePreview).expected_revision)
+          : await studio.createNewPrototype(draft);
+        onCreated(result, mode);
+      }
     } catch (error) {
       setCreateError(normalizeStudioError(error));
     } finally {
@@ -172,6 +180,12 @@ export default function CreatePrototypeWizard({
               disabled={creating} onClick={() => switchMode('append')}>В существующий YAML</button>
           </div>
 
+          {mode === 'new' && <div className="create-proto-mode" role="group" aria-label="Расположение нового прототипа">
+            <button type="button" className={destination === 'project' ? 'selected' : ''}
+              onClick={() => setDestination('project')}>В игровом проекте</button>
+            <button type="button" className={destination === 'external' ? 'selected' : ''}
+              onClick={() => setDestination('external')}>Вне проекта</button>
+          </div>}
           <fieldset className="create-proto-group">
             <legend>Идентификатор и наследование</legend>
             <label>Тип прототипа
@@ -235,7 +249,9 @@ export default function CreatePrototypeWizard({
 
           <fieldset className="create-proto-group">
             <legend>{mode === 'new' ? 'Расположение нового файла' : 'Выберите существующий YAML'}</legend>
-            <label>Путь относительно корня проекта
+            <label>{mode === 'new' && destination === 'external'
+              ? 'Путь шаблона (фактический внешний путь выберете в системном диалоге)'
+              : 'Путь относительно корня проекта'}
               <input required value={draft.file} spellCheck={false}
                 list={mode === 'append' ? 'append-prototype-files' : undefined}
                 placeholder={mode === 'append' ? 'Resources/Prototypes/Entities/items.yml' : ''}
@@ -244,9 +260,11 @@ export default function CreatePrototypeWizard({
                 {availableFiles.map((file) => <option key={file} value={file}/>)}
               </datalist>}
             </label>
-            <small>{mode === 'new'
-              ? 'Разрешены существующие каталоги внутри Resources/Prototypes. Папка _PrototypeStudio создаётся автоматически при необходимости.'
-              : 'Файл должен быть проиндексирован. Пока поддерживаются только обычные однодокументные YAML-списки, без Partial-тегов.'}</small>
+            <small>{mode === 'new' && destination === 'external'
+              ? 'Внешний файл выбирается через системный диалог. Он не добавляется в открытый игровой проект.'
+              : mode === 'new'
+                ? 'Разрешены существующие каталоги внутри Resources/Prototypes. Папка _PrototypeStudio создаётся автоматически при необходимости.'
+                : 'Файл должен быть проиндексирован. Пока поддерживаются только обычные однодокументные YAML-списки, без Partial-тегов.'}</small>
           </fieldset>
         </div>
 
@@ -281,6 +299,7 @@ export default function CreatePrototypeWizard({
             <button type="submit" disabled={checking || creating || !preview || targetIsDirty}>
               <FilePlus2 size={14}/>{creating
                 ? 'Записываю…'
+                : mode === 'new' && destination === 'external' ? 'Выбрать внешний YAML'
                 : mode === 'new' ? 'Создать файл' : 'Добавить прототип'}
             </button>
           </footer>

@@ -44,7 +44,7 @@ use project::{
 use project_watcher::ProjectWatcher;
 use prototype_append::AppendPreview;
 use prototype_components::{ComponentInspection, ComponentOperation};
-use prototype_create::{PrototypeDraft, PrototypePreview};
+use prototype_create::{ExternalCreatedPrototype, PrototypeDraft, PrototypePreview};
 use prototype_fields::{FieldInspection, FieldLocator, FieldPatch, PrototypeFields};
 use prototype_graph::PrototypeRelations;
 use prototype_localization::{EntityLocalizationAnalysis, EntityLocalizationSource};
@@ -968,6 +968,36 @@ async fn create_new_prototype(
     })
 }
 
+/// Legacy Electron external-prototype creation. The chosen path never crosses JS.
+#[tauri::command]
+async fn create_external_prototype(
+    app: tauri::AppHandle,
+    draft: PrototypeDraft,
+) -> Result<Option<ExternalCreatedPrototype>, StudioError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let selected = app
+            .dialog()
+            .file()
+            .set_title("Сохранить внешний YAML")
+            .set_file_name(format!("{}.yml", draft.id))
+            .add_filter("YAML", &["yml", "yaml"])
+            .blocking_save_file();
+        let Some(selected) = selected else {
+            return Ok(None);
+        };
+        let chosen = selected.into_path().map_err(|reason| {
+            StudioError::new(
+                "PROTOTYPE_EXTERNAL_DIALOG_PATH",
+                "Системный диалог вернул неподдерживаемый путь.",
+                "Выберите обычный локальный файл.",
+            ).with_details(reason.to_string())
+        })?;
+        prototype_create::create_external_at(&chosen, &draft).map(Some)
+    })
+    .await
+    .map_err(interrupted)?
+}
+
 #[tauri::command]
 async fn preview_append_prototype(
     draft: PrototypeDraft,
@@ -1195,6 +1225,7 @@ pub fn run() -> Result<(), tauri::Error> {
             create_external_fluent,
             preview_new_prototype,
             create_new_prototype,
+            create_external_prototype,
             preview_append_prototype,
             append_prototype,
             inspect_prototype_fields,

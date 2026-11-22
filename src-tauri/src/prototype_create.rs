@@ -46,6 +46,14 @@ pub struct CreatedPrototype {
     pub warning: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct ExternalCreatedPrototype {
+    pub path: String,
+    pub kind: String,
+    pub id: String,
+    pub warning: Option<String>,
+}
+
 fn invalid(code: &'static str, message: &str, hint: &str) -> StudioError {
     StudioError::new(code, message, hint)
 }
@@ -356,6 +364,100 @@ pub fn create(root: &Path, draft: &PrototypeDraft) -> Result<CreatedPrototype, S
     })
 }
 
+/// Electron's external destination: all data comes from the validated draft;
+/// the absolute target is obtained exclusively from a native system save dialog.
+pub fn create_external_at(
+    chosen_path: &Path,
+    draft: &PrototypeDraft,
+) -> Result<ExternalCreatedPrototype, StudioError> {
+    let generated = preview(draft)?;
+    let ext = chosen_path.extension().and_then(|value| value.to_str());
+    if !matches!(ext, Some("yaml" | "yml")) {
+        return Err(invalid(
+            "PROTOTYPE_EXTERNAL_EXTENSION",
+            "Внешний прототип должен иметь расширение .yml или .yaml.",
+            "Выберите имя YAML-файла в системном диалоге.",
+        ));
+    }
+    let parent = chosen_path.parent().ok_or_else(|| {
+        invalid(
+            "PROTOTYPE_EXTERNAL_PATH_INVALID",
+            "Не удалось определить папку для внешнего прототипа.",
+            "Укажите имя файла в существующем каталоге.",
+        )
+    })?;
+    let parent = fs::canonicalize(parent).map_err(|reason| {
+        invalid(
+            "PROTOTYPE_EXTERNAL_PARENT_MISSING",
+            "Папка для внешнего YAML недоступна.",
+            "Выберите существующий каталог.",
+        ).with_details(reason.to_string())
+    })?;
+    if !parent.is_dir() {
+        return Err(invalid(
+            "PROTOTYPE_EXTERNAL_PARENT_INVALID",
+            "Путь назначения не является папкой.",
+            "Выберите обычную папку.",
+        ));
+    }
+    let file_name = chosen_path.file_name().ok_or_else(|| {
+        invalid(
+            "PROTOTYPE_EXTERNAL_PATH_INVALID",
+            "Не указано имя внешнего YAML.",
+            "Выберите имя файла.",
+        )
+    })?;
+    let target = parent.join(file_name);
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o644);
+    }
+    let mut handle = options.open(&target).map_err(|reason| {
+        if reason.kind() == std::io::ErrorKind::AlreadyExists {
+            invalid(
+                "PROTOTYPE_FILE_EXISTS",
+                "Внешний YAML уже существует и не будет перезаписан.",
+                "Выберите другое имя файла.",
+            )
+        } else {
+            invalid(
+                "PROTOTYPE_CREATE_FAILED",
+                "Не удалось создать внешний YAML.",
+                "Проверьте права записи и место на диске.",
+            ).with_details(reason.to_string())
+        }
+    })?;
+    let written = handle.write_all(generated.yaml.as_bytes())
+        .and_then(|_| handle.sync_all());
+    drop(handle);
+    if let Err(reason) = written {
+        if let Err(cleanup) = fs::remove_file(&target) {
+            return Err(invalid(
+                "PROTOTYPE_CLEANUP_FAILED",
+                "После ошибки записи остался неполный YAML.",
+                "Проверьте файл вручную перед повторным созданием.",
+            ).with_details(format!("{reason}; очистка: {cleanup}")));
+        }
+        return Err(invalid(
+            "PROTOTYPE_WRITE_FAILED",
+            "Не удалось полностью записать внешний YAML.",
+            "Проверьте свободное место и права записи.",
+        ).with_details(reason.to_string()));
+    }
+    let warning = sync_directory(&parent)
+        .err()
+        .map(|reason| format!("YAML создан, но синхронизация каталога не подтверждена: {reason}"));
+    Ok(ExternalCreatedPrototype {
+        path: target.to_string_lossy().into_owned(),
+        kind: generated.kind,
+        id: generated.id,
+        warning,
+    })
+}
+
 struct RemoveFailedFile(Option<std::path::PathBuf>);
 impl Drop for RemoveFailedFile {
     fn drop(&mut self) {
@@ -427,6 +529,25 @@ mod tests {
         assert_eq!(
             create(&fixture.0, &draft).unwrap_err().code,
             "PROTOTYPE_FILE_EXISTS"
+        );
+    }
+
+    #[test]
+    fn external_yaml_creation_preserves_existing_files() {
+        let fixture = Fixture::new();
+        let target = fixture.0.join("external.yml");
+        let draft = fixture.draft("ExternalItem");
+        let result = create_external_at(&target, &draft).unwrap();
+        assert_eq!(result.path, target.to_string_lossy());
+        assert!(fs::read_to_string(&target).unwrap().contains("id:"));
+        assert_eq!(
+            create_external_at(&target, &draft).unwrap_err().code,
+            "PROTOTYPE_FILE_EXISTS"
+        );
+        assert_eq!(
+            create_external_at(&fixture.0.join("invalid.txt"), &draft)
+                .unwrap_err().code,
+            "PROTOTYPE_EXTERNAL_EXTENSION"
         );
     }
 

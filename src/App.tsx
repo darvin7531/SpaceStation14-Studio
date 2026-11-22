@@ -1059,6 +1059,13 @@ export default function App() {
     if (tabState.active) requestAction({ type: 'reload', path: tabState.active });
   }
 
+  function onExternalPrototypeCreated(result: import('./lib/api').ExternalCreatedPrototype) {
+    setCreatingPrototype(false);
+    setNotice(result.warning
+      ? 'Внешний YAML создан: ' + result.path + '. ' + result.warning
+      : 'Внешний YAML создан: ' + result.path + '. Открытый проект не изменён.');
+  }
+
   function onPrototypeCreated(result: CreatedPrototype, mode: PrototypeDestinationMode) {
     setCreatingPrototype(false);
     setFieldTarget(null);
@@ -1234,6 +1241,7 @@ export default function App() {
       preferredFile={selected?.kind === 'ftl' ? selected.path : undefined}/>}
     {creatingPrototype && overview && <CreatePrototypeWizard
       onClose={() => setCreatingPrototype(false)} onCreated={onPrototypeCreated}
+      onExternalCreated={onExternalPrototypeCreated}
       dirtyPaths={dirtyPaths}
       preferredExistingFile={selected?.kind === 'yaml' ? selected.path : undefined}/>}
     <header className="titlebar">

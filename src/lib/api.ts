@@ -644,6 +644,12 @@ export interface CreatedPrototype {
   overview: ProjectOverview | null;
 }
 
+export interface ExternalCreatedPrototype {
+  path: string;
+  kind: string;
+  id: string;
+  warning: string | null;
+}
 export interface SaveResult {
   document: ResourceDocument;
   durability_warning?: string;
@@ -801,6 +807,9 @@ export const studio = {
   },
   createNewPrototype(draft: NewPrototypeDraft): Promise<CreatedPrototype> {
     return invoke('create_new_prototype', { draft });
+  },
+  createExternalPrototype(draft: NewPrototypeDraft): Promise<ExternalCreatedPrototype | null> {
+    return invoke('create_external_prototype', { draft });
   },
   previewAppendPrototype(draft: NewPrototypeDraft): Promise<AppendPrototypePreview> {
     return invoke('preview_append_prototype', { draft });
