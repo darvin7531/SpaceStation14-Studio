@@ -59,3 +59,20 @@
 .proto-relation-source { color: #8cb7d9; }
 .proto-definition-link:hover, .proto-relation-link:hover, .proto-relation-source:hover { text-decoration: underline; }
 .proto-relation-more { font-size: 10px; color: #b9ac86; padding: 6px; }
+
+
+/* Entity localization workflow: native YAML inspection -> existing FTL preview -> guarded write. */
+.entity-locale-panel { display: grid; gap: 10px; }
+.entity-locale-panel .prototype-field-notice { margin: 0; }
+.entity-locale-fields { display: grid; gap: 6px; padding: 0 12px; }
+.entity-locale-fields label { display: flex; align-items: start; gap: 8px; color: #b8cee4; font-size: 12px; overflow-wrap: anywhere; }
+.entity-locale-fields input { margin-top: 3px; }
+.entity-locale-fields code { font-size: 11px; }
+.entity-locale-filter { padding: 0 12px; display: grid; gap: 5px; color: #a5b9ce; font-size: 12px; }
+.entity-locale-filter input, .entity-locale-filter select {
+  background: #0c1521; border: 1px solid #415571; border-radius: 5px; padding: 8px;
+  color: #e4edf8; min-width: 0; max-width: 100%; font-size: 12px;
+}
+.entity-locale-preview { border: 1px solid #344960; margin: 0 12px; border-radius: 6px; padding: 10px; display: grid; gap: 6px; font-size: 12px; }
+.entity-locale-preview small { color: #9bb0c8; }
+.entity-locale-preview pre { max-height: 180px; overflow: auto; background: #0b1520; padding: 8px; font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
