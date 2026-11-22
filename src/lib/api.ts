@@ -98,6 +98,18 @@ export interface ResourceBrowserPage {
   total: number;
   items: ResourceBrowserEntry[];
 }
+export interface UiSourceEntry {
+  path: string;
+  kind: 'xaml' | 'code_behind' | 'code';
+  paired_with: string | null;
+}
+export interface UiSourcePage {
+  total: number;
+  items: UiSourceEntry[];
+  files_scanned: number;
+  complete: boolean;
+  warnings: string[];
+}
 export interface ContentSearchHit {
   path: string;
   kind: Exclude<ResourceKind, 'all'>;
@@ -523,6 +535,12 @@ export const studio = {
   },
   browseResourceFolder(directory: string, offset = 0, limit = 100): Promise<ResourceBrowserPage> {
     return invoke('browse_resource_folder', { directory, offset, limit });
+  },
+  searchUiSources(query: string, offset = 0, limit = 80): Promise<UiSourcePage> {
+    return invoke('search_ui_sources', { query, offset, limit });
+  },
+  readUiSource(path: string): Promise<ResourceDocument> {
+    return invoke('read_ui_source', { path });
   },
   searchResourceContent(query: string, kind: ResourceKind): Promise<ContentSearchResults> {
     return invoke('search_resource_content', { query, kind });

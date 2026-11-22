@@ -27,6 +27,7 @@ use crate::rsi_rename::{self, RenamedRsiState, RsiRenameRequest};
 use crate::rsi_replace;
 use crate::rsi_restore::{self, RestoredRsiState, RsiArchiveList, RsiRestoreRequest};
 use crate::rsi_timing::{self, RsiTimingUpdate};
+use crate::ui_sources::{UiSourceCatalog, UiSourcePage};
 
 const MAX_SCAN_ENTRIES: usize = 250_000;
 const MAX_READ_BYTES: u64 = 4 * 1024 * 1024;
@@ -102,6 +103,7 @@ pub struct ProjectIndex {
     positions: HashMap<String, usize>,
     prototype_catalog: Mutex<Option<Arc<PrototypeCatalog>>>,
     csharp_catalog: Mutex<Option<Arc<CSharpCatalog>>>,
+    ui_catalog: Mutex<Option<Arc<UiSourceCatalog>>>,
     fluent_locale_cache: Mutex<HashMap<String, Arc<LocaleSnapshot>>>,
     edit_lock: Mutex<()>,
 }
@@ -236,6 +238,7 @@ impl ProjectIndex {
             positions,
             prototype_catalog: Mutex::new(None),
             csharp_catalog: Mutex::new(None),
+            ui_catalog: Mutex::new(None),
             fluent_locale_cache: Mutex::new(HashMap::new()),
             edit_lock: Mutex::new(()),
         })
@@ -276,6 +279,23 @@ impl ProjectIndex {
             *cache = Some(Arc::new(CSharpCatalog::scan(&self.root)?));
         }
         cache.clone().ok_or_else(internal_lock)
+    }
+
+    fn ui_catalog(&self) -> Result<Arc<UiSourceCatalog>, StudioError> {
+        let mut cache = self.ui_catalog.lock().map_err(|_| internal_lock())?;
+        if cache.is_none() {
+            *cache = Some(Arc::new(UiSourceCatalog::scan(&self.root)?));
+        }
+        cache.clone().ok_or_else(internal_lock)
+    }
+
+    pub fn ui_sources_page(&self, query: &str, offset: usize, limit: usize)
+        -> Result<UiSourcePage, StudioError> {
+        Ok(self.ui_catalog()?.page(query, offset, limit))
+    }
+
+    pub fn read_ui_source(&self, path: &str) -> Result<ResourceDocument, StudioError> {
+        self.ui_catalog()?.read(&self.root, path)
     }
 
     pub fn csharp_page(

@@ -13,6 +13,7 @@ mod prototype_fields;
 mod prototype_graph;
 mod prototypes;
 mod resource_browser;
+mod ui_sources;
 mod resource_drift;
 mod resource_edit;
 mod rsi_create;
@@ -44,6 +45,7 @@ use prototype_fields::{FieldInspection, FieldLocator, FieldPatch, PrototypeField
 use prototype_graph::PrototypeRelations;
 use prototypes::{DiagnosticPage, PrototypePage};
 use resource_browser::ResourceBrowserPage;
+use ui_sources::UiSourcePage;
 use resource_drift::{OpenRevision, ResourceDriftReport};
 use resource_edit::{SaveResult, YamlSyntaxReport};
 use rsi_create::{RsiCreationPreview, RsiDraft};
@@ -151,6 +153,32 @@ async fn browse_resource_folder(
     })
     .await
     .map_err(interrupted)?
+}
+
+#[tauri::command]
+async fn search_ui_sources(
+    query: String,
+    offset: Option<usize>,
+    limit: Option<usize>,
+    state: State<'_, WorkspaceState>,
+) -> Result<UiSourcePage, StudioError> {
+    let project = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        project.ui_sources_page(&query, offset.unwrap_or(0), limit.unwrap_or(80))
+    })
+    .await
+    .map_err(interrupted)?
+}
+
+#[tauri::command]
+async fn read_ui_source(
+    path: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<ResourceDocument, StudioError> {
+    let project = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || project.read_ui_source(&path))
+        .await
+        .map_err(interrupted)?
 }
 
 #[tauri::command]
@@ -909,6 +937,8 @@ pub fn run() -> Result<(), tauri::Error> {
             refresh_project,
             search_resources,
             browse_resource_folder,
+            search_ui_sources,
+            read_ui_source,
             probe_open_revisions,
             search_resource_content,
             search_csharp_definitions,
