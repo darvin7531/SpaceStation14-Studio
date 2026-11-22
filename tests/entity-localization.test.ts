@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildEntityLocalePatch, type EntityLocaleValues } from '../src/lib/entity-localization';
+import { buildEntityLocalePatch, planMissingEntityTranslations, type EntityLocaleValues } from '../src/lib/entity-localization';
 
 const entity: EntityLocaleValues = {
   localization_id: 'ent-TestEntity',
@@ -45,4 +45,34 @@ test('checkbox order cannot place attributes before the message', () => {
     buildEntityLocalePatch('', entity, ['suffix', 'description', 'name']).content,
     'ent-TestEntity = Test entity\n    .desc = A description\n    .suffix = Suffix\n',
   );
+});
+
+test('batch quick-fix plans only confirmed missing fields for each game locale', () => {
+  const analysis: import('../src/lib/api').EntityLocalizationAnalysis = {
+    localization_id: entity.localization_id,
+    complete: true,
+    warnings: [],
+    targets: [
+      { locale: 'ru-RU', path: 'Resources/Locale/ru-RU/entities.ftl', file_exists: true,
+        exists: { name: true, description: false, suffix: true } },
+      { locale: 'en-US', path: 'Resources/Locale/en-US/entities.ftl', file_exists: false,
+        exists: { name: false, description: false, suffix: false } },
+    ],
+    diagnostics: [
+      { field: 'name', source_text: entity.name, missing_locales: ['en-US'], targets: [] },
+      { field: 'description', source_text: entity.description, missing_locales: ['ru-RU', 'en-US'], targets: [] },
+    ],
+  };
+  assert.deepEqual(planMissingEntityTranslations(analysis, ['name', 'description', 'suffix']), [
+    { locale: 'ru-RU', path: 'Resources/Locale/ru-RU/entities.ftl',
+      fileExists: true, fields: ['description'] },
+    { locale: 'en-US', path: 'Resources/Locale/en-US/entities.ftl',
+      fileExists: false, fields: ['name', 'description'] },
+  ]);
+  assert.deepEqual(planMissingEntityTranslations(analysis, ['name']), [
+    { locale: 'en-US', path: 'Resources/Locale/en-US/entities.ftl',
+      fileExists: false, fields: ['name'] },
+  ]);
+  assert.deepEqual(planMissingEntityTranslations({ ...analysis, complete: false }, ['name']), []);
+  assert.deepEqual(planMissingEntityTranslations(analysis, []), []);
 });
