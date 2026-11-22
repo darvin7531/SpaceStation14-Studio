@@ -149,9 +149,20 @@ export interface SourceSpriteLink {
   state: string | null;
   indexed: boolean;
 }
+export interface SourceSpriteLayer {
+  index: number;
+  path: string | null;
+  state: string | null;
+  indexed: boolean;
+  visible: boolean | null;
+  shader: string | null;
+  default_path: boolean;
+}
 export interface SourceOutlineEntry {
   declaration: PrototypeDeclaration;
   sprite: SourceSpriteLink | null;
+  sprite_layers: SourceSpriteLayer[];
+  sprite_layers_total: number;
 }
 export interface SourceOutline {
   declarations: SourceOutlineEntry[];
