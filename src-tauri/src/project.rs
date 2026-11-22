@@ -1829,7 +1829,7 @@ mod tests {
         assert!(cycle
             .warnings
             .iter()
-            .any(|warning| warning.contains("Цикл")));
+            .any(|warning| matches!(warning, prototype_merge::PrototypeWarning::Raw(message) if message.contains("Цикл"))));
         let missing = project
             .prototype_inheritance_preview("entity", "M")
             .unwrap();
@@ -1837,7 +1837,7 @@ mod tests {
         assert!(missing
             .warnings
             .iter()
-            .any(|warning| warning.contains("MissingParent")));
+            .any(|warning| matches!(warning, prototype_merge::PrototypeWarning::Raw(message) if message.contains("MissingParent"))));
         assert_eq!(missing.fields[0].preview, "M");
     }
 
@@ -1943,7 +1943,7 @@ mod tests {
         assert!(multiple
             .warnings
             .iter()
-            .any(|warning| warning.contains("2 родителя")));
+            .any(|warning| matches!(warning, prototype_merge::PrototypeWarning::Structured { code: "INHERIT_MULTIPLE_PARENTS", params, .. } if params["count"] == 2)));
     }
 
     #[test]
