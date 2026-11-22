@@ -254,6 +254,22 @@ export interface PrototypeRelationLink {
   status: 'defined' | 'partial_only' | 'ambiguous' | 'not_indexed' | 'tagged';
 }
 
+export interface PrototypeAncestor {
+  kind: string;
+  id: string;
+  via: string;
+  depth: number;
+  status: PrototypeRelationLink['status'];
+  source_file: string;
+  source_line: number;
+  source_mode: PrototypeDeclaration['mode'];
+  definition_file: string | null;
+  definition_line: number | null;
+  partial_sources: number;
+  repeated: boolean;
+  cycle: boolean;
+}
+
 export interface PrototypeRelations {
   kind: string;
   id: string;
@@ -262,6 +278,9 @@ export interface PrototypeRelations {
   children: PrototypeRelationLink[];
   parent_total: number;
   child_total: number;
+  ancestors: PrototypeAncestor[];
+  ancestry_complete: boolean;
+  ancestry_truncated: boolean;
   index_complete: boolean;
 }
 
