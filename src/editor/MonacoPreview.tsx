@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
-import type { ResourceDocument, ResourceEntry } from '../lib/api';
+import { studio, type ResourceDocument, type ResourceEntry } from '../lib/api';
+import { yamlCompletionContext } from './yaml-completion';
 import type { EditorSettings } from '../lib/editor-settings';
 import { identifierAtColumn } from '../lib/editor-navigation';
 
@@ -107,6 +108,53 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
           const subscription = editor.onDidChangeModelContent(() => {
             onChangeRef.current?.(editor.getValue());
           });
+          // Restore Electron's indexed parent/component completions. Provider
+          // belongs to the current Monaco model and is disposed with the tab.
+          const completions = resource.kind === 'yaml'
+            ? monaco.languages.registerCompletionItemProvider('yaml', {
+              triggerCharacters: [' ', ':', '-', ',', '['],
+              provideCompletionItems: async (source, position, _context, token) => {
+                if (source !== model || token.isCancellationRequested) return { suggestions: [] };
+                const first = Math.max(1, position.lineNumber - 64);
+                const lines = Array.from({ length: position.lineNumber - first + 1 },
+                  (_, offset) => source.getLineContent(first + offset));
+                const target = yamlCompletionContext(lines, lines.length, position.column);
+                if (!target) return { suggestions: [] };
+                try {
+                  const response = target.kind === 'prototype-parent'
+                    ? await studio.searchPrototypes(target.query, '', 0, 80)
+                    : await studio.searchCSharpDefinitions(target.query, 'component', 0, 80);
+                  if (token.isCancellationRequested || cancelled) return { suggestions: [] };
+                  const seen = new Set<string>();
+                  const candidates = response.items.flatMap((item) => {
+                    const label = item.kind === 'component' ? item.name : item.id;
+                    if (!label.toLowerCase().startsWith(target.query.toLowerCase())) return [];
+                    if (seen.has(label)) return [];
+                    seen.add(label);
+                    return [{
+                      label,
+                      kind: item.kind === 'component'
+                        ? monaco.languages.CompletionItemKind.Class
+                        : monaco.languages.CompletionItemKind.Reference,
+                      insertText: label,
+                      detail: item.kind === 'component'
+                        ? item.class_name + ' · ' + item.file
+                        : item.kind + ' · ' + item.file,
+                      range: {
+                        startLineNumber: position.lineNumber,
+                        endLineNumber: position.lineNumber,
+                        startColumn: target.startColumn,
+                        endColumn: position.column,
+                      },
+                    }];
+                  });
+                  return { suggestions: candidates };
+                } catch {
+                  // A malformed/stale index must not make editing YAML impossible.
+                  return { suggestions: [] };
+                }
+              },
+            }) : null;
           const navigateSubscription = editor.onMouseDown((event) => {
             if (!settingsRef.current.ctrlClickNavigation || !onNavigateRef.current) return;
             if (!(event.event.ctrlKey || event.event.metaKey) || !event.event.leftButton) return;
@@ -124,6 +172,7 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
           dispose = () => {
             subscription.dispose();
             navigateSubscription.dispose();
+            completions?.dispose();
             contentRef.current = null;
             updateOptionsRef.current = null;
             editorRef.current = null;
