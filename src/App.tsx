@@ -1689,7 +1689,8 @@ export default function App() {
                 onRestored={(result) => onRsiRestored(selected.path, result)}
                 onRenamed={(result) => onRsiRenamed(selected.path, result)}/>
               : document ? <MonacoPreview settings={editorSettings} key={document.path} resource={selected} document={document}
-              value={activeText} editable={isEditableText(selected.kind) && !saving && !refreshing}
+              value={activeText} gameLocales={localizationSettings.requiredLocales}
+              editable={isEditableText(selected.kind) && !saving && !refreshing}
               onNavigateIdentifier={selected.kind === 'yaml'
                 ? (id) => void navigatePrototypeIdentifier(id, selected.path) : undefined}
               onNavigateRsi={selected.kind === 'yaml'

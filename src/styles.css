@@ -254,3 +254,11 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 
 .tab-drop-before { box-shadow: inset 3px 0 0 #8bc2ff; }
 .tab-drop-after { box-shadow: inset -3px 0 0 #8bc2ff; }
+
+/* Electron-style visual indication of missing game Fluent fields in Monaco. */
+.studio-loc-missing {
+  text-decoration: underline wavy rgba(248, 113, 113, 0.95);
+  text-underline-offset: 3px;
+  background: rgba(127, 29, 29, 0.12);
+  border-radius: 3px;
+}
