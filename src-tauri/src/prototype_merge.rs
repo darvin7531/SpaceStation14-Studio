@@ -889,11 +889,24 @@ impl<F: FnMut(&str) -> Result<String, StudioError>> InheritanceSolver<'_, F> {
                                 lineage.push(ancestor);
                             }
                         }
-                        if let Err(error) = overlay_inherited(
-                            &mut projected, &parent.node, &mut sources, &parent.sources
+                        // Preserve the previous projection when a parent
+                        // contains an unsupported nested YAML operation.
+                        let mut candidate = projected.clone();
+                        let mut candidate_sources = sources.clone();
+                        match overlay_inherited(
+                            &mut candidate,
+                            &parent.node,
+                            &mut candidate_sources,
+                            &parent.sources,
                         ) {
-                            complete = false;
-                            self.warn(format!("{id} ← {parent_id}: {error}"));
+                            Ok(()) => {
+                                projected = candidate;
+                                sources = candidate_sources;
+                            }
+                            Err(error) => {
+                                complete = false;
+                                self.warn(format!("{id} ← {parent_id}: {error}"));
+                            }
                         }
                     }
                     Err(error) => {
@@ -904,11 +917,22 @@ impl<F: FnMut(&str) -> Result<String, StudioError>> InheritanceSolver<'_, F> {
             }
             // Apply a child's already-partial-merged source *after* the parents.
             // No metadata such as parent, id, type or abstract is inherited.
-            if let Err(error) = overlay_inherited(
-                &mut projected, own, &mut sources, &partial.sources
+            let mut candidate = projected.clone();
+            let mut candidate_sources = sources.clone();
+            match overlay_inherited(
+                &mut candidate,
+                own,
+                &mut candidate_sources,
+                &partial.sources,
             ) {
-                complete = false;
-                self.warn(format!("{id}: {error}"));
+                Ok(()) => {
+                    projected = candidate;
+                    sources = candidate_sources;
+                }
+                Err(error) => {
+                    complete = false;
+                    self.warn(format!("{id}: {error}"));
+                }
             }
             lineage.push(id.to_owned());
             Ok(InheritedSnapshot {
@@ -1073,6 +1097,46 @@ mod tests {
 
     fn node(src: &str) -> Node {
         parse(src).unwrap().remove(0)
+    }
+
+    #[test]
+    fn inherited_lists_replace_parent_lists_but_nested_maps_keep_unspecified_keys() {
+        let mut parent = node("tags: [a, b]\nflags: {enabled: true, hidden: true}\n");
+        let child = node("tags: [c]\nflags: {enabled: false}\n");
+        let mut provenance = HashMap::new();
+        let child_sources = HashMap::from([
+            ("tags".to_owned(), "child.yml".to_owned()),
+            ("flags".to_owned(), "child.yml".to_owned()),
+        ]);
+        overlay_inherited(&mut parent, &child, &mut provenance, &child_sources).unwrap();
+        let Value::Seq(tags) = &parent.field("tags").unwrap().value else { panic!("missing tags") };
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].scalar(), Some("c"));
+        let flags = parent.field("flags").unwrap();
+        assert_eq!(flags.field("enabled").unwrap().scalar(), Some("false"));
+        assert_eq!(flags.field("hidden").unwrap().scalar(), Some("true"));
+        assert_eq!(provenance["flags"], "child.yml");
+    }
+
+    #[test]
+    fn inherited_components_merge_by_type_without_erasing_unspecified_fields() {
+        let mut parent = node("components:\n- type: Sprite\n  state: old\n  shader: unshaded\n");
+        let child = node("components:\n- type: Sprite\n  state: new\n- type: Physics\n  mass: 2\n");
+        let mut provenance = HashMap::new();
+        let sources = HashMap::from([
+            ("components".to_owned(), "child.yml".to_owned()),
+            ("components/Sprite".to_owned(), "child.yml".to_owned()),
+            ("components/Physics".to_owned(), "child.yml".to_owned()),
+        ]);
+        overlay_inherited(&mut parent, &child, &mut provenance, &sources).unwrap();
+        let Value::Seq(components) = &parent.field("components").unwrap().value else {
+            panic!("missing components")
+        };
+        assert_eq!(components.len(), 2);
+        assert_eq!(components[0].field("state").unwrap().scalar(), Some("new"));
+        assert_eq!(components[0].field("shader").unwrap().scalar(), Some("unshaded"));
+        assert_eq!(provenance["components/Sprite"], "child.yml");
+        assert_eq!(provenance["components/Physics"], "child.yml");
     }
 
     #[test]
