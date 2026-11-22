@@ -1120,7 +1120,6 @@ pub fn preview_inheritance(
     })
 }
 
-
 /// Compatibility with the existing Electron Inspector "Linked prototypes"
 /// section: strings inside a resolved source tree may refer to prototype IDs.
 /// This is a read-only navigation index, not a semantic PrototypeId checker.
@@ -1177,19 +1176,25 @@ fn collect_links(
                     format!("{path}[{index}]")
                 };
                 collect_links(item, catalog, kind, &next, collector);
-                if collector.limited { break; }
+                if collector.limited {
+                    break;
+                }
             }
         }
         Value::Map(fields) => {
             for (key, item) in fields {
-                if key.starts_with('_') { continue; }
+                if key.starts_with('_') {
+                    continue;
+                }
                 let next = if path.is_empty() {
                     key.clone()
                 } else {
                     format!("{path}.{key}")
                 };
                 collect_links(item, catalog, kind, &next, collector);
-                if collector.limited { break; }
+                if collector.limited {
+                    break;
+                }
             }
         }
         Value::Scalar(text) => {
@@ -1203,15 +1208,23 @@ fn collect_links(
             {
                 return;
             }
-            let Some(target) = catalog.linked_prototype(kind, candidate) else { return; };
+            let Some(target) = catalog.linked_prototype(kind, candidate) else {
+                return;
+            };
             let identity = (target.kind.clone(), target.id.clone());
-            if !collector.seen.insert(identity.clone()) { return; }
+            if !collector.seen.insert(identity.clone()) {
+                return;
+            }
             collector.total += 1;
             if collector.items.len() < MAX_LINKED_ROWS {
                 collector.items.push(LinkedPrototype {
                     kind: identity.0,
                     id: identity.1,
-                    field: if path.is_empty() { "reference".into() } else { path.into() },
+                    field: if path.is_empty() {
+                        "reference".into()
+                    } else {
+                        path.into()
+                    },
                 });
             } else {
                 collector.limited = true;
@@ -1249,7 +1262,8 @@ pub fn linked_prototypes(
             "PROTOTYPE_LINKS_SOURCE_UNAVAILABLE",
             "Не удалось прочитать YAML прототипа для поиска ссылок.",
             "Проверьте индекс и исходные YAML-файлы.",
-        ).with_details(details)
+        )
+        .with_details(details)
     })?;
     let mut collector = LinkCollector {
         visited: 0,
@@ -1259,11 +1273,14 @@ pub fn linked_prototypes(
         items: Vec::new(),
     };
     collect_links(&snapshot.node, catalog, kind, "", &mut collector);
-    let index_complete = catalog.relations(kind, id)
+    let index_complete = catalog
+        .relations(kind, id)
         .is_some_and(|value| value.index_complete);
     let source_complete = snapshot.complete && index_complete && !collector.limited;
     if !index_complete {
-        solver.warn("Часть YAML-файлов не вошла в индекс: некоторые ссылки могут отсутствовать.".into());
+        solver.warn(
+            "Часть YAML-файлов не вошла в индекс: некоторые ссылки могут отсутствовать.".into(),
+        );
     }
     if collector.limited {
         solver.warn("В Electron показывались первые 24 ссылки; просмотр ограничен 24 результатами и 8192 YAML-узлами.".into());
