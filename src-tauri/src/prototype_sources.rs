@@ -44,8 +44,10 @@ fn snapshot_row<'a>(docs: &'a [Yaml], entry: &PrototypeDeclaration) -> Option<&'
     if entry.variant_index.is_some() {
         return None;
     }
-    let row = docs.get(entry.document_index.checked_sub(1)?)?
-        .as_vec()?.get(entry.item_index.checked_sub(1)?)?;
+    let row = docs
+        .get(entry.document_index.checked_sub(1)?)?
+        .as_vec()?
+        .get(entry.item_index.checked_sub(1)?)?;
     if row["type"].as_str() != Some(entry.kind.as_str())
         || row["id"].as_str() != Some(entry.id.as_str())
     {
@@ -59,21 +61,30 @@ fn summarize(row: &Yaml) -> (Vec<String>, Vec<String>, bool) {
     let Some(map) = row.as_hash() else {
         return (Vec::new(), Vec::new(), false);
     };
-    let keys: Vec<String> = map.keys()
+    let keys: Vec<String> = map
+        .keys()
         .filter_map(Yaml::as_str)
         .filter(|key| *key != "type" && *key != "id" && *key != "components")
         .take(MAX_KEYS + 1)
         .map(str::to_owned)
         .collect();
     let components: Vec<String> = row["components"].as_vec().map_or_else(Vec::new, |items| {
-        items.iter().take(MAX_COMPONENTS + 1)
-            .map(|item| item["type"].as_str()
-                .map_or_else(|| "(нестатический type)".to_owned(), str::to_owned))
+        items
+            .iter()
+            .take(MAX_COMPONENTS + 1)
+            .map(|item| {
+                item["type"]
+                    .as_str()
+                    .map_or_else(|| "(нестатический type)".to_owned(), str::to_owned)
+            })
             .collect()
     });
     let capped = keys.len() > MAX_KEYS || components.len() > MAX_COMPONENTS;
-    (keys.into_iter().take(MAX_KEYS).collect(),
-        components.into_iter().take(MAX_COMPONENTS).collect(), capped)
+    (
+        keys.into_iter().take(MAX_KEYS).collect(),
+        components.into_iter().take(MAX_COMPONENTS).collect(),
+        capped,
+    )
 }
 
 /// Traverse exactly the already bounded source ancestry. Each distinct
@@ -122,14 +133,15 @@ pub fn inspect(
                 a.line,
                 a.document_index,
                 a.item_index,
-            ).cmp(&(
-                b.mode != "normal",
-                b.partial_order.unwrap_or(usize::MAX),
-                &b.file,
-                b.line,
-                b.document_index,
-                b.item_index,
-            ))
+            )
+                .cmp(&(
+                    b.mode != "normal",
+                    b.partial_order.unwrap_or(usize::MAX),
+                    &b.file,
+                    b.line,
+                    b.document_index,
+                    b.item_index,
+                ))
         });
         for entry in declarations {
             if items.len() >= MAX_DECLARATIONS {
@@ -137,17 +149,24 @@ pub fn inspect(
                 break 'identities;
             }
             if !file_cache.contains_key(&entry.file) {
-                let result = read(&entry.file).map_err(|failure| {
-                    format!("Файл недоступен: {} [{}]", failure.message, failure.code)
-                }).and_then(|source| {
-                    if source.len() > MAX_TOTAL_BYTES.saturating_sub(total_bytes) {
-                        return Err("Превышен общий лимит чтения исходников (24 МиБ).".into());
-                    }
-                    total_bytes += source.len();
-                    YamlLoader::load_from_str(&source)
-                        .map_err(|error| format!("YAML содержит неподдерживаемую для обзора структуру: {error}"))
-                });
-                if result.as_ref().err().is_some_and(|issue| issue.starts_with("Превышен общий")) {
+                let result = read(&entry.file)
+                    .map_err(|failure| {
+                        format!("Файл недоступен: {} [{}]", failure.message, failure.code)
+                    })
+                    .and_then(|source| {
+                        if source.len() > MAX_TOTAL_BYTES.saturating_sub(total_bytes) {
+                            return Err("Превышен общий лимит чтения исходников (24 МиБ).".into());
+                        }
+                        total_bytes += source.len();
+                        YamlLoader::load_from_str(&source).map_err(|error| {
+                            format!("YAML содержит неподдерживаемую для обзора структуру: {error}")
+                        })
+                    });
+                if result
+                    .as_ref()
+                    .err()
+                    .is_some_and(|issue| issue.starts_with("Превышен общий"))
+                {
                     warnings.push("Обзор остановлен после лимита чтения 24 МиБ.".into());
                     truncated = true;
                     break 'identities;
@@ -190,7 +209,8 @@ pub fn inspect(
     Ok(PrototypeSourceReport {
         kind: kind.to_owned(),
         id: id.to_owned(),
-        ancestry_complete: relations.ancestry_complete && !truncated
+        ancestry_complete: relations.ancestry_complete
+            && !truncated
             && items.iter().all(|item| item.notice.is_none()),
         truncated,
         items,
@@ -218,10 +238,19 @@ mod tests {
     fn source_row_rejects_stale_identity_and_generated_variants() {
         let docs = YamlLoader::load_from_str("- type: entity\n  id: Real\n").unwrap();
         let mut declaration = PrototypeDeclaration {
-            kind: "entity".into(), id: "Other".into(), parents: Vec::new(),
-            abstract_prototype: false, file: "Resources/Prototypes/test.yml".into(),
-            line: 1, document_index: 1, item_index: 1, variant_index: None,
-            mode: "normal", partial_order: None, parent_tag: None, source_count: 1,
+            kind: "entity".into(),
+            id: "Other".into(),
+            parents: Vec::new(),
+            abstract_prototype: false,
+            file: "Resources/Prototypes/test.yml".into(),
+            line: 1,
+            document_index: 1,
+            item_index: 1,
+            variant_index: None,
+            mode: "normal",
+            partial_order: None,
+            parent_tag: None,
+            source_count: 1,
         };
         assert!(snapshot_row(&docs, &declaration).is_none());
         declaration.id = "Real".into();
