@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AlertCircle, GitBranch, X } from 'lucide-react';
 import { studio, type PrototypeAncestor, type PrototypePartialPreview, type PrototypeRelationLink, type PrototypeRelations, type PrototypeSourceReport } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
+import InheritancePreviewPanel from './InheritancePreviewPanel';
 
 interface PrototypeIdentity {
   kind: string;
@@ -257,6 +258,7 @@ export default function PrototypeRelationsPanel({
   const [loading, setLoading] = useState(false);
   const [showSources, setShowSources] = useState(false);
   const [showPartial, setShowPartial] = useState(false);
+  const [showInheritance, setShowInheritance] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -306,6 +308,14 @@ export default function PrototypeRelationsPanel({
         onNavigate={onNavigate} onOpen={onOpen}/>
       <AncestorItems items={details.ancestors} complete={details.ancestry_complete}
         truncated={details.ancestry_truncated} onNavigate={onNavigate} onOpen={onOpen}/>
+      <section className="proto-relation-group">
+        <button type="button" className="prototype-relations-trigger"
+          aria-expanded={showInheritance} onClick={() => setShowInheritance((value) => !value)}>
+          {showInheritance ? 'Скрыть структурное наследование' : 'Вычислить структурное наследование + partial'}
+        </button>
+        {showInheritance && <InheritancePreviewPanel kind={selected.kind} id={selected.id}
+          workspaceKey={workspaceKey} onNavigate={onNavigate} onOpen={onOpen}/>}
+      </section>
       <section className="proto-relation-group">
         <button type="button" className="prototype-relations-trigger"
           aria-expanded={showPartial} onClick={() => setShowPartial((value) => !value)}>
