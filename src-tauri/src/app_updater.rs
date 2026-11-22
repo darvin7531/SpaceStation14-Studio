@@ -54,7 +54,8 @@ pub async fn check(app: AppHandle, pending: &PendingUpdate) -> Result<UpdateStat
             status: "disabled",
             current_version: version,
             available_version: None,
-            message: "Обновления Tauri отключены: сборка не содержит публичного ключа подписи.".into(),
+            message: "Обновления Tauri отключены: сборка не содержит публичного ключа подписи."
+                .into(),
         });
     }
 
@@ -91,7 +92,11 @@ pub async fn check(app: AppHandle, pending: &PendingUpdate) -> Result<UpdateStat
     let available_version = update.as_ref().map(|found| found.version.clone());
     *pending.0.lock().map_err(|_| internal_lock())? = update;
     Ok(UpdateStatus {
-        status: if available_version.is_some() { "available" } else { "unavailable" },
+        status: if available_version.is_some() {
+            "available"
+        } else {
+            "unavailable"
+        },
         current_version: version,
         message: match &available_version {
             Some(number) => format!("Найдено подписанное Tauri-обновление {number}."),
@@ -109,13 +114,18 @@ pub async fn install(app: AppHandle, pending: &PendingUpdate) -> Result<(), Stud
             "Создайте подписанный релиз Rust-приложения с публичным ключом.",
         ));
     }
-    let update = pending.0.lock().map_err(|_| internal_lock())?.take().ok_or_else(|| {
-        issue(
-            "UPDATE_NOT_CHECKED",
-            "Нет проверенного Tauri-обновления для установки.",
-            "Сначала проверьте обновления в настройках редактора.",
-        )
-    })?;
+    let update = pending
+        .0
+        .lock()
+        .map_err(|_| internal_lock())?
+        .take()
+        .ok_or_else(|| {
+            issue(
+                "UPDATE_NOT_CHECKED",
+                "Нет проверенного Tauri-обновления для установки.",
+                "Сначала проверьте обновления в настройках редактора.",
+            )
+        })?;
 
     let download_app = app.clone();
     let finish_app = app.clone();
