@@ -13,6 +13,7 @@ import './styles.rsi.css';
 import './styles.fluent.css';
 import './styles.fluent-diagnostics.css';
 import './styles.csharp.css';
+import './styles.ui-sources.css';
 import './styles.settings.css';
 import './styles.search.css';
 

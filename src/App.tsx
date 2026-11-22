@@ -27,6 +27,7 @@ import CreateFluentWizard from './components/CreateFluentWizard';
 import FluentDiagnosticsPanel from './components/FluentDiagnosticsPanel';
 import YamlDiagnosticsPanel from './components/YamlDiagnosticsPanel';
 import CSharpCatalogPanel from './components/CSharpCatalogPanel';
+import UiSourcesPanel from './components/UiSourcesPanel';
 import ConflictReviewPanel from './components/ConflictReviewPanel';
 import EditorSettingsDialog from './components/EditorSettingsDialog';
 import QuickOpenPanel from './components/QuickOpenPanel';
@@ -109,6 +110,7 @@ export default function App() {
   const [creatingFluent, setCreatingFluent] = useState(false);
   const [creatingRsi, setCreatingRsi] = useState(false);
   const [showingCSharp, setShowingCSharp] = useState(false);
+  const [showingUiSources, setShowingUiSources] = useState(false);
   const [fieldTarget, setFieldTarget] = useState<PrototypeFieldLocator | null>(null);
   const [prototypePanel, setPrototypePanel] = useState<'fields' | 'components'>('fields');
   const [picking, setPicking] = useState(false);
@@ -260,6 +262,7 @@ export default function App() {
     setCreatingFluent(false);
     setCreatingRsi(false);
     setShowingCSharp(false);
+    setShowingUiSources(false);
     setQuickOpen(false);
     setContentSearchOpen(false);
     setFieldTarget(null);
@@ -1088,6 +1091,9 @@ export default function App() {
     {settingsOpen && <EditorSettingsDialog value={editorSettings}
       onChange={(settings) => setEditorSettings(sanitizeEditorSettings(settings))}
       onClose={() => setSettingsOpen(false)}/>}
+    {showingUiSources && overview && <UiSourcesPanel
+      projectKey={overview.project_root + ':' + workspaceRevision}
+      onClose={() => setShowingUiSources(false)}/>}
     {showingCSharp && overview && <CSharpCatalogPanel
       projectKey={overview.project_root + ':' + workspaceRevision}
       onClose={() => setShowingCSharp(false)}/>}
@@ -1164,6 +1170,11 @@ export default function App() {
           disabled={opening || saving || transitioning || refreshing || creatingPrototype || creatingFluent || creatingRsi}
           onClick={() => setShowingCSharp(true)}>
           <FileCode2 size={15}/> {t('app.csharpSchemas')}
+        </button>
+        <button type="button" className="create-proto-open"
+          disabled={opening || saving || transitioning || refreshing}
+          onClick={() => setShowingUiSources(true)}>
+          <FileCode2 size={15}/> {t('app.uiSources')}
         </button>
         <button type="button" className="create-proto-open"
           disabled={opening || saving || refreshing || transitioning || driftChecking || !tabState.tabs.length}

@@ -1,0 +1,20 @@
+/* UI-source browser; read-only source pane shares existing C# viewer styles. */
+.ui-source-modal { width: min(1000px, 94vw); }
+.ui-source-actions { display: flex; align-items: center; gap: 8px; }
+.ui-source-explanation { margin: 8px 16px; font-size: 12px; color: #a7b4c6; }
+.ui-source-search { display: flex; align-items: center; gap: 8px; margin: 12px 16px;
+  border: 1px solid #3b4657; border-radius: 8px; padding: 8px 12px; }
+.ui-source-search input { flex: 1; min-width: 0; outline: none; border: none;
+  color: inherit; background: transparent; }
+.ui-source-list { display: flex; flex-direction: column; overflow-y: auto;
+  min-height: 90px; flex: 1; }
+.ui-source-item { display: flex; align-items: center; gap: 12px; width: 100%;
+  background: transparent; text-align: left; padding: 10px 18px; border: 0;
+  border-bottom: 1px solid #283241; color: inherit; }
+.ui-source-item:hover, .ui-source-item:focus-visible { background: #243249; }
+.ui-source-item > span { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.ui-source-item small { font-size: 11px; color: #899caf; overflow: hidden;
+  text-overflow: ellipsis; }
+.ui-source-item em { font-style: normal; font-size: 11px; color: #a3b5cb; white-space: nowrap; }
+.ui-source-code { flex: 1; overflow-y: auto; min-height: 170px; }
+.ui-source-pair { display: inline-flex; gap: 6px; align-items: center; margin-left: 12px; }
