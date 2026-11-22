@@ -829,7 +829,8 @@ impl ProjectIndex {
                 .filter(|path| {
                     std::path::Path::new(path)
                         .file_name()
-                        .and_then(|name| name.to_str()) == Some(filename.as_str())
+                        .and_then(|name| name.to_str())
+                        == Some(filename.as_str())
                 })
                 .find(|path| module.is_none_or(|segment| path.contains(&format!("/{segment}/"))));
             let fallback = match module {
