@@ -32,11 +32,11 @@ use draft_journal::{DraftJournal, DraftList, DraftSnapshot, DraftSummary, DraftW
 use error::{internal_lock, interrupted, StudioError};
 use fluent_create::{FluentDraft, FluentPreview};
 use fluent_locale::FluentInspection;
-use project_watcher::ProjectWatcher;
 use project::{
     ContentSearchResults, ProjectIndex, ProjectOverview, ProjectRefresh, ResourceDocument,
     ResourcePage,
 };
+use project_watcher::ProjectWatcher;
 use prototype_append::AppendPreview;
 use prototype_components::{ComponentInspection, ComponentOperation};
 use prototype_create::{PrototypeDraft, PrototypePreview};
@@ -104,7 +104,10 @@ async fn open_project(
     let mut summary = index.overview().clone();
     *state.0.lock().map_err(|_| internal_lock())? = Some(Arc::new(index));
     if let Err(error) = watcher.replace(&app, std::path::Path::new(&summary.project_root)) {
-        summary.warnings.push(format!("Автообновление отключено: {} {}", error.message, error.hint));
+        summary.warnings.push(format!(
+            "Автообновление отключено: {} {}",
+            error.message, error.hint
+        ));
     }
     Ok(summary)
 }
