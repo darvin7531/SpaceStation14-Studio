@@ -230,8 +230,14 @@ fn merge(dst: &mut Node, src: &Node, components: bool) -> Result<(), String> {
                 if let Some((_, existing)) = old.iter_mut().find(|(candidate, _)| candidate == key) {
                     merge(existing, value, key == "components")?;
                 } else {
-                    let default = Node { tag: None, value: Value::Scalar(String::new()) };
-                    let mut inserted = default;
+                    let mut inserted = if matches!(&value.value, Value::Seq(_)) {
+                        Node { tag: None, value: Value::Seq(Vec::new()) }
+                    } else {
+                        // A new field starts from its own value. In particular
+                        // do not prefix a new list with an empty scalar.
+                        old.push((key.clone(), clean(value.clone())?));
+                        continue;
+                    };
                     merge(&mut inserted, value, key == "components")?;
                     old.push((key.clone(), inserted));
                 }
@@ -412,7 +418,15 @@ pub fn preview(
                 warnings.push("Нет базового прототипа; partial не применяется к пустому объекту.".into());
                 continue;
             }
-            composed = Some(source.clone());
+            let clean_base = match clean(source.clone()) {
+                Ok(value) => value,
+                Err(reason) => {
+                    exact = false;
+                    warnings.push(format!("{}:{}: {reason}", entry.file, entry.line));
+                    continue;
+                }
+            };
+            composed = Some(clean_base);
             if let Value::Map(fields) = &source.value {
                 for (key, value) in fields {
                     sources.insert(key.clone(), entry.file.clone());
@@ -440,20 +454,41 @@ pub fn preview(
         }
         match merge(&mut candidate, &overlay, false) {
             Ok(()) => {
+                // Provenance changes only when the resulting value changes.
+                // A conditional !Remove that does not match must not claim
+                // it modified an inherited field.
                 if let Value::Map(fields) = &source.value {
-                    for (key, value) in fields {
-                        if !matches!(key.as_str(), "type" | "id") {
-                            sources.insert(key.clone(), entry.file.clone());
-                            if key == "components" {
-                                if let Value::Seq(list) = &value.value {
-                                    for component in list {
-                                        if let Some(name) = component.field("type").and_then(Node::scalar) {
-                                            sources.insert(format!("components/{name}"), entry.file.clone());
-                                        }
-                                    }
-                                }
+                    for (key, _) in fields {
+                        if matches!(key.as_str(), "type" | "id") { continue; }
+                        let before = composed_ref.field(key);
+                        let after = candidate.field(key);
+                        if before != after {
+                            if after.is_some() {
+                                sources.insert(key.clone(), entry.file.clone());
+                            } else {
+                                sources.remove(key);
                             }
                         }
+                    }
+                }
+                let component_entries = |node: &Node| -> HashMap<String, Node> {
+                    match node.field("components").map(|field| &field.value) {
+                        Some(Value::Seq(list)) => list.iter().filter_map(|item|
+                            item.field("type").and_then(Node::scalar)
+                                .map(|name| (name.to_owned(), item.clone()))).collect(),
+                        _ => HashMap::new(),
+                    }
+                };
+                let prior = component_entries(composed_ref);
+                let current = component_entries(&candidate);
+                for (name, value) in &current {
+                    if prior.get(name) != Some(value) {
+                        sources.insert(format!("components/{name}"), entry.file.clone());
+                    }
+                }
+                for name in prior.keys() {
+                    if !current.contains_key(name) {
+                        sources.remove(&format!("components/{name}"));
                     }
                 }
                 // Partial type/id are identity markers, not mutable prototype fields.
@@ -551,6 +586,15 @@ mod tests {
         assert_eq!(items.iter().map(|v| v.scalar().unwrap()).collect::<Vec<_>>(),
             ["start", "a", "b", "nearend", "c"]);
         assert!(merge(&mut base, &node("items: [!Index:999 invalid]"), false).is_err());
+    }
+
+    #[test]
+    fn new_sequence_field_has_no_phantom_empty_item() {
+        let mut root = node("id: Base");
+        merge(&mut root, &node("items: [one, two]"), false).unwrap();
+        let Value::Seq(list) = &root.field("items").unwrap().value else { panic!("not a list") };
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].scalar(), Some("one"));
     }
 
     #[test]
