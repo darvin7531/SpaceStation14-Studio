@@ -291,8 +291,8 @@ impl PrototypeGraph {
         declarations: &[PrototypeDeclaration],
         by_identity: &HashMap<Identity, Vec<usize>>,
     ) -> (Vec<PrototypeAncestor>, bool, bool) {
-        let mut complete = self.index_complete
-            && status(key, by_identity, declarations) == "defined";
+        let mut complete =
+            self.index_complete && status(key, by_identity, declarations) == "defined";
         let mut truncated = false;
         let mut steps = Vec::new();
         if by_identity.get(key).is_none() {
@@ -305,13 +305,15 @@ impl PrototypeGraph {
 
         while let Some((current, depth, trail)) = queue.pop_front() {
             let matches = by_identity.get(&current);
-            if matches.is_some_and(|found| {
-                found.iter().any(|&i| declarations[i].mode != "normal")
-            }) {
+            if matches.is_some_and(|found| found.iter().any(|&i| declarations[i].mode != "normal"))
+            {
                 complete = false;
             }
 
-            let edges = self.parent_edges.get(&current).map_or(&[][..], Vec::as_slice);
+            let edges = self
+                .parent_edges
+                .get(&current)
+                .map_or(&[][..], Vec::as_slice);
             if depth >= MAX_ANCESTRY_DEPTH {
                 if !edges.is_empty() {
                     truncated = true;
@@ -332,12 +334,18 @@ impl PrototypeGraph {
                 let target_status = status(&target, by_identity, declarations);
                 let target_declarations = by_identity.get(&target);
                 let partial_sources = target_declarations.map_or(0, |indices| {
-                    indices.iter().filter(|&&i| declarations[i].mode != "normal").count()
+                    indices
+                        .iter()
+                        .filter(|&&i| declarations[i].mode != "normal")
+                        .count()
                 });
                 let definition = target_declarations
-                    .and_then(|indices| indices.iter().copied().find(|&i| {
-                        declarations[i].mode == "normal"
-                    }))
+                    .and_then(|indices| {
+                        indices
+                            .iter()
+                            .copied()
+                            .find(|&i| declarations[i].mode == "normal")
+                    })
                     .map(|index| &declarations[index]);
                 let tentative = edge.tagged || source.mode != "normal";
                 let cycle = trail.contains(&target);
@@ -613,18 +621,33 @@ mod tests {
             declaration("reagent", "D", &["Unknown"], "normal"),
         ];
         let (graph, index) = build(&definitions, &[]);
-        let result = graph.relations("entity", "A", &definitions, &index).unwrap();
-        assert_eq!(result.ancestors.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(),
-            ["B", "C", "D", "D"]);
-        assert_eq!(result.ancestors.iter().map(|a| a.depth).collect::<Vec<_>>(),
-            [1, 1, 2, 2]);
+        let result = graph
+            .relations("entity", "A", &definitions, &index)
+            .unwrap();
+        assert_eq!(
+            result
+                .ancestors
+                .iter()
+                .map(|a| a.id.as_str())
+                .collect::<Vec<_>>(),
+            ["B", "C", "D", "D"]
+        );
+        assert_eq!(
+            result.ancestors.iter().map(|a| a.depth).collect::<Vec<_>>(),
+            [1, 1, 2, 2]
+        );
         assert!(result.ancestors.last().unwrap().repeated);
         assert!(!result.ancestors.last().unwrap().cycle);
         assert!(result.ancestry_complete);
         assert!(!result.ancestry_truncated);
-        assert_eq!(result.ancestors[0].source_file, "Resources/Prototypes/A.yml");
-        assert_eq!(result.ancestors[0].definition_file.as_deref(),
-            Some("Resources/Prototypes/B.yml"));
+        assert_eq!(
+            result.ancestors[0].source_file,
+            "Resources/Prototypes/A.yml"
+        );
+        assert_eq!(
+            result.ancestors[0].definition_file.as_deref(),
+            Some("Resources/Prototypes/B.yml")
+        );
     }
 
     #[test]
@@ -637,7 +660,9 @@ mod tests {
             declaration("entity", "Base", &["Extra"], "tagged_partial"),
         ];
         let (graph, index) = build(&definitions, &[]);
-        let result = graph.relations("entity", "A", &definitions, &index).unwrap();
+        let result = graph
+            .relations("entity", "A", &definitions, &index)
+            .unwrap();
         assert_eq!(result.ancestors.len(), 3);
         assert_eq!(result.ancestors[0].id, "Base");
         assert_eq!(result.ancestors[0].partial_sources, 1);
@@ -653,13 +678,20 @@ mod tests {
         tagged.parent_tag = Some("type:Something".into());
         let definitions = vec![
             tagged,
-            declaration("entity", "Root", &["Ambig", "Missing"], "configured_partial"),
+            declaration(
+                "entity",
+                "Root",
+                &["Ambig", "Missing"],
+                "configured_partial",
+            ),
             declaration("entity", "Hidden", &["NotReached"], "normal"),
             declaration("entity", "Ambig", &["NotReached"], "normal"),
             declaration("entity", "Ambig", &[], "normal"),
         ];
         let (graph, index) = build(&definitions, &[]);
-        let result = graph.relations("entity", "Root", &definitions, &index).unwrap();
+        let result = graph
+            .relations("entity", "Root", &definitions, &index)
+            .unwrap();
         assert_eq!(result.ancestors.len(), 3);
         assert_eq!(result.ancestors[0].status, "tagged");
         assert_eq!(result.ancestors[1].status, "ambiguous");
@@ -683,7 +715,9 @@ mod tests {
         let mut chain = Vec::new();
         for i in 0..500 {
             let mut node = declaration("entity", &format!("N{i}"), &[], "normal");
-            if i < 499 { node.parents.push(format!("N{}", i + 1)); }
+            if i < 499 {
+                node.parents.push(format!("N{}", i + 1));
+            }
             chain.push(node);
         }
         let (graph, index) = build(&chain, &[]);
@@ -706,7 +740,9 @@ mod tests {
             message: "not readable".into(),
         }];
         let (graph, index) = build(&definitions, &issues);
-        let result = graph.relations("entity", "A", &definitions, &index).unwrap();
+        let result = graph
+            .relations("entity", "A", &definitions, &index)
+            .unwrap();
         assert_eq!(result.ancestors.len(), 1);
         assert!(!result.ancestry_complete);
     }
