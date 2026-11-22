@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  buildRsiFrameLayout, isRsiLayoutError, parseRsiMetadata, RSI_DIRECTIONS,
+  buildRsiFrameLayout, isRsiLayoutError, parseRsiMetadata, regroupRsiDelays, RSI_DIRECTIONS,
 } from '../src/lib/rsi-layout';
 
 test('parses supported RSI v1 metadata and preserves direction-specific delays', () => {
@@ -114,4 +114,14 @@ test('extra sheet padding never creates phantom animation frames', () => {
   if (isRsiLayoutError(layout)) throw new Error(layout.error);
   assert.equal(layout.directions[0].length, 1);
   assert.equal(layout.warnings.length, 1);
+});
+
+
+test('regroups only existing frames and preserves unsaved edits when switching back', () => {
+  const original = [[0.1, 0.2], [0.3], [0.4, 0.5], [0.6, 0.7, 0.8]];
+  const edited = [[0.9, 0.2], ...original.slice(1)];
+  const one = regroupRsiDelays(edited, original, 1);
+  assert.deepEqual(one, [[0.9, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]]);
+  assert.deepEqual(regroupRsiDelays(one!, original, 4), edited);
+  assert.equal(regroupRsiDelays([[1, 2, 3, 4, 5]], [[1, 2, 3, 4, 5]], 4), null);
 });

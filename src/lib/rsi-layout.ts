@@ -195,3 +195,15 @@ export function isRsiLayoutError(
 ): result is { error: string } {
   return 'error' in result;
 }
+
+/** Regroup existing frames in sheet order, retaining edits and original row lengths. */
+export function regroupRsiDelays(delays: number[][], original: number[][], count: number): number[][] | null {
+  const flat = delays.flat();
+  const lengths = count === original.length
+    ? original.map((row) => row.length)
+    : Array.from({ length: count }, () => flat.length / count);
+  if (flat.length > 256 || lengths.some((length) => !Number.isInteger(length) || length < 1 || length > 128)
+    || lengths.reduce((sum, length) => sum + length, 0) !== flat.length) return null;
+  let offset = 0;
+  return lengths.map((length) => { const row = flat.slice(offset, offset + length); offset += length; return row; });
+}

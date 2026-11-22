@@ -3,18 +3,17 @@ import { AlertCircle, Save } from 'lucide-react';
 import type { ImportedRsiState } from '../lib/api';
 import { studio } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
-import { RSI_DIRECTIONS, type RsiState } from '../lib/rsi-layout';
+import { RSI_DIRECTIONS, regroupRsiDelays, type RsiState } from '../lib/rsi-layout';
 
 interface Props {
   path: string;
   revision: string;
   state: RsiState;
   pngRevision: string;
-  cells: number;
   onUpdated: (result: ImportedRsiState) => void;
 }
 
-export default function RsiTimingPanel({ path, revision, state, pngRevision, cells, onUpdated }: Props) {
+export default function RsiTimingPanel({ path, revision, state, pngRevision, onUpdated }: Props) {
   const [delays, setDelays] = useState<number[][]>(
     () => state.delays.map((direction) => [...direction]),
   );
@@ -57,17 +56,15 @@ export default function RsiTimingPanel({ path, revision, state, pngRevision, cel
   return <details className="rsi-timing-panel">
     <summary><Save size={15}/> Направления и задержки: {state.name}</summary>
     <form onSubmit={(event) => void submit(event)}>
-      <p>PNG не изменяется. При изменении направлений длительности распределяются по ячейкам по порядку; новые получают 1 секунду. Проверяются ревизии метаданных и PNG.</p>
+      <p>PNG не изменяется. При изменении направлений существующие кадры и длительности распределяются по порядку; дополнительные ячейки PNG не используются. Проверяются ревизии метаданных и PNG.</p>
       <label>Направления <select value={delays.length} disabled={saving} onChange={(event) => {
         const count = Number(event.target.value);
-        const flat = delays.flat();
-        if (count === state.directions) { setDelays(state.delays.map((row) => [...row])); setError(null); return; }
-        setDelays(Array.from({ length: count }, (_, direction) =>
-          Array.from({ length: cells / count }, (_, frame) => flat[direction * (cells / count) + frame] ?? 1)));
+        const regrouped = regroupRsiDelays(delays, state.delays, count);
+        if (regrouped) setDelays(regrouped);
         setError(null);
       }}>
         {[1, 4, 8].map((count) => <option key={count} value={count}
-          disabled={count !== state.directions && (cells > 256 || cells % count !== 0 || cells / count > 128)}>{count}</option>)}
+          disabled={!regroupRsiDelays(delays, state.delays, count)}>{count}</option>)}
       </select></label>
       {!supported ? <p role="status">
         Для этого состояния более 256 кадров либо более 128 на направление.

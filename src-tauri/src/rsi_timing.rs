@@ -156,6 +156,15 @@ fn updated_metadata(
         }
     };
 
+    if old_delays.iter().map(Vec::len).sum::<usize>()
+        != update.delays.iter().map(Vec::len).sum::<usize>()
+    {
+        return Err(issue(
+            "RSI_TIMING_FRAME_COUNT_CHANGED",
+            "Число кадров нельзя менять в редакторе длительностей.",
+            "Изменение количества кадров требует изменения PNG-листа.",
+        ));
+    }
     if update.delays.len() == directions as usize
         && old_delays.iter().map(Vec::len).collect::<Vec<_>>()
             != update.delays.iter().map(Vec::len).collect::<Vec<_>>()
@@ -308,7 +317,7 @@ pub fn update(root: &Path, request: &RsiTimingUpdate) -> Result<ImportedRsiState
         let size = |axis: &str| {
             old["size"][axis]
                 .as_u64()
-                .filter(|value| (1..=2048).contains(value))
+                .filter(|value| (1..=4096).contains(value))
                 .ok_or_else(|| {
                     issue(
                         "RSI_TIMING_GRID_INVALID",
@@ -321,11 +330,11 @@ pub fn update(root: &Path, request: &RsiTimingUpdate) -> Result<ImportedRsiState
         let count: usize = request.delays.iter().map(Vec::len).sum();
         if u64::from(width) % x != 0
             || u64::from(height) % y != 0
-            || (u64::from(width) / x) * (u64::from(height) / y) != count as u64
+            || (u64::from(width) / x) * (u64::from(height) / y) < count as u64
         {
             return Err(issue(
                 "RSI_TIMING_GRID_INVALID",
-                "Сетка PNG не совпадает с кадрами.",
+                "Сетка PNG не вмещает кадры.",
                 "Выберите подходящее число направлений.",
             ));
         }
@@ -458,68 +467,48 @@ mod tests {
     }
 
     #[test]
-    fn changes_directions_only_for_matching_unchanged_png() {
+    fn changes_directions_preserving_frames_with_padding_and_revisions() {
         use base64::{engine::general_purpose::STANDARD, Engine as _};
         let fixture = Fixture::new();
         let folder = fixture.root.join(&fixture.relative);
         let meta = folder.join("meta.json");
         let png_path = folder.join("walk.png");
-        let png = STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAAQAAAABCAYAAAD5PA/NAAAAC0lEQVR4nGNgQAMAABEAAe4mBk8AAAAASUVORK5CYII=").unwrap();
+        let png = STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAAgAAAABCAYAAADjAO9DAAAAC0lEQVR4nGNgIAAAACEAAcdv3ZQAAAAASUVORK5CYII=").unwrap();
         fs::write(&png_path, &png).unwrap();
-        fs::write(&meta, r#"{"version":1,"size":{"x":1,"y":1},"custom":true,"states":[{"name":"walk","delays":[[0.1]],"extra":7}]}"#).unwrap();
+        fs::write(&meta, r#"{"version":1,"size":{"x":1,"y":1},"states":[{"name":"walk","delays":[[0.1,0.2,0.3,0.4]],"extra":7}]}"#).unwrap();
         let mut request = fixture.request();
-        request.delays = vec![vec![0.1], vec![1.0], vec![1.0], vec![1.0]];
+        request.delays = vec![vec![0.1], vec![0.2], vec![0.3], vec![0.4]];
+        request.expected_png_revision = Some("0".repeat(64));
+        assert_eq!(update(&fixture.root, &request).unwrap_err().code, "RSI_TIMING_PNG_CONFLICT");
         request.expected_png_revision = Some(revision(&png));
         let result = update(&fixture.root, &request).unwrap();
         let doc: Value = serde_json::from_str(&result.content).unwrap();
         assert_eq!(doc["states"][0]["directions"], 4);
         assert_eq!(doc["states"][0]["extra"], 7);
-        assert_eq!(doc["custom"], true);
         assert_eq!(fs::read(&png_path).unwrap(), png);
-        assert_eq!(
-            update(&fixture.root, &request).unwrap_err().code,
-            "RSI_TIMING_CONFLICT"
-        );
+        assert_eq!(update(&fixture.root, &request).unwrap_err().code, "RSI_TIMING_CONFLICT");
         request.expected_revision = result.revision;
-        request.delays = vec![vec![0.1, 1.0, 1.0, 1.0]];
-        request.expected_png_revision = Some("0".repeat(64));
-        assert_eq!(
-            update(&fixture.root, &request).unwrap_err().code,
-            "RSI_TIMING_PNG_CONFLICT"
-        );
-        request.expected_png_revision = Some(revision(&png));
-        request.delays = vec![vec![1.0]; 8];
-        assert_eq!(
-            update(&fixture.root, &request).unwrap_err().code,
-            "RSI_TIMING_GRID_INVALID"
-        );
-        assert_eq!(fs::read_to_string(&meta).unwrap(), result.content);
-        request.delays = vec![vec![0.1, 1.0, 1.0, 1.0]];
-        let changed = update(&fixture.root, &request).unwrap();
-        assert_eq!(
-            serde_json::from_str::<Value>(&changed.content).unwrap()["states"][0]["directions"],
-            1
-        );
-        assert_eq!(fs::read(&png_path).unwrap(), png);
-        let png8 = STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAAgAAAABCAYAAADjAO9DAAAAC0lEQVR4nGNgIAAAACEAAcdv3ZQAAAAASUVORK5CYII=").unwrap();
-        fs::write(&png_path, &png8).unwrap();
-        request.expected_revision = changed.revision;
-        request.expected_png_revision = Some(revision(&png8));
-        request.delays = vec![vec![1.0]; 8];
-        let eight = update(&fixture.root, &request).unwrap();
-        assert_eq!(
-            serde_json::from_str::<Value>(&eight.content).unwrap()["states"][0]["directions"],
-            8
-        );
-        assert_eq!(fs::read(&png_path).unwrap(), png8);
-        request.expected_revision = eight.revision;
         request.delays = vec![vec![1.0; 8]];
-        let mut broken = png8;
-        broken[30] ^= 1;
-        fs::write(&png_path, &broken).unwrap();
-        request.expected_png_revision = Some(revision(&broken));
-        assert!(update(&fixture.root, &request).is_err());
-        assert_eq!(fs::read_to_string(&meta).unwrap(), eight.content);
+        assert_eq!(update(&fixture.root, &request).unwrap_err().code, "RSI_TIMING_FRAME_COUNT_CHANGED");
+        assert_eq!(fs::read_to_string(&meta).unwrap(), result.content);
+    }
+
+    #[test]
+    fn accepts_preview_frame_size_limit() {
+        let fixture = Fixture::new();
+        let folder = fixture.root.join(&fixture.relative);
+        let meta = folder.join("meta.json");
+        // A valid four-pixel PNG with a 4096-pixel frame cannot hold the grid;
+        // the grid error must be due to capacity, not the frame-size limit.
+        fs::write(&meta, r#"{"version":1,"size":{"x":4096,"y":1},"states":[{"name":"walk","delays":[[0.1,0.2,0.3,0.4]]}]}"#).unwrap();
+        let png = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, "iVBORw0KGgoAAAANSUhEUgAAAAQAAAABCAYAAAD5PA/NAAAAC0lEQVR4nGNgQAMAABEAAe4mBk8AAAAASUVORK5CYII=").unwrap();
+        fs::write(folder.join("walk.png"), &png).unwrap();
+        let mut request = fixture.request();
+        request.delays = vec![vec![0.1], vec![0.2], vec![0.3], vec![0.4]];
+        request.expected_png_revision = Some(revision(&png));
+        let error = update(&fixture.root, &request).unwrap_err();
+        assert_eq!(error.code, "RSI_TIMING_GRID_INVALID");
+        assert_eq!(error.message, "Сетка PNG не вмещает кадры.");
     }
 
     #[test]
