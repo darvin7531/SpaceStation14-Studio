@@ -13,7 +13,6 @@ mod prototype_fields;
 mod prototype_graph;
 mod prototypes;
 mod resource_browser;
-mod ui_sources;
 mod resource_drift;
 mod resource_edit;
 mod rsi_create;
@@ -25,6 +24,7 @@ mod rsi_rename;
 mod rsi_replace;
 mod rsi_restore;
 mod rsi_timing;
+mod ui_sources;
 
 use std::sync::{Arc, Mutex};
 
@@ -45,7 +45,6 @@ use prototype_fields::{FieldInspection, FieldLocator, FieldPatch, PrototypeField
 use prototype_graph::PrototypeRelations;
 use prototypes::{DiagnosticPage, PrototypePage};
 use resource_browser::ResourceBrowserPage;
-use ui_sources::UiSourcePage;
 use resource_drift::{OpenRevision, ResourceDriftReport};
 use resource_edit::{SaveResult, YamlSyntaxReport};
 use rsi_create::{RsiCreationPreview, RsiDraft};
@@ -58,6 +57,7 @@ use rsi_restore::{RestoredRsiState, RsiArchiveList, RsiRestoreRequest};
 use rsi_timing::RsiTimingUpdate;
 use serde::Serialize;
 use tauri::{Manager, State};
+use ui_sources::UiSourcePage;
 
 #[derive(Default)]
 pub struct WorkspaceState(Mutex<Option<Arc<ProjectIndex>>>);

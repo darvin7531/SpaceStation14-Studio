@@ -47,10 +47,13 @@ fn kind_for(path: &str) -> Option<&'static str> {
         Some("xaml")
     } else if lower.ends_with(".xaml.cs") || lower.ends_with(".axaml.cs") {
         Some("code_behind")
-    } else if lower.ends_with(".cs") && path.split('/').any(|part|
-        part.eq_ignore_ascii_case("UserInterface") || part.eq_ignore_ascii_case("UI")
-        || part.eq_ignore_ascii_case("UserInterfaces")
-    ) {
+    } else if lower.ends_with(".cs")
+        && path.split('/').any(|part| {
+            part.eq_ignore_ascii_case("UserInterface")
+                || part.eq_ignore_ascii_case("UI")
+                || part.eq_ignore_ascii_case("UserInterfaces")
+        })
+    {
         Some("code")
     } else {
         None
@@ -78,17 +81,28 @@ impl UiSourceCatalog {
         let mut files_scanned = 0usize;
         let mut roots = Vec::new();
         for entry in fs::read_dir(root).map_err(|cause| {
-            error("UI_INDEX_ROOT_UNAVAILABLE",
+            error(
+                "UI_INDEX_ROOT_UNAVAILABLE",
                 "Не удалось перечислить каталоги проекта.",
-                "Проверьте права чтения корня проекта.").with_details(cause.to_string())
+                "Проверьте права чтения корня проекта.",
+            )
+            .with_details(cause.to_string())
         })? {
             let entry = match entry {
                 Ok(entry) => entry,
-                Err(_) => { complete = false; continue; }
+                Err(_) => {
+                    complete = false;
+                    continue;
+                }
             };
             let name = entry.file_name();
-            if !name.to_string_lossy().starts_with("Content.") { continue; }
-            if entry.file_type().is_ok_and(|kind| kind.is_dir() && !kind.is_symlink()) {
+            if !name.to_string_lossy().starts_with("Content.") {
+                continue;
+            }
+            if entry
+                .file_type()
+                .is_ok_and(|kind| kind.is_dir() && !kind.is_symlink())
+            {
                 roots.push(entry.path());
             }
         }
@@ -124,36 +138,56 @@ impl UiSourceCatalog {
                 let kind = match entry.file_type() {
                     Ok(kind) if !kind.is_symlink() => kind,
                     Ok(_) => continue,
-                    Err(_) => { complete = false; continue; },
+                    Err(_) => {
+                        complete = false;
+                        continue;
+                    }
                 };
                 if kind.is_dir() {
                     let name = entry.file_name();
-                    if matches!(name.to_str(), Some("obj" | "bin" | ".git" | "node_modules" | "target")) {
+                    if matches!(
+                        name.to_str(),
+                        Some("obj" | "bin" | ".git" | "node_modules" | "target")
+                    ) {
                         continue;
                     }
                     stack.push(entry_path);
                     continue;
                 }
-                if !kind.is_file() { continue; }
+                if !kind.is_file() {
+                    continue;
+                }
                 files_scanned += 1;
-                let Ok(relative) = entry_path.strip_prefix(root) else { continue; };
+                let Ok(relative) = entry_path.strip_prefix(root) else {
+                    continue;
+                };
                 let Some(relative) = relative.to_str() else {
                     complete = false;
                     continue;
                 };
                 let path = relative.replace('\\', "/");
                 if let Some(kind) = kind_for(&path) {
-                    items.push(UiSourceEntry { path, kind, paired_with: None });
+                    items.push(UiSourceEntry {
+                        path,
+                        kind,
+                        paired_with: None,
+                    });
                 }
             }
         }
-        items.sort_unstable_by(|a,b| a.path.cmp(&b.path));
+        items.sort_unstable_by(|a, b| a.path.cmp(&b.path));
         let indexed: HashSet<String> = items.iter().map(|entry| entry.path.clone()).collect();
         for entry in &mut items {
-            entry.paired_with = sibling(&entry.path, entry.kind)
-                .filter(|sibling| indexed.contains(sibling));
+            entry.paired_with =
+                sibling(&entry.path, entry.kind).filter(|sibling| indexed.contains(sibling));
         }
-        Ok(Self { items, indexed, files_scanned, complete, warnings })
+        Ok(Self {
+            items,
+            indexed,
+            files_scanned,
+            complete,
+            warnings,
+        })
     }
 
     pub fn page(&self, query: &str, offset: usize, limit: usize) -> UiSourcePage {
@@ -165,52 +199,91 @@ impl UiSourceCatalog {
             if !query.is_empty() && !entry.path.to_lowercase().contains(&query) {
                 continue;
             }
-            if total >= offset && items.len() < count { items.push(entry.clone()); }
+            if total >= offset && items.len() < count {
+                items.push(entry.clone());
+            }
             total += 1;
         }
-        UiSourcePage { total, items, files_scanned: self.files_scanned,
-            complete: self.complete, warnings: self.warnings.clone() }
+        UiSourcePage {
+            total,
+            items,
+            files_scanned: self.files_scanned,
+            complete: self.complete,
+            warnings: self.warnings.clone(),
+        }
     }
 
     pub fn read(&self, root: &Path, path: &str) -> Result<ResourceDocument, StudioError> {
         if !self.indexed.contains(path) {
-            return Err(error("UI_SOURCE_NOT_INDEXED",
+            return Err(error(
+                "UI_SOURCE_NOT_INDEXED",
                 "UI-исходник не найден в индексе проекта.",
-                "Выберите файл из каталога UI и обновите индекс при внешнем изменении."));
+                "Выберите файл из каталога UI и обновите индекс при внешнем изменении.",
+            ));
         }
         let absolute = root.join(path);
-        let metadata = fs::symlink_metadata(&absolute).map_err(|cause| error(
-            "UI_SOURCE_UNAVAILABLE", "Не удалось открыть UI-исходник.",
-            "Проверьте, что файл ещё существует.").with_details(cause.to_string()))?;
+        let metadata = fs::symlink_metadata(&absolute).map_err(|cause| {
+            error(
+                "UI_SOURCE_UNAVAILABLE",
+                "Не удалось открыть UI-исходник.",
+                "Проверьте, что файл ещё существует.",
+            )
+            .with_details(cause.to_string())
+        })?;
         if !metadata.file_type().is_file() || metadata.len() > MAX_PREVIEW_BYTES {
-            return Err(error("UI_SOURCE_SIZE_INVALID",
+            return Err(error(
+                "UI_SOURCE_SIZE_INVALID",
                 "UI-исходник не является обычным файлом или превышает 2 МиБ.",
-                "Для больших файлов используйте внешний редактор."));
+                "Для больших файлов используйте внешний редактор.",
+            ));
         }
-        let canonical = fs::canonicalize(&absolute).map_err(|cause| error(
-            "UI_SOURCE_UNAVAILABLE", "Не удалось проверить путь UI-исходника.",
-            "Обновите индекс и проверьте права на файл.").with_details(cause.to_string()))?;
+        let canonical = fs::canonicalize(&absolute).map_err(|cause| {
+            error(
+                "UI_SOURCE_UNAVAILABLE",
+                "Не удалось проверить путь UI-исходника.",
+                "Обновите индекс и проверьте права на файл.",
+            )
+            .with_details(cause.to_string())
+        })?;
         if !canonical.starts_with(root) {
-            return Err(error("UI_SOURCE_OUTSIDE_PROJECT",
+            return Err(error(
+                "UI_SOURCE_OUTSIDE_PROJECT",
                 "Файл UI оказался вне текущего проекта.",
-                "Нельзя открывать исходники через внешние символические ссылки."));
+                "Нельзя открывать исходники через внешние символические ссылки.",
+            ));
         }
         let mut bytes = Vec::new();
         File::open(&canonical)
             .and_then(|file| file.take(MAX_PREVIEW_BYTES + 1).read_to_end(&mut bytes))
-            .map_err(|cause| error("UI_SOURCE_READ_FAILED",
-                "Не удалось прочитать UI-исходник.",
-                "Проверьте доступность файла и диска.").with_details(cause.to_string()))?;
+            .map_err(|cause| {
+                error(
+                    "UI_SOURCE_READ_FAILED",
+                    "Не удалось прочитать UI-исходник.",
+                    "Проверьте доступность файла и диска.",
+                )
+                .with_details(cause.to_string())
+            })?;
         if bytes.len() as u64 > MAX_PREVIEW_BYTES {
-            return Err(error("UI_SOURCE_SIZE_INVALID",
+            return Err(error(
+                "UI_SOURCE_SIZE_INVALID",
                 "UI-исходник вырос при чтении и превысил лимит 2 МиБ.",
-                "Откройте файл во внешнем редакторе."));
+                "Откройте файл во внешнем редакторе.",
+            ));
         }
-        let content = String::from_utf8(bytes).map_err(|cause| error(
-            "UI_SOURCE_ENCODING_INVALID", "UI-исходник не является UTF-8.",
-            "Проверьте кодировку файла.").with_details(cause.to_string()))?;
-        Ok(ResourceDocument { path: path.to_owned(), bytes: content.len(),
-            revision: revision(content.as_bytes()), content })
+        let content = String::from_utf8(bytes).map_err(|cause| {
+            error(
+                "UI_SOURCE_ENCODING_INVALID",
+                "UI-исходник не является UTF-8.",
+                "Проверьте кодировку файла.",
+            )
+            .with_details(cause.to_string())
+        })?;
+        Ok(ResourceDocument {
+            path: path.to_owned(),
+            bytes: content.len(),
+            revision: revision(content.as_bytes()),
+            content,
+        })
     }
 }
 
@@ -219,15 +292,18 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT: AtomicU64 = AtomicU64::new(0);
-    struct Fixture { root: PathBuf }
+    struct Fixture {
+        root: PathBuf,
+    }
     impl Fixture {
         fn new() -> Self {
             let id = NEXT.fetch_add(1, Ordering::Relaxed);
-            let root = std::env::temp_dir().join(format!(
-                "ss14-studio-ui-index-{}-{id}", std::process::id()
-            ));
+            let root = std::env::temp_dir()
+                .join(format!("ss14-studio-ui-index-{}-{id}", std::process::id()));
             fs::create_dir_all(root.join("Content.Client/UserInterface")).unwrap();
-            Self { root: fs::canonicalize(root).unwrap() }
+            Self {
+                root: fs::canonicalize(root).unwrap(),
+            }
         }
         fn write(&self, path: &str, bytes: &[u8]) {
             let full = self.root.join(path);
@@ -235,31 +311,53 @@ mod tests {
             fs::write(full, bytes).unwrap();
         }
     }
-    impl Drop for Fixture { fn drop(&mut self) { let _ = fs::remove_dir_all(&self.root); } }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
 
     #[test]
     fn indexes_markup_code_behind_and_ui_csharp_with_pairing_and_pagination() {
         let fx = Fixture::new();
         fx.write("Content.Client/UserInterface/Inventory.xaml", b"<Window />");
-        fx.write("Content.Client/UserInterface/Inventory.xaml.cs", b"class Inventory {}");
+        fx.write(
+            "Content.Client/UserInterface/Inventory.xaml.cs",
+            b"class Inventory {}",
+        );
         fx.write("Content.Client/UserInterface/Menu.cs", b"class Menu {}");
         fx.write("Content.Client/Systems/Movement.cs", b"class Movement {}");
         fx.write("Content.Shared/Shared.axaml", b"<UserControl />");
         let catalog = UiSourceCatalog::scan(&fx.root).unwrap();
         let page = catalog.page("", 0, 100);
         assert_eq!(page.total, 4);
-        let markup = page.items.iter().find(|item| item.path.ends_with("Inventory.xaml")).unwrap();
+        let markup = page
+            .items
+            .iter()
+            .find(|item| item.path.ends_with("Inventory.xaml"))
+            .unwrap();
         assert_eq!(markup.kind, "xaml");
-        assert_eq!(markup.paired_with.as_deref(), Some(
-            "Content.Client/UserInterface/Inventory.xaml.cs"));
-        let partner = page.items.iter().find(|item| item.path.ends_with("Inventory.xaml.cs")).unwrap();
+        assert_eq!(
+            markup.paired_with.as_deref(),
+            Some("Content.Client/UserInterface/Inventory.xaml.cs")
+        );
+        let partner = page
+            .items
+            .iter()
+            .find(|item| item.path.ends_with("Inventory.xaml.cs"))
+            .unwrap();
         assert_eq!(partner.kind, "code_behind");
-        assert_eq!(partner.paired_with.as_deref(), Some(
-            "Content.Client/UserInterface/Inventory.xaml"));
+        assert_eq!(
+            partner.paired_with.as_deref(),
+            Some("Content.Client/UserInterface/Inventory.xaml")
+        );
         assert_eq!(catalog.page("inventory", 0, 1).total, 2);
         assert_eq!(catalog.page("inventory", 1, 1).items.len(), 1);
         assert!(catalog.page("inventory", 2, 1).items.is_empty());
-        assert_eq!(catalog.read(&fx.root, &markup.path).unwrap().content, "<Window />");
+        assert_eq!(
+            catalog.read(&fx.root, &markup.path).unwrap().content,
+            "<Window />"
+        );
     }
 
     #[test]
@@ -269,16 +367,27 @@ mod tests {
         fx.write(known, b"<Panel />");
         fx.write("Content.Client/secret.json", b"secret");
         let catalog = UiSourceCatalog::scan(&fx.root).unwrap();
-        assert_eq!(catalog.read(&fx.root, "../secret.json").unwrap_err().code,
-            "UI_SOURCE_NOT_INDEXED");
-        assert_eq!(catalog.read(&fx.root, "Content.Client/secret.json").unwrap_err().code,
-            "UI_SOURCE_NOT_INDEXED");
+        assert_eq!(
+            catalog.read(&fx.root, "../secret.json").unwrap_err().code,
+            "UI_SOURCE_NOT_INDEXED"
+        );
+        assert_eq!(
+            catalog
+                .read(&fx.root, "Content.Client/secret.json")
+                .unwrap_err()
+                .code,
+            "UI_SOURCE_NOT_INDEXED"
+        );
         fx.write(known, b"\xff");
-        assert_eq!(catalog.read(&fx.root, known).unwrap_err().code,
-            "UI_SOURCE_ENCODING_INVALID");
+        assert_eq!(
+            catalog.read(&fx.root, known).unwrap_err().code,
+            "UI_SOURCE_ENCODING_INVALID"
+        );
         fx.write(known, &vec![b'x'; MAX_PREVIEW_BYTES as usize + 1]);
-        assert_eq!(catalog.read(&fx.root, known).unwrap_err().code,
-            "UI_SOURCE_SIZE_INVALID");
+        assert_eq!(
+            catalog.read(&fx.root, known).unwrap_err().code,
+            "UI_SOURCE_SIZE_INVALID"
+        );
     }
 
     #[cfg(unix)]
@@ -291,8 +400,10 @@ mod tests {
         let catalog = UiSourceCatalog::scan(&fx.root).unwrap();
         fs::remove_file(fx.root.join(path)).unwrap();
         symlink("/etc/hosts", fx.root.join(path)).unwrap();
-        assert_eq!(catalog.read(&fx.root, path).unwrap_err().code,
-            "UI_SOURCE_SIZE_INVALID");
+        assert_eq!(
+            catalog.read(&fx.root, path).unwrap_err().code,
+            "UI_SOURCE_SIZE_INVALID"
+        );
     }
 
     #[cfg(unix)]
@@ -303,7 +414,11 @@ mod tests {
         fx.write("Outside.xaml", b"private");
         symlink(&fx.root, fx.root.join("Content.Client/UserInterface/Loop")).unwrap();
         let external = fx.root.join("Outside.xaml");
-        symlink(&external, fx.root.join("Content.Client/UserInterface/External.xaml")).unwrap();
+        symlink(
+            &external,
+            fx.root.join("Content.Client/UserInterface/External.xaml"),
+        )
+        .unwrap();
         let page = UiSourceCatalog::scan(&fx.root).unwrap().page("", 0, 50);
         assert!(page.items.is_empty());
     }

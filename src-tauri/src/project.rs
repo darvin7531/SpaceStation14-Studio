@@ -289,8 +289,12 @@ impl ProjectIndex {
         cache.clone().ok_or_else(internal_lock)
     }
 
-    pub fn ui_sources_page(&self, query: &str, offset: usize, limit: usize)
-        -> Result<UiSourcePage, StudioError> {
+    pub fn ui_sources_page(
+        &self,
+        query: &str,
+        offset: usize,
+        limit: usize,
+    ) -> Result<UiSourcePage, StudioError> {
         Ok(self.ui_catalog()?.page(query, offset, limit))
     }
 
