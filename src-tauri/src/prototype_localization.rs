@@ -109,7 +109,11 @@ mod tests {
     fn malformed_or_changed_identity_never_generates_from_another_item() {
         let yaml = "- type: entity\n  id: Other\n- type: entity\n  id: Changed\n";
         assert!(inspect(&locator(), yaml).is_err());
-        assert!(inspect(&locator(), "- type: entity\n  id: TestEntity\n  name: new\n").is_err());
+        assert!(inspect(
+            &locator(),
+            "- type: entity\n  id: TestEntity\n  name: new\n"
+        )
+        .is_err());
     }
 
     #[test]
