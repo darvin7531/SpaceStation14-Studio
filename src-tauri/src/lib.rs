@@ -67,8 +67,8 @@ use rsi_restore::{RestoredRsiState, RsiArchiveList, RsiRestoreRequest};
 use rsi_timing::RsiTimingUpdate;
 use serde::Serialize;
 use tauri::{Emitter, Manager, State};
-use ui_sources::UiSourcePage;
 use tauri_plugin_dialog::DialogExt;
+use ui_sources::UiSourcePage;
 
 #[derive(Clone, Serialize)]
 struct ProjectScanProgress {

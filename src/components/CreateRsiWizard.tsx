@@ -107,7 +107,7 @@ export default function CreateRsiWizard({ onClose, onCreated, onExternalCreated,
           <input value={draft.directory} required spellCheck={false} maxLength={512}
             onChange={(event) => change('directory', event.target.value)}
             placeholder="Resources/Textures/Objects"/>
-        </label>}}
+        </label>}
         <label>Имя спрайта (без .rsi)
           <input value={draft.name} required spellCheck={false} maxLength={80}
             onChange={(event) => change('name', event.target.value)}

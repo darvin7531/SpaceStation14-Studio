@@ -287,7 +287,11 @@ pub fn create_external_at(
     draft: &FluentDraft,
 ) -> Result<ExternalCreatedFluent, StudioError> {
     let rendered = preview(draft)?;
-    if chosen_path.extension().and_then(|extension| extension.to_str()) != Some("ftl") {
+    if chosen_path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        != Some("ftl")
+    {
         return Err(problem(
             "FTL_EXTERNAL_EXTENSION",
             "Внешняя локализация должна иметь расширение .ftl.",
