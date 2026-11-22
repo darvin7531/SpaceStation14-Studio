@@ -2781,6 +2781,8 @@ mod tests {
             file: "Resources/Locale/en-US/new.ftl".into(),
             starter_key: "new-key".into(),
             starter_value: "New value".into(),
+            starter_description: None,
+            starter_suffix: None,
         };
         let created = index.create_new_fluent(&draft).unwrap();
         assert_eq!(created.file, draft.file);
