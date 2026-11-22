@@ -33,6 +33,14 @@ export function directEntityLocaleField(
   const prefix = header.match(/^(\s*)-\s*type:\s*entity(?:\s*(?:#.*)?)?$/);
   if (!prefix) return null;
   const declarationDepth = prefix[1].length;
+  // A selected declaration must never claim a field from another YAML item
+  // or document. The caller may have a stale outline while the user edits.
+  for (let i = declaration.line; i < lineNumber - 1; i++) {
+    const current = lines[i] ?? '';
+    if (/^\s*(?:---|\.\.\.)(?:\s*(?:#.*)?)?$/.test(current)) return null;
+    const item = current.match(/^(\s*)-\s+type\s*:/);
+    if (item && item[1].length <= declarationDepth) return null;
+  }
   const target = lines[lineNumber - 1] ?? '';
   const match = target.match(/^(\s*)(name|description|suffix):[ \t]*(.*)$/);
   if (!match || !match[3].trim()) return null;
