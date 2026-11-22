@@ -1697,6 +1697,24 @@ mod tests {
     }
 
     #[test]
+    fn inheritance_diamond_counts_shared_parent_partials_once() {
+        let fx = Fixture::new();
+        fx.write("Resources/Prototypes/root.yml",
+            "- type: entity\n  id: Shared\n  name: Base\n- type: entity\n  id: Left\n  parent: Shared\n- type: entity\n  id: Right\n  parent: Shared\n- type: entity\n  id: Diamond\n  parent: [Left, Right]\n");
+        fx.write("Resources/PartialPrototypes/partialPrototypes.yml",
+            "- /Prototypes/patches\n");
+        fx.write("Resources/Prototypes/patches/patch.yml",
+            "- type: entity\n  id: Shared\n  name: Patched\n");
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let report = index.prototype_inheritance_preview("entity", "Diamond").unwrap();
+        assert_eq!(report.total_partials, 1);
+        assert_eq!(report.lineage, ["Shared", "Left", "Right", "Diamond"]);
+        assert_eq!(report.fields.iter().find(|field| field.key == "name")
+            .unwrap().preview, "Patched");
+        assert!(!report.structural_complete);
+    }
+
+    #[test]
     fn inheritance_preview_applies_parent_partials_before_child_and_marks_multi_parent() {
         let fx = Fixture::new();
         fx.write("Resources/Prototypes/base.yml",
