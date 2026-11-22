@@ -1848,7 +1848,7 @@ mod tests {
             index
                 .resources
                 .iter()
-                .map(|entry| (&entry.path, entry.kind))
+                .map(|entry| (entry.path.clone(), entry.kind))
                 .collect::<Vec<_>>()
         };
         assert_eq!(entries(&incremental), entries(&full));
