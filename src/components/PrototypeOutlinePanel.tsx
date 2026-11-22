@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, ArrowUpRight, FileCode2, GitBranch, Image, Layers, Search } from 'lucide-react';
+import { AlertCircle, FileCode2, GitBranch, Layers, Search } from 'lucide-react';
 import {
   studio, type PrototypeDeclaration, type SourceOutline,
 } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
+import SpriteLayerInspector from './SpriteLayerInspector';
 
 type EditorPanel = 'fields' | 'components' | 'localization' | 'parents';
 
@@ -116,18 +117,11 @@ export default function PrototypeOutlinePanel({
         {selected.declaration.parents.length > 0 && <p>
           <GitBranch size={13}/> Прямые родители: {selected.declaration.parents.join(', ')}
         </p>}
-        {selected.sprite && <div className="prototype-outline-sprite">
-          <Image size={14}/>
-          <div><strong>Sprite: {selected.sprite.path.split('/').at(-1)}</strong>
-            <small>{selected.sprite.state ? 'Состояние: ' + selected.sprite.state : 'Состояние не указано'}
-              {!selected.sprite.indexed && ' · RSI не найден в индексе'}</small>
-          </div>
-          <button type="button" disabled={!selected.sprite.indexed || busy}
-            title="Открыть существующий RSI в редакторе"
-            onClick={() => onOpenRsi(selected.sprite!.path, selected.sprite!.state)}>
-            <ArrowUpRight size={14}/> Открыть
-          </button>
-        </div>}
+        {(selected.sprite || selected.sprite_layers.length > 0) && <SpriteLayerInspector
+          key={selected.declaration.document_index + ':' + selected.declaration.item_index + ':'
+            + (selected.declaration.variant_index ?? 'base')}
+          sprite={selected.sprite} layers={selected.sprite_layers}
+          total={selected.sprite_layers_total} busy={busy} onOpenRsi={onOpenRsi}/>}
         <div className="prototype-outline-actions">
           {editable ? <>
             <button type="button" disabled={busy} onClick={() => onEdit(selected.declaration, 'fields')}>Поля</button>
