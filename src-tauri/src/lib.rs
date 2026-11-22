@@ -11,6 +11,7 @@ mod prototype_components;
 mod prototype_create;
 mod prototype_fields;
 mod prototype_graph;
+mod prototype_localization;
 mod prototypes;
 mod resource_browser;
 mod resource_drift;
@@ -42,6 +43,7 @@ use prototype_append::AppendPreview;
 use prototype_components::{ComponentInspection, ComponentOperation};
 use prototype_create::{PrototypeDraft, PrototypePreview};
 use prototype_fields::{FieldInspection, FieldLocator, FieldPatch, PrototypeFields};
+use prototype_localization::EntityLocalizationSource;
 use prototype_graph::PrototypeRelations;
 use prototypes::{DiagnosticPage, PrototypePage};
 use resource_browser::ResourceBrowserPage;
@@ -883,6 +885,20 @@ async fn inspect_prototype_fields(
 }
 
 #[tauri::command]
+async fn inspect_entity_localization(
+    locator: FieldLocator,
+    source: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<EntityLocalizationSource, StudioError> {
+    let project = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        project.inspect_entity_localization(&locator, &source)
+    })
+    .await
+    .map_err(interrupted)?
+}
+
+#[tauri::command]
 async fn patch_prototype_fields(
     locator: FieldLocator,
     source: String,
@@ -971,6 +987,7 @@ pub fn run() -> Result<(), tauri::Error> {
             preview_append_prototype,
             append_prototype,
             inspect_prototype_fields,
+            inspect_entity_localization,
             patch_prototype_fields,
             inspect_prototype_components,
             patch_prototype_components,
