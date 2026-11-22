@@ -264,17 +264,6 @@ pub fn create(root: &Path, draft: &PrototypeDraft) -> Result<CreatedPrototype, S
             "Проверьте относительный путь.",
         )
     })?;
-    let studio_folder = proto_root.join("_PrototypeStudio");
-    if parent == studio_folder && !parent.exists() {
-        fs::create_dir(parent).map_err(|error| {
-            invalid(
-                "PROTOTYPE_FOLDER_FAILED",
-                "Не удалось создать папку _PrototypeStudio.",
-                "Проверьте доступ на запись в Resources/Prototypes.",
-            )
-            .with_details(error.to_string())
-        })?;
-    }
     // Inspect every scope component, not only the canonical result. No writes
     // through symlinks, even when they happen to point inside the project.
     let relative = parent.strip_prefix(root).map_err(|_| {
@@ -287,11 +276,40 @@ pub fn create(root: &Path, draft: &PrototypeDraft) -> Result<CreatedPrototype, S
     let mut cursor = root.to_path_buf();
     for segment in relative.components() {
         cursor.push(segment);
+        if cursor != proto_root && cursor.starts_with(&proto_root) {
+            let resolved = fs::canonicalize(cursor.parent().unwrap()).map_err(|reason| {
+                invalid(
+                    "PROTOTYPE_OUTSIDE_PROJECT",
+                    "Не удалось проверить родительскую папку.",
+                    "Проверьте каталог назначения.",
+                )
+                .with_details(reason.to_string())
+            })?;
+            if !resolved.starts_with(&canonical_scope) {
+                return Err(invalid(
+                    "PROTOTYPE_OUTSIDE_PROJECT",
+                    "Папка назначения расположена вне разрешённого каталога.",
+                    "Выберите другую папку.",
+                ));
+            }
+            match fs::create_dir(&cursor) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(error) => {
+                    return Err(invalid(
+                        "PROTOTYPE_FOLDER_FAILED",
+                        "Не удалось создать папку назначения.",
+                        "Проверьте права доступа к каталогу прототипов.",
+                    )
+                    .with_details(error.to_string()));
+                }
+            }
+        }
         let metadata = fs::symlink_metadata(&cursor).map_err(|error| {
             invalid(
                 "PROTOTYPE_FOLDER_MISSING",
                 "Папка назначения не существует или недоступна.",
-                "Выберите существующую папку или _PrototypeStudio (создаётся автоматически).",
+                "Проверьте каталог назначения.",
             )
             .with_details(error.to_string())
         })?;
@@ -552,6 +570,22 @@ mod tests {
     }
 
     #[test]
+    fn creates_nested_destination_without_overwriting() {
+        let fixture = Fixture::new();
+        let mut draft = fixture.draft("Nested");
+        draft.file = "Resources/Prototypes/New/Deep/Nested.yml".into();
+        let created = create(&fixture.0, &draft).unwrap();
+        assert_eq!(
+            fs::read_to_string(fixture.0.join(&draft.file)).unwrap(),
+            created.yaml
+        );
+        assert_eq!(
+            create(&fixture.0, &draft).unwrap_err().code,
+            "PROTOTYPE_FILE_EXISTS"
+        );
+    }
+
+    #[test]
     fn external_yaml_creation_preserves_existing_files() {
         let fixture = Fixture::new();
         let target = fixture.0.join("external.yml");
@@ -665,11 +699,12 @@ mod tests {
         fs::create_dir_all(&outside).unwrap();
         symlink(&outside, fixture.0.join("Resources/Prototypes/Linked")).unwrap();
         let mut draft = fixture.draft("Sample");
-        draft.file = "Resources/Prototypes/Linked/sample.yml".into();
+        draft.file = "Resources/Prototypes/Linked/new/sample.yml".into();
         assert_eq!(
             create(&fixture.0, &draft).unwrap_err().code,
             "PROTOTYPE_SYMLINK_BLOCKED"
         );
+        assert!(!outside.join("new").exists());
         let _ = fs::remove_dir(&outside);
     }
 }

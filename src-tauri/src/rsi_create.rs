@@ -50,7 +50,7 @@ pub fn preview(draft: &RsiDraft) -> Result<RsiCreationPreview, StudioError> {
         error(
             "RSI_CREATE_PATH_INVALID",
             "RSI можно создать только внутри Resources/Textures.",
-            "Укажите существующий каталог, используя прямые слеши без .. и специальных символов.",
+            "Укажите каталог, используя прямые слеши без .. и специальных символов.",
         )
     };
     if directory.is_empty()
@@ -179,6 +179,35 @@ pub fn create(root: &Path, draft: &RsiDraft) -> Result<CreatedRsi, StudioError> 
     let mut cursor = PathBuf::from(root);
     for part in relative.components() {
         cursor.push(part);
+        if cursor != scope && cursor.starts_with(&scope) {
+            let resolved = fs::canonicalize(cursor.parent().unwrap()).map_err(|reason| {
+                error(
+                    "RSI_CREATE_OUTSIDE",
+                    "Не удалось проверить родительскую папку.",
+                    "Проверьте каталог назначения.",
+                )
+                .with_details(reason.to_string())
+            })?;
+            if !resolved.starts_with(&canonical_scope) {
+                return Err(error(
+                    "RSI_CREATE_OUTSIDE",
+                    "Папка назначения расположена вне разрешённого каталога.",
+                    "Выберите другую папку.",
+                ));
+            }
+            match fs::create_dir(&cursor) {
+                Ok(()) => {}
+                Err(reason) if reason.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(reason) => {
+                    return Err(error(
+                        "RSI_CREATE_PARENT_MISSING",
+                        "Не удалось создать папку назначения RSI.",
+                        "Проверьте доступ к каталогу текстур.",
+                    )
+                    .with_details(reason.to_string()));
+                }
+            }
+        }
         let metadata = fs::symlink_metadata(&cursor).map_err(|reason| {
             error(
                 "RSI_CREATE_PARENT_MISSING",
@@ -498,20 +527,20 @@ mod tests {
     }
 
     #[test]
-    fn rejects_nonexistent_parent_and_does_not_create_anything() {
+    fn creates_nested_parent_and_preserves_existing_rsi() {
         let fx = Fixture::new();
         let draft = RsiDraft {
-            directory: "Resources/Textures/NotHere".into(),
+            directory: "Resources/Textures/NotHere/Deep".into(),
             ..fx.draft()
         };
+        let created = create(&fx.root, &draft).unwrap();
+        let meta = fx.root.join(&created.path).join("meta.json");
+        let original = fs::read(&meta).unwrap();
         assert_eq!(
             create(&fx.root, &draft).unwrap_err().code,
-            "RSI_CREATE_PARENT_MISSING"
+            "RSI_CREATE_EXISTS"
         );
-        assert!(!fx
-            .root
-            .join("Resources/Textures/NotHere/example.rsi")
-            .exists());
+        assert_eq!(fs::read(meta).unwrap(), original);
     }
 
     #[cfg(unix)]
@@ -525,12 +554,13 @@ mod tests {
         )
         .unwrap();
         let draft = RsiDraft {
-            directory: "Resources/Textures/Linked".into(),
+            directory: "Resources/Textures/Linked/New".into(),
             ..fx.draft()
         };
         assert_eq!(
             create(&fx.root, &draft).unwrap_err().code,
             "RSI_CREATE_PARENT_INVALID"
         );
+        assert!(!fx.root.join("Resources/Textures/Objects/New").exists());
     }
 }
