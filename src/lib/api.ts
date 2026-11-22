@@ -284,6 +284,21 @@ export interface PrototypeRelations {
   index_complete: boolean;
 }
 
+export interface LinkedPrototypeReference {
+  kind: string;
+  id: string;
+  field: string;
+}
+export interface LinkedPrototypeReport {
+  kind: string;
+  id: string;
+  items: LinkedPrototypeReference[];
+  total: number;
+  limited: boolean;
+  source_complete: boolean;
+  warnings: string[];
+}
+
 export interface PrototypeInheritancePreview {
   kind: string;
   id: string;
@@ -687,6 +702,9 @@ export const studio = {
   },
   patchPrototypeComponents(locator: PrototypeFieldLocator, source: string, operation: ComponentOperation): Promise<FieldPatch> {
     return invoke('patch_prototype_components', { locator, source, operation });
+  },
+  prototypeLinkedReferences(kind: string, id: string): Promise<LinkedPrototypeReport> {
+    return invoke('prototype_linked_references', { kind, id });
   },
   prototypeInheritancePreview(kind: string, id: string): Promise<PrototypeInheritancePreview> {
     return invoke('prototype_inheritance_preview', { kind, id });
