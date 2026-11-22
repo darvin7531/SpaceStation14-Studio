@@ -629,7 +629,10 @@ mod tests {
         draft.include_sprite = true;
         let yaml = preview(&draft).unwrap().yaml;
         let parsed = yaml_rust2::YamlLoader::load_from_str(&yaml).unwrap();
-        assert_eq!(parsed[0][0]["components"][0]["type"].as_str(), Some("Sprite"));
+        assert_eq!(
+            parsed[0][0]["components"][0]["type"].as_str(),
+            Some("Sprite")
+        );
         assert!(parsed[0][0]["components"][0]["sprite"].is_badvalue());
         assert!(!yaml.contains("PLACEHOLDER.rsi"));
     }
