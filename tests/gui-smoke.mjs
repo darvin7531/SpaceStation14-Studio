@@ -46,12 +46,12 @@ async function keys(id, text) {
 async function script(source) {
   return call('POST', '/execute/sync', { script: source, args: [] });
 }
-async function edit(value) {
+async function edit(value, token) {
   const editor = await until('Monaco input', () => find('.monaco-shell textarea.inputarea'));
   await call('POST', `/element/${editor}/click`, {});
   await keys(editor, '\uE009a\uE000'); // Ctrl+A, then release modifiers
   await keys(editor, value);
-  await until('edited draft', () => script(`return document.querySelector('.monaco-shell .view-lines')?.textContent?.replace(/\u00a0/g, ' ').includes(${JSON.stringify(value)});`));
+  await until('edited draft', () => script(`return document.querySelector('.monaco-shell .view-lines')?.textContent?.includes(${JSON.stringify(token)});`));
   await until('enabled save', () => script("const button = document.querySelector('[data-testid=save-resource]'); return !!button && !button.disabled;"));
 }
 
@@ -66,17 +66,18 @@ try {
   await keys(path, process.env.SMOKE_PROJECT);
   await click('.project-bar button[type=submit]');
   await click('.resource-row[title="Resources/Prototypes/smoke.yml"]');
-  await edit(saved);
+  await edit(saved, 'SmokeSaved');
   await click('[data-testid=save-resource]');
-  await until('saved file', async () => (await readFile(file, 'utf8')).trim() === saved);
+  await until('saved file', async () => (await readFile(file, 'utf8')) === saved);
   await until('save completion', () => script(`
     const button = document.querySelector('[data-testid=save-resource]');
     const editor = document.querySelector('.monaco-shell textarea.inputarea');
-    return document.querySelector('.save-notice')?.textContent.includes('YAML сохранён.')
+    const tab = document.querySelector('[role=tab][title="Resources/Prototypes/smoke.yml"]');
+    return tab?.querySelector('span')?.textContent === 'smoke.yml'
       && button?.disabled && editor && !editor.readOnly;
   `));
 
-  await edit(draft);
+  await edit(draft, 'SmokeDraft');
   await writeFile(file, external);
   // Wait for the watcher to reconcile the external revision with the dirty draft.
   await until('external refresh conflict', () => script("return [...document.querySelectorAll('code')].some((el) => el.textContent === 'REFRESH_TABS_REQUIRE_ATTENTION');"));
@@ -84,12 +85,12 @@ try {
   await click('[data-testid=save-resource]');
   await until('conflict review', () => find('.conflict-review'));
   await until('conflict diff', () => script(`
-    const text = (selector) => document.querySelector(selector)?.textContent?.replace(/\u00a0/g, ' ');
-    return text('.conflict-review .original .view-lines')?.includes(${JSON.stringify(external.trim())})
-      && text('.conflict-review .modified .view-lines')?.includes(${JSON.stringify(draft)});
+    const text = (selector) => document.querySelector(selector)?.textContent;
+    return text('.conflict-review .original .view-lines')?.includes('SmokeExternal')
+      && text('.conflict-review .modified .view-lines')?.includes('SmokeDraft');
   `));
   assert.equal(await readFile(file, 'utf8'), external, 'conflict must not overwrite external disk contents');
-  assert.ok(await script(`return document.querySelector('.monaco-shell .view-lines')?.textContent?.replace(/\u00a0/g, ' ').includes(${JSON.stringify(draft)});`), 'conflict must retain the editor draft');
+  assert.ok(await script("return document.querySelector('.monaco-shell .view-lines')?.textContent?.includes('SmokeDraft');"), 'conflict must retain the editor draft');
   console.log('GUI smoke passed: project opened, YAML saved, conflicting disk and draft preserved');
 } finally {
   if (session) {
