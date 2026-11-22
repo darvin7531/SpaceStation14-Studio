@@ -325,7 +325,9 @@ fn configured_partials(root: &Path, issues: &mut Vec<PrototypeDiagnostic>) -> Ve
             code: "PARTIAL_CONFIG_SYMLINK",
             file: "Resources/PartialPrototypes".into(),
             line: 0,
-            message: "Каталог PartialPrototypes должен быть обычной папкой, не символической ссылкой.".into(),
+            message:
+                "Каталог PartialPrototypes должен быть обычной папкой, не символической ссылкой."
+                    .into(),
         });
         return Vec::new();
     }
@@ -343,7 +345,11 @@ fn configured_partials(root: &Path, issues: &mut Vec<PrototypeDiagnostic>) -> Ve
             Err(error) => {
                 issues.push(PrototypeDiagnostic {
                     code: "PARTIAL_CONFIG_UNREADABLE",
-                    file: folder.strip_prefix(root).unwrap_or(&folder).to_string_lossy().replace('\\', "/"),
+                    file: folder
+                        .strip_prefix(root)
+                        .unwrap_or(&folder)
+                        .to_string_lossy()
+                        .replace('\\', "/"),
                     line: 0,
                     message: error.to_string(),
                 });
@@ -400,9 +406,13 @@ fn configured_partials(root: &Path, issues: &mut Vec<PrototypeDiagnostic>) -> Ve
             } else if kind.is_dir() {
                 pending.push(path);
             } else if kind.is_file()
-                && path.extension().and_then(|extension| extension.to_str()).is_some_and(
-                    |extension| extension.eq_ignore_ascii_case("yml") || extension.eq_ignore_ascii_case("yaml")
-                )
+                && path
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| {
+                        extension.eq_ignore_ascii_case("yml")
+                            || extension.eq_ignore_ascii_case("yaml")
+                    })
             {
                 config_files.push((relative, path));
             }
@@ -445,7 +455,8 @@ fn configured_partials(root: &Path, issues: &mut Vec<PrototypeDiagnostic>) -> Ve
                     code: "PARTIAL_CONFIG_OUTSIDE_PROJECT",
                     file: config_rel,
                     line: 0,
-                    message: "Конфигурация partial-каталогов оказалась за пределами проекта.".into(),
+                    message: "Конфигурация partial-каталогов оказалась за пределами проекта."
+                        .into(),
                 });
                 continue;
             }
@@ -515,7 +526,9 @@ fn configured_partials(root: &Path, issues: &mut Vec<PrototypeDiagnostic>) -> Ve
                 code: "PARTIAL_CONFIG_INVALID",
                 file: config_rel,
                 line: 0,
-                message: "Первый YAML-документ должен быть списком путей к partial-файлам или каталогам.".into(),
+                message:
+                    "Первый YAML-документ должен быть списком путей к partial-файлам или каталогам."
+                        .into(),
             });
             continue;
         };
@@ -537,10 +550,12 @@ fn configured_partials(root: &Path, issues: &mut Vec<PrototypeDiagnostic>) -> Ve
                 format!("Resources/{relative}")
             };
             let normalized = Path::new(&path);
-            let inside_prototypes = path == "Resources/Prototypes"
-                || path.starts_with("Resources/Prototypes/");
+            let inside_prototypes =
+                path == "Resources/Prototypes" || path.starts_with("Resources/Prototypes/");
             if !inside_prototypes
-                || normalized.components().any(|component| !matches!(component, Component::Normal(_)))
+                || normalized
+                    .components()
+                    .any(|component| !matches!(component, Component::Normal(_)))
             {
                 issues.push(PrototypeDiagnostic {
                     code: "PARTIAL_CONFIG_PATH_INVALID",
@@ -738,49 +753,50 @@ impl DeclarationCollector {
             return;
         }
 
-        let identifiers: Vec<(String, Option<usize>)> =
-            if draft.id_is_mapping && draft.id_tag.as_deref() == Some("type:CreateVariants") {
-                if draft.variant_alias || draft.variant_ids.is_empty() {
-                    self.note(
+        let identifiers: Vec<(String, Option<usize>)> = if draft.id_is_mapping
+            && draft.id_tag.as_deref() == Some("type:CreateVariants")
+        {
+            if draft.variant_alias || draft.variant_ids.is_empty() {
+                self.note(
                         "PROTOTYPE_VARIANTS_INVALID",
                         draft.line,
                         "CreateVariants должен содержать обычный список строковых values без YAML aliases.",
                     );
-                    return;
-                }
-                draft
-                    .variant_ids
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, id)| (id, Some(index)))
-                    .collect()
-            } else {
-                if draft.id_alias {
-                    self.note(
+                return;
+            }
+            draft
+                .variant_ids
+                .into_iter()
+                .enumerate()
+                .map(|(index, id)| (id, Some(index)))
+                .collect()
+        } else {
+            if draft.id_alias {
+                self.note(
                         "PROTOTYPE_ALIAS_ID_UNSUPPORTED",
                         draft.line,
                         "ID задан YAML alias. Каталог пока не разрешает aliases и не будет угадывать итоговый ID.",
                     );
-                    return;
-                }
-                if draft.id_is_mapping || draft.id_tag.is_some() {
-                    self.note(
+                return;
+            }
+            if draft.id_is_mapping || draft.id_tag.is_some() {
+                self.note(
                         "PROTOTYPE_DYNAMIC_ID",
                         draft.line,
                         "ID задан YAML-тегом или mapping, который каталог не может безопасно разрешить.",
                     );
-                    return;
-                }
-                let Some(id) = draft.id else {
-                    self.note(
-                        "PROTOTYPE_IDENTITY_MISSING",
-                        draft.line,
-                        "Пропущено объявление без строковых полей type и id.",
-                    );
-                    return;
-                };
-                vec![(id, None)]
+                return;
+            }
+            let Some(id) = draft.id else {
+                self.note(
+                    "PROTOTYPE_IDENTITY_MISSING",
+                    draft.line,
+                    "Пропущено объявление без строковых полей type и id.",
+                );
+                return;
             };
+            vec![(id, None)]
+        };
 
         for (id, variant_index) in identifiers {
             if id.trim().is_empty() {
@@ -816,14 +832,12 @@ fn tag_name(tag: &Tag) -> String {
         .into()
 }
 
-fn partial_tag_index(
-    tag: &str,
-    name: &str,
-    require_index: bool,
-) -> Result<Option<usize>, String> {
+fn partial_tag_index(tag: &str, name: &str, require_index: bool) -> Result<Option<usize>, String> {
     if tag == name {
         return if require_index {
-            Err(format!("Тег !{name} должен содержать числовой индекс, например !{name}:0."))
+            Err(format!(
+                "Тег !{name} должен содержать числовой индекс, например !{name}:0."
+            ))
         } else {
             Ok(None)
         };
@@ -911,7 +925,8 @@ impl MarkedEventReceiver for DeclarationCollector {
                         if key.as_deref() == Some("id") {
                             draft.id_is_mapping = true;
                             draft.id_tag = tag.as_ref().map(tag_name);
-                            create_variants = draft.id_tag.as_deref() == Some("type:CreateVariants");
+                            create_variants =
+                                draft.id_tag.as_deref() == Some("type:CreateVariants");
                         }
                     } else if let Some(Frame::VariantMapping {
                         expected_key,
@@ -1011,8 +1026,7 @@ impl MarkedEventReceiver for DeclarationCollector {
                 } else if let Some(Frame::Prototype(draft)) = self.frames.last_mut() {
                     if !draft.expected_key && draft.pending_key.as_deref() == Some("id") {
                         draft.id_alias = true;
-                    } else if !draft.expected_key
-                        && draft.pending_key.as_deref() == Some("parent")
+                    } else if !draft.expected_key && draft.pending_key.as_deref() == Some("parent")
                     {
                         self.note(
                             "PARENT_ALIAS_UNRESOLVED",
@@ -1146,13 +1160,16 @@ mod tests {
         assert_eq!(scopes[0].order, 0);
         assert_eq!(scopes[1].relative, "Resources/Prototypes/_Second");
         assert_eq!(scopes[1].order, 1);
-        assert!(!issues.iter().any(|issue| issue.code == "PARTIAL_CONFIG_INVALID"));
+        assert!(!issues
+            .iter()
+            .any(|issue| issue.code == "PARTIAL_CONFIG_INVALID"));
         let _ = fs::remove_dir_all(root);
     }
 
     #[test]
     fn explicitly_registered_files_take_precedence_over_directories() {
-        let root = std::env::temp_dir().join(format!("ss14-partials-precedence-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("ss14-partials-precedence-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join("Resources/PartialPrototypes")).unwrap();
         fs::create_dir_all(root.join("Resources/Prototypes/_Fork/Partials")).unwrap();
@@ -1169,12 +1186,14 @@ mod tests {
 
         let mut issues = Vec::new();
         let scopes = configured_partials(&root, &mut issues);
-        assert_eq!(partial_order_for(
-            "Resources/Prototypes/_Fork/Partials/example.yml", &scopes
-        ), Some(1));
-        assert_eq!(partial_order_for(
-            "Resources/Prototypes/_Fork/Partials/another.yml", &scopes
-        ), Some(0));
+        assert_eq!(
+            partial_order_for("Resources/Prototypes/_Fork/Partials/example.yml", &scopes),
+            Some(1)
+        );
+        assert_eq!(
+            partial_order_for("Resources/Prototypes/_Fork/Partials/another.yml", &scopes),
+            Some(0)
+        );
         let _ = fs::remove_dir_all(root);
     }
 
@@ -1191,7 +1210,10 @@ mod tests {
         let only = items.iter().find(|item| item.id == "Only").unwrap();
         assert_eq!(only.mode, "partial_only");
         assert_eq!(only.partial_order, Some(7));
-        let mapping_tagged = items.iter().find(|item| item.id == "MappingTagIgnored").unwrap();
+        let mapping_tagged = items
+            .iter()
+            .find(|item| item.id == "MappingTagIgnored")
+            .unwrap();
         assert_eq!(mapping_tagged.mode, "normal");
         assert_eq!(mapping_tagged.partial_order, None);
 
@@ -1201,7 +1223,10 @@ mod tests {
         );
         assert!(invalid.is_empty());
         assert_eq!(
-            diagnostics.iter().filter(|issue| issue.code == "PARTIAL_TAG_INVALID").count(),
+            diagnostics
+                .iter()
+                .filter(|issue| issue.code == "PARTIAL_TAG_INVALID")
+                .count(),
             3
         );
     }
@@ -1214,8 +1239,20 @@ mod tests {
         );
         assert!(issues.is_empty(), "{issues:?}");
         assert_eq!(items.len(), 3);
-        assert_eq!(items.iter().map(|item| item.id.as_str()).collect::<Vec<_>>(), ["Human", "Moth", "Vulp"]);
-        assert_eq!(items.iter().map(|item| item.variant_index).collect::<Vec<_>>(), [Some(0), Some(1), Some(2)]);
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            ["Human", "Moth", "Vulp"]
+        );
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.variant_index)
+                .collect::<Vec<_>>(),
+            [Some(0), Some(1), Some(2)]
+        );
     }
 
     #[test]
@@ -1225,8 +1262,12 @@ mod tests {
             None,
         );
         assert!(items.is_empty());
-        assert!(issues.iter().any(|issue| issue.code == "PROTOTYPE_VARIANTS_INVALID"));
-        assert!(issues.iter().any(|issue| issue.code == "PROTOTYPE_ALIAS_ID_UNSUPPORTED"));
+        assert!(issues
+            .iter()
+            .any(|issue| issue.code == "PROTOTYPE_VARIANTS_INVALID"));
+        assert!(issues
+            .iter()
+            .any(|issue| issue.code == "PROTOTYPE_ALIAS_ID_UNSUPPORTED"));
     }
 
     #[test]
