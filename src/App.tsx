@@ -20,6 +20,7 @@ import RsiPreview from './components/RsiPreview';
 import CreateRsiWizard from './components/CreateRsiWizard';
 import PrototypeExplorer from './components/PrototypeExplorer';
 import PrototypeFieldsPanel from './components/PrototypeFieldsPanel';
+import PrototypeLocalizationPanel from './components/PrototypeLocalizationPanel';
 import PrototypeComponentsPanel from './components/PrototypeComponentsPanel';
 import RecoveryPanel from './components/RecoveryPanel';
 import CreatePrototypeWizard, { type PrototypeDestinationMode } from './components/CreatePrototypeWizard';
@@ -112,7 +113,7 @@ export default function App() {
   const [showingCSharp, setShowingCSharp] = useState(false);
   const [showingUiSources, setShowingUiSources] = useState(false);
   const [fieldTarget, setFieldTarget] = useState<PrototypeFieldLocator | null>(null);
-  const [prototypePanel, setPrototypePanel] = useState<'fields' | 'components'>('fields');
+  const [prototypePanel, setPrototypePanel] = useState<'fields' | 'components' | 'localization'>('fields');
   const [picking, setPicking] = useState(false);
   const [explorerMode, setExplorerMode] = useState<'files' | 'prototypes'>('files');
   const [workspaceRevision, setWorkspaceRevision] = useState(0);
@@ -871,7 +872,7 @@ export default function App() {
     openResource({ path: file, kind: 'yaml' });
   }
 
-  function editPrototypeFields(entry: PrototypeDeclaration, panel: 'fields' | 'components') {
+  function editPrototypeFields(entry: PrototypeDeclaration, panel: 'fields' | 'components' | 'localization') {
     if (saving || opening || transitioning || refreshing) return;
     openPrototypeSource(entry.file, entry.line);
     setPrototypePanel(panel);
@@ -901,6 +902,52 @@ export default function App() {
     setDrafts(next);
     setNotice('Форма изменила черновик YAML. Проверьте текст и нажмите Ctrl+S для сохранения.');
     return true;
+  }
+
+  /** Explicit localization write: never clobber an open FTL draft or stale file. */
+  async function applyEntityLocalization(
+    file: string, baseline: ResourceDocument, content: string,
+  ): Promise<boolean> {
+    if (!overview || !file.startsWith('Resources/Locale/') || !file.endsWith('.ftl')
+        || baseline.path !== file || saving || opening || refreshing || transitioning) {
+      throw new Error('Невозможно записать FTL во время другой операции.');
+    }
+    const root = overview.project_root;
+    const opened = documents.current.get(file);
+    if (opened && (draftsRef.current[file] ?? opened.content) !== opened.content) {
+      throw new Error('У выбранного FTL уже есть несохранённый черновик. Сохраните или закройте его перед генерацией локализации.');
+    }
+    if (draftBases[file] !== undefined && opened && draftBases[file] !== opened.revision) {
+      throw new Error('У FTL есть восстановленный черновик с другой ревизией. Сначала разрешите конфликт.');
+    }
+    setSaving(true);
+    try {
+      if (projectRootRef.current !== root) throw new Error('Проект изменился. Повторите действие.');
+      // Rust requires the exact revision observed during the preview.
+      const result = await studio.saveFtlResource(file, baseline.revision, content);
+      if (projectRootRef.current !== root) return false;
+      documents.current.set(file, result.document);
+      setDrafts((previous) => {
+        const next = { ...previous };
+        delete next[file];
+        return next;
+      });
+      setDraftBases((previous) => {
+        const next = { ...previous };
+        delete next[file];
+        return next;
+      });
+      setDocument((current) => current?.path === file ? result.document : current);
+      setWorkspaceRevision((previous) => previous + 1);
+      setNotice(['Fluent-ключи добавлены. Проверьте FTL в редакторе.',
+        result.durability_warning].filter(Boolean).join(' '));
+      setFieldTarget(null);
+      setSaving(false);
+      openResource({ path: file, kind: 'ftl' });
+      return true;
+    } finally {
+      setSaving(false);
+    }
   }
 
   function selectTab(path: string) {
@@ -1343,11 +1390,16 @@ export default function App() {
                   key={fieldTarget.file + ':' + fieldTarget.document_index + ':' + fieldTarget.item_index}
                   locator={fieldTarget} source={activeText} busy={saving || transitioning || refreshing}
                   onApply={applyPrototypeFields} onClose={() => setFieldTarget(null)}/>
-              : <PrototypeComponentsPanel
-                  key={fieldTarget.file + ':' + fieldTarget.document_index + ':' + fieldTarget.item_index}
-                  locator={fieldTarget} source={activeText} workspaceRevision={workspaceRevision}
-                  busy={saving || transitioning || refreshing}
-                  onApply={applyPrototypeFields} onClose={() => setFieldTarget(null)}/>)}
+              : prototypePanel === 'localization'
+                ? <PrototypeLocalizationPanel
+                    key={fieldTarget.file + ':' + fieldTarget.document_index + ':' + fieldTarget.item_index}
+                    locator={fieldTarget} source={activeText} busy={saving || transitioning || refreshing}
+                    onApply={applyEntityLocalization} onClose={() => setFieldTarget(null)}/>
+                : <PrototypeComponentsPanel
+                    key={fieldTarget.file + ':' + fieldTarget.document_index + ':' + fieldTarget.item_index}
+                    locator={fieldTarget} source={activeText} workspaceRevision={workspaceRevision}
+                    busy={saving || transitioning || refreshing}
+                    onApply={applyPrototypeFields} onClose={() => setFieldTarget(null)}/>)}
           {comparison && comparison.path === selected.path && <ConflictReviewPanel
             file={comparison.path} disk={comparison.disk} draft={comparison.reviewedDraft}
             draftChanged={Boolean(reviewDirty)} busy={comparing}
