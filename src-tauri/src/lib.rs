@@ -5,6 +5,7 @@ mod fluent_create;
 mod fluent_diagnostics;
 mod fluent_locale;
 mod project;
+mod project_watcher;
 mod prototype_append;
 mod prototype_components;
 mod prototype_create;
@@ -31,6 +32,7 @@ use draft_journal::{DraftJournal, DraftList, DraftSnapshot, DraftSummary, DraftW
 use error::{internal_lock, interrupted, StudioError};
 use fluent_create::{FluentDraft, FluentPreview};
 use fluent_locale::FluentInspection;
+use project_watcher::ProjectWatcher;
 use project::{
     ContentSearchResults, ProjectIndex, ProjectOverview, ProjectRefresh, ResourceDocument,
     ResourcePage,
@@ -93,12 +95,17 @@ fn current_project(state: &WorkspaceState) -> Result<Arc<ProjectIndex>, StudioEr
 async fn open_project(
     path: String,
     state: State<'_, WorkspaceState>,
+    app: tauri::AppHandle,
+    watcher: State<'_, ProjectWatcher>,
 ) -> Result<ProjectOverview, StudioError> {
     let index = tauri::async_runtime::spawn_blocking(move || ProjectIndex::open(&path))
         .await
         .map_err(interrupted)??;
-    let summary = index.overview().clone();
+    let mut summary = index.overview().clone();
     *state.0.lock().map_err(|_| internal_lock())? = Some(Arc::new(index));
+    if let Err(error) = watcher.replace(&app, std::path::Path::new(&summary.project_root)) {
+        summary.warnings.push(format!("Автообновление отключено: {} {}", error.message, error.hint));
+    }
     Ok(summary)
 }
 
@@ -892,6 +899,7 @@ pub fn run() -> Result<(), tauri::Error> {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(WorkspaceState::default())
+        .manage(ProjectWatcher::default())
         .manage(DraftStorageLock::default())
         .invoke_handler(tauri::generate_handler![
             open_project,
