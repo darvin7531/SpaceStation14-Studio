@@ -123,7 +123,8 @@ pub fn inspect_source_outline(
         });
     }
     issues.extend(collector.diagnostics);
-    let truncated = collector.declarations.len() > MAX_LIVE_OUTLINE || issues.len() > MAX_OUTLINE_ISSUES;
+    let truncated =
+        collector.declarations.len() > MAX_LIVE_OUTLINE || issues.len() > MAX_OUTLINE_ISSUES;
     let parsed = YamlLoader::load_from_str(source).ok();
     let declarations = collector
         .declarations
@@ -145,7 +146,10 @@ pub fn inspect_source_outline(
             } else {
                 None
             };
-            SourceOutlineEntry { declaration, sprite }
+            SourceOutlineEntry {
+                declaration,
+                sprite,
+            }
         })
         .collect();
     issues.truncate(MAX_OUTLINE_ISSUES);
@@ -160,7 +164,9 @@ pub fn inspect_source_outline(
 /// Never construct an arbitrary disk path from untrusted YAML input.
 fn extract_sprite_source(item: &Yaml) -> Option<(String, Option<String>)> {
     let components = item["components"].as_vec()?;
-    let sprite = components.iter().find(|component| component["type"].as_str() == Some("Sprite"))?;
+    let sprite = components
+        .iter()
+        .find(|component| component["type"].as_str() == Some("Sprite"))?;
     let raw = sprite["sprite"].as_str()?;
     let relative = raw.strip_prefix("Resources/Textures/").unwrap_or(raw);
     let path = Path::new(relative);
@@ -169,7 +175,9 @@ fn extract_sprite_source(item: &Yaml) -> Option<(String, Option<String>)> {
         || !path
             .components()
             .all(|part| matches!(part, Component::Normal(_)))
-        || !path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("rsi"))
+        || !path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("rsi"))
     {
         return None;
     }
@@ -1212,15 +1220,22 @@ mod tests {
     #[test]
     fn live_outline_preserves_document_coordinates_and_reads_direct_sprite() {
         let source = "- type: entity\n  id: Item\n  components:\n  - type: Sprite\n    sprite: Objects/Tools/wrench.rsi\n    state: icon\n- type: entity\n  id: Other\n  parent: Item\n";
-        let result = inspect_source_outline(Path::new("/tmp"), "Resources/Prototypes/test.yml", source, |path| {
-            path == "Resources/Textures/Objects/Tools/wrench.rsi"
-        }).unwrap();
+        let result = inspect_source_outline(
+            Path::new("/tmp"),
+            "Resources/Prototypes/test.yml",
+            source,
+            |path| path == "Resources/Textures/Objects/Tools/wrench.rsi",
+        )
+        .unwrap();
         assert_eq!(result.declarations.len(), 2);
         let first = &result.declarations[0];
         assert_eq!(first.declaration.id, "Item");
         assert_eq!(first.declaration.item_index, 1);
         assert_eq!(first.declaration.document_index, 1);
-        assert_eq!(first.sprite.as_ref().unwrap().state.as_deref(), Some("icon"));
+        assert_eq!(
+            first.sprite.as_ref().unwrap().state.as_deref(),
+            Some("icon")
+        );
         assert!(first.sprite.as_ref().unwrap().indexed);
         assert_eq!(result.declarations[1].declaration.parents, ["Item"]);
     }
@@ -1232,23 +1247,54 @@ mod tests {
             "Resources/Prototypes/test.yml",
             "- type: !PartialOnly entity\n  id: Variant\n",
             |_| false,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(result.declarations[0].declaration.mode, "partial_only");
-        let invalid = inspect_source_outline(Path::new("/tmp"), "Resources/Prototypes/test.yml",
-            "- type: entity\n  id: [broken\n", |_| false).unwrap();
+        let invalid = inspect_source_outline(
+            Path::new("/tmp"),
+            "Resources/Prototypes/test.yml",
+            "- type: entity\n  id: [broken\n",
+            |_| false,
+        )
+        .unwrap();
         assert!(invalid.declarations.is_empty());
         assert_eq!(invalid.diagnostics[0].code, "OUTLINE_YAML_PARSE_ERROR");
     }
 
     #[test]
     fn live_outline_rejects_sprite_path_traversal_and_oversize_text() {
-        for path in ["../Other.rsi", "/abs.rsi", "Resources/Textures/../Out.rsi", "a.png"] {
-            let item = format!("- type: entity\n  id: Item\n  components:\n  - type: Sprite\n    sprite: {path}\n");
-            let result = inspect_source_outline(Path::new("/tmp"), "Resources/Prototypes/test.yml", &item, |_| true).unwrap();
-            assert!(result.declarations[0].sprite.is_none(), "unexpected link for {path}");
+        for path in [
+            "../Other.rsi",
+            "/abs.rsi",
+            "Resources/Textures/../Out.rsi",
+            "a.png",
+        ] {
+            let item = format!(
+                "- type: entity\n  id: Item\n  components:\n  - type: Sprite\n    sprite: {path}\n"
+            );
+            let result = inspect_source_outline(
+                Path::new("/tmp"),
+                "Resources/Prototypes/test.yml",
+                &item,
+                |_| true,
+            )
+            .unwrap();
+            assert!(
+                result.declarations[0].sprite.is_none(),
+                "unexpected link for {path}"
+            );
         }
-        assert_eq!(inspect_source_outline(Path::new("/tmp"), "Resources/Prototypes/test.yml",
-            &" ".repeat(MAX_YAML_BYTES as usize + 1), |_| false).unwrap_err().code, "OUTLINE_TOO_LARGE");
+        assert_eq!(
+            inspect_source_outline(
+                Path::new("/tmp"),
+                "Resources/Prototypes/test.yml",
+                &" ".repeat(MAX_YAML_BYTES as usize + 1),
+                |_| false
+            )
+            .unwrap_err()
+            .code,
+            "OUTLINE_TOO_LARGE"
+        );
     }
 
     #[test]
