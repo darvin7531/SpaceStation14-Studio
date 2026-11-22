@@ -66,9 +66,13 @@ fn count_frames(state: &Value) -> Result<usize, StudioError> {
                         "Исправьте метаданные RSI.",
                     )
                 })?;
-                if row.is_empty() || row.iter().any(|value| {
-                    !value.as_f64().is_some_and(|number| number.is_finite() && number > 0.0)
-                }) {
+                if row.is_empty()
+                    || row.iter().any(|value| {
+                        !value
+                            .as_f64()
+                            .is_some_and(|number| number.is_finite() && number > 0.0)
+                    })
+                {
                     return Err(issue(
                         "RSI_SIZE_DELAYS_INVALID",
                         "Состояние содержит пустой или некорректный список задержек.",
@@ -114,9 +118,12 @@ fn validate_sheets(folder: &Path, doc: &Value, request: &RsiSizeUpdate) -> Resul
                 "Исправьте записи states в meta.json.",
             )
         })?;
-        if name.is_empty() || name.len() > 128 || !name.bytes().all(|byte| {
-            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'_' | b'-')
-        }) || !names.insert(name)
+        if name.is_empty()
+            || name.len() > 128
+            || !name.bytes().all(|byte| {
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'_' | b'-')
+            })
+            || !names.insert(name)
         {
             return Err(issue(
                 "RSI_SIZE_STATE_INVALID",
@@ -142,23 +149,24 @@ fn validate_sheets(folder: &Path, doc: &Value, request: &RsiSizeUpdate) -> Resul
             ));
         }
         let mut header = Vec::new();
-        fs::File::open(&file).and_then(|opened| {
-            opened.take(32).read_to_end(&mut header)
-        }).map_err(|reason| {
-            issue(
-                "RSI_SIZE_PNG_READ_FAILED",
-                "Невозможно прочитать заголовок PNG.",
-                "Проверьте права доступа к изображению.",
-            )
-            .with_details(reason.to_string())
-        })?;
+        fs::File::open(&file)
+            .and_then(|opened| opened.take(32).read_to_end(&mut header))
+            .map_err(|reason| {
+                issue(
+                    "RSI_SIZE_PNG_READ_FAILED",
+                    "Невозможно прочитать заголовок PNG.",
+                    "Проверьте права доступа к изображению.",
+                )
+                .with_details(reason.to_string())
+            })?;
         let (width, height) = png_dimensions(&header)?;
         if width % request.size_x != 0 || height % request.size_y != 0 {
             return Err(issue(
                 "RSI_SIZE_GRID_INVALID",
                 "Размер PNG не кратен новому размеру кадра.",
                 "Укажите размер, который точно делит ширину и высоту всех PNG состояний.",
-            ).with_details(format!("{name}.png: {width}×{height}")));
+            )
+            .with_details(format!("{name}.png: {width}×{height}")));
         }
         let cells = u64::from(width / request.size_x) * u64::from(height / request.size_y);
         if cells != frames as u64 {
@@ -166,7 +174,10 @@ fn validate_sheets(folder: &Path, doc: &Value, request: &RsiSizeUpdate) -> Resul
                 "RSI_SIZE_FRAME_COUNT_MISMATCH",
                 "Новый размер кадра меняет количество кадров в состоянии.",
                 "Нужна перестройка PNG и delays; одна смена размера метаданных недопустима.",
-            ).with_details(format!("{name}.png: {cells} ячеек, {frames} кадров в meta.json")));
+            )
+            .with_details(format!(
+                "{name}.png: {cells} ячеек, {frames} кадров в meta.json"
+            )));
         }
     }
     Ok(())
@@ -189,7 +200,8 @@ fn checked_content(
             "RSI_SIZE_META_INVALID",
             "meta.json содержит некорректный JSON.",
             "Исправьте метаданные перед изменением размера.",
-        ).with_details(reason.to_string())
+        )
+        .with_details(reason.to_string())
     })?;
     if doc.get("version").and_then(Value::as_u64) != Some(1)
         || !doc.get("size").is_some_and(Value::is_object)
@@ -206,13 +218,16 @@ fn checked_content(
         return Ok(None);
     }
     validate_sheets(folder, &doc, request)?;
-    let size = doc.get_mut("size").and_then(Value::as_object_mut).ok_or_else(|| {
-        issue(
-            "RSI_SIZE_META_INVALID",
-            "size должен быть объектом.",
-            "Исправьте meta.json.",
-        )
-    })?;
+    let size = doc
+        .get_mut("size")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| {
+            issue(
+                "RSI_SIZE_META_INVALID",
+                "size должен быть объектом.",
+                "Исправьте meta.json.",
+            )
+        })?;
     size.insert("x".into(), json!(request.size_x));
     size.insert("y".into(), json!(request.size_y));
     let content = serde_json::to_string_pretty(&doc).map_err(|reason| {
@@ -220,14 +235,18 @@ fn checked_content(
             "RSI_SIZE_SERIALIZE_FAILED",
             "Невозможно сформировать изменённый meta.json.",
             "Проверьте права и повторите сохранение.",
-        ).with_details(reason.to_string())
+        )
+        .with_details(reason.to_string())
     })? + "\n";
     Ok(Some(content))
 }
 
 pub fn update(root: &Path, request: &RsiSizeUpdate) -> Result<ImportedRsiState, StudioError> {
     if request.expected_revision.len() != 64
-        || !request.expected_revision.bytes().all(|byte| byte.is_ascii_hexdigit())
+        || !request
+            .expected_revision
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
     {
         return Err(issue(
             "RSI_SIZE_REVISION_INVALID",
@@ -252,7 +271,8 @@ pub fn update(root: &Path, request: &RsiSizeUpdate) -> Result<ImportedRsiState, 
                     "RSI_SIZE_META_INVALID",
                     "meta.json не является UTF-8.",
                     "Исправьте кодировку файла.",
-                ).with_details(reason.to_string())
+                )
+                .with_details(reason.to_string())
             })?,
             revision: request.expected_revision.clone(),
             warning: None,
@@ -289,7 +309,8 @@ mod tests {
     impl Fixture {
         fn new() -> Self {
             let id = NEXT.fetch_add(1, Ordering::Relaxed);
-            let root = std::env::temp_dir().join(format!("ss14-rsi-size-{}-{id}", std::process::id()));
+            let root =
+                std::env::temp_dir().join(format!("ss14-rsi-size-{}-{id}", std::process::id()));
             let relative = "Resources/Textures/sample.rsi".to_string();
             let folder = root.join(&relative);
             fs::create_dir_all(&folder).unwrap();
@@ -310,16 +331,22 @@ mod tests {
         fn request(&self) -> RsiSizeUpdate {
             RsiSizeUpdate {
                 path: self.relative.clone(),
-                expected_revision: revision(&fs::read(self.root.join(&self.relative).join("meta.json")).unwrap()),
+                expected_revision: revision(
+                    &fs::read(self.root.join(&self.relative).join("meta.json")).unwrap(),
+                ),
                 size_x: 16,
                 size_y: 64,
             }
         }
 
-        fn file(&self) -> std::path::PathBuf { self.root.join(&self.relative).join("meta.json") }
+        fn file(&self) -> std::path::PathBuf {
+            self.root.join(&self.relative).join("meta.json")
+        }
     }
     impl Drop for Fixture {
-        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.root); }
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
     }
 
     #[test]
@@ -333,7 +360,10 @@ mod tests {
         assert_eq!(updated["size"]["other"], "keep");
         assert_eq!(updated["custom"]["keep"], true);
         assert_eq!(updated["states"][0]["delays"][0][1], 0.3);
-        assert_eq!(fs::read(fixture.root.join(&fixture.relative).join("idle.png")).unwrap(), png);
+        assert_eq!(
+            fs::read(fixture.root.join(&fixture.relative).join("idle.png")).unwrap(),
+            png
+        );
         assert_eq!(fs::read_to_string(fixture.file()).unwrap(), changed.content);
     }
 
@@ -348,7 +378,10 @@ mod tests {
         assert_eq!(result.revision, same.expected_revision);
         assert_eq!(fs::read(&fixture.file()).unwrap(), before);
         fs::write(fixture.file(), b"external update").unwrap();
-        assert_eq!(update(&fixture.root, &fixture.request()).unwrap_err().code, "RSI_SIZE_CONFLICT");
+        assert_eq!(
+            update(&fixture.root, &fixture.request()).unwrap_err().code,
+            "RSI_SIZE_CONFLICT"
+        );
     }
 
     #[test]
@@ -357,10 +390,16 @@ mod tests {
         let before = fs::read(&fixture.file()).unwrap();
         let mut request = fixture.request();
         request.size_x = 31;
-        assert_eq!(update(&fixture.root, &request).unwrap_err().code, "RSI_SIZE_GRID_INVALID");
+        assert_eq!(
+            update(&fixture.root, &request).unwrap_err().code,
+            "RSI_SIZE_GRID_INVALID"
+        );
         request.size_x = 16;
         request.size_y = 16;
-        assert_eq!(update(&fixture.root, &request).unwrap_err().code, "RSI_SIZE_FRAME_COUNT_MISMATCH");
+        assert_eq!(
+            update(&fixture.root, &request).unwrap_err().code,
+            "RSI_SIZE_FRAME_COUNT_MISMATCH"
+        );
         assert_eq!(fs::read(&fixture.file()).unwrap(), before);
     }
 
@@ -369,9 +408,15 @@ mod tests {
         let fixture = Fixture::new();
         let mut request = fixture.request();
         request.size_x = 0;
-        assert_eq!(update(&fixture.root, &request).unwrap_err().code, "RSI_SIZE_INVALID");
+        assert_eq!(
+            update(&fixture.root, &request).unwrap_err().code,
+            "RSI_SIZE_INVALID"
+        );
         request.size_x = 16;
         fs::remove_file(fixture.root.join(&fixture.relative).join("idle.png")).unwrap();
-        assert_eq!(update(&fixture.root, &request).unwrap_err().code, "RSI_SIZE_PNG_MISSING");
+        assert_eq!(
+            update(&fixture.root, &request).unwrap_err().code,
+            "RSI_SIZE_PNG_MISSING"
+        );
     }
 }
