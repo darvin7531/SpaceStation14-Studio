@@ -76,3 +76,16 @@
 .entity-locale-preview { border: 1px solid #344960; margin: 0 12px; border-radius: 6px; padding: 10px; display: grid; gap: 6px; font-size: 12px; }
 .entity-locale-preview small { color: #9bb0c8; }
 .entity-locale-preview pre { max-height: 180px; overflow: auto; background: #0b1520; padding: 8px; font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+
+/* R05 source ancestry: bounded, navigable provenance (not a runtime merge). */
+.proto-ancestor-group { gap: 7px; }
+.proto-ancestor-group > .proto-relations-caveat { margin: 0 0 5px; }
+.proto-ancestor-row { display: grid; gap: 4px; border-left: 2px solid #4a6b8e; border-bottom: 1px solid #293e52; padding: 5px 6px; min-width: 0; }
+.proto-ancestor-main { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; font-size: 11px; min-width: 0; }
+.proto-ancestor-main > small { color: #8aacc9; overflow-wrap: anywhere; }
+.proto-ancestor-depth { border-radius: 4px; background: #263e58; color: #b8d6f1; font-size: 10px; padding: 2px 6px; font-variant-numeric: tabular-nums; }
+.proto-ancestor-state { border: 1px solid #765f39; border-radius: 4px; background: #3a301f; padding: 2px 5px; font-size: 10px; color: #e8c78a; overflow-wrap: anywhere; }
+.proto-ancestor-sources { display: flex; flex-wrap: wrap; gap: 6px; font-size: 10px; }
+.proto-ancestor-main button:disabled { opacity: .55; cursor: not-allowed; }
+.proto-ancestor-sources button { max-width: 100%; }
