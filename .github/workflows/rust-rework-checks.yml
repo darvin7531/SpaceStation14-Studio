@@ -75,7 +75,7 @@ jobs:
       - name: Compile integrated Tauri desktop executable
         run: npm run build -- --no-bundle
       - name: Install Tauri WebDriver
-        run: cargo install tauri-driver --locked
+        run: cargo install tauri-driver --version '=2.0.5' --locked
       - name: Exercise desktop editing and conflict protection
         timeout-minutes: 5
         run: xvfb-run -a timeout --signal=TERM --kill-after=10s 180s bash tests/gui-smoke.sh

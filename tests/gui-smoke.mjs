@@ -52,7 +52,7 @@ async function edit(value) {
   await keys(editor, '\uE009a\uE000'); // Ctrl+A, then release modifiers
   await keys(editor, value);
   await until('edited draft', () => script(`return document.querySelector('.monaco-shell .view-lines')?.textContent?.replace(/\u00a0/g, ' ').includes(${JSON.stringify(value)});`));
-  await until('enabled save', () => script("return !document.querySelector('[data-testid=save-resource]')?.disabled;"));
+  await until('enabled save', () => script("const button = document.querySelector('[data-testid=save-resource]'); return !!button && !button.disabled;"));
 }
 
 try {
@@ -69,12 +69,25 @@ try {
   await edit(saved);
   await click('[data-testid=save-resource]');
   await until('saved file', async () => (await readFile(file, 'utf8')).trim() === saved);
-  await until('save completion', () => script("return document.querySelector('[data-testid=save-resource]')?.disabled;"));
+  await until('save completion', () => script(`
+    const button = document.querySelector('[data-testid=save-resource]');
+    const editor = document.querySelector('.monaco-shell textarea.inputarea');
+    return document.querySelector('.save-notice')?.textContent.includes('YAML сохранён.')
+      && button?.disabled && editor && !editor.readOnly;
+  `));
 
   await edit(draft);
   await writeFile(file, external);
+  // Wait for the watcher to reconcile the external revision with the dirty draft.
+  await until('external refresh conflict', () => script("return [...document.querySelectorAll('code')].some((el) => el.textContent === 'REFRESH_TABS_REQUIRE_ATTENTION');"));
+  await until('save enabled after refresh', () => script("const button = document.querySelector('[data-testid=save-resource]'); return !!button && !button.disabled;"));
   await click('[data-testid=save-resource]');
   await until('conflict review', () => find('.conflict-review'));
+  await until('conflict diff', () => script(`
+    const text = (selector) => document.querySelector(selector)?.textContent?.replace(/\u00a0/g, ' ');
+    return text('.conflict-review .original .view-lines')?.includes(${JSON.stringify(external.trim())})
+      && text('.conflict-review .modified .view-lines')?.includes(${JSON.stringify(draft)});
+  `));
   assert.equal(await readFile(file, 'utf8'), external, 'conflict must not overwrite external disk contents');
   assert.ok(await script(`return document.querySelector('.monaco-shell .view-lines')?.textContent?.replace(/\u00a0/g, ' ').includes(${JSON.stringify(draft)});`), 'conflict must retain the editor draft');
   console.log('GUI smoke passed: project opened, YAML saved, conflicting disk and draft preserved');
