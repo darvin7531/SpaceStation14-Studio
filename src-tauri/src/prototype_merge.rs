@@ -2,7 +2,7 @@
 //! separate from RobustToolbox's resolved inherited/DataField semantics.
 //! Tag-aware event parsing prevents YamlLoader from silently dropping !Clear,
 //! !Remove, !Index and !CombineIndex on source operations.
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use serde::Serialize;
 use yaml_rust2::parser::{MarkedEventReceiver, Parser, Tag};
@@ -16,6 +16,7 @@ const MAX_PREVIEW_FIELDS: usize = 96;
 const MAX_PREVIEW_COMPONENTS: usize = 128;
 const MAX_PREVIEW_BYTES: usize = 16 * 1024 * 1024;
 const MAX_PREVIEW_NODES: usize = 60_000;
+const MAX_PREVIEW_DEPTH: usize = 96;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Value {
@@ -123,6 +124,13 @@ impl TreeBuilder {
 
 impl MarkedEventReceiver for TreeBuilder {
     fn on_event(&mut self, event: Event, _: Marker) {
+        // Prevent recursive merge/clean from hitting unbounded user-controlled
+        // nesting. Finish parsing the stream, then reject the whole snapshot.
+        if matches!(&event, Event::SequenceStart(_, _) | Event::MappingStart(_, _))
+            && self.stack.len() >= MAX_PREVIEW_DEPTH
+        {
+            self.error.get_or_insert_with(|| "YAML глубже 96 уровней не вычисляется.".into());
+        }
         match event {
             Event::DocumentStart => {}
             Event::DocumentEnd => {
