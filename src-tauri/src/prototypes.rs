@@ -1232,7 +1232,7 @@ mod tests {
 
     #[test]
     fn partial_tags_preserve_explicit_order_and_reject_invalid_indices() {
-        let (items, issues) = parse(
+        let (items, _issues) = parse(
             "- type: !Partial:3 entity\n  id: Tagged\n- type: !PartialOnly:7 entity\n  id: Only\n- !Partial:99\n  type: entity\n  id: MappingTagIgnored\n",
             None,
         );
