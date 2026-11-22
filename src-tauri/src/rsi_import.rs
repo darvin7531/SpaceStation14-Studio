@@ -93,9 +93,9 @@ pub(crate) fn validate_request(request: &RsiStateImport) -> Result<(), StudioErr
         if delays.len() != request.directions as usize
             || delays.iter().any(|direction| {
                 direction.len() != request.frames_per_direction as usize
-                    || direction.iter().any(|seconds| {
-                        !seconds.is_finite() || !(0.01..=60.0).contains(seconds)
-                    })
+                    || direction
+                        .iter()
+                        .any(|seconds| !seconds.is_finite() || !(0.01..=60.0).contains(seconds))
             })
         {
             return Err(issue(
@@ -474,7 +474,8 @@ pub(crate) fn import_at(
         )
         .with_details(e.to_string())
     })?;
-    let content = updated_metadata_at(&original, request, &png, insert_at, preserve_state.as_ref())?;
+    let content =
+        updated_metadata_at(&original, request, &png, insert_at, preserve_state.as_ref())?;
     let target_png = folder.join(format!("{}.png", request.name));
     if target_png.exists() {
         return Err(issue(
