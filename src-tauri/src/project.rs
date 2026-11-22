@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
@@ -208,6 +208,10 @@ impl ProjectIndex {
             &mut resources,
         )?;
         on_progress("finalizing", resources.len());
+        Self::from_resources(root, resources)
+    }
+
+    fn from_resources(root: PathBuf, mut resources: Vec<ResourceEntry>) -> Result<Self, StudioError> {
         resources.sort_unstable_by(|a, b| a.path.cmp(&b.path));
         let mut positions = HashMap::with_capacity(resources.len());
         for (index, item) in resources.iter().enumerate() {
@@ -220,6 +224,7 @@ impl ProjectIndex {
             }
         }
 
+        let resources_root = root.join("Resources");
         let mut warnings = Vec::new();
         if !resources_root.join("Textures").is_dir() {
             warnings
@@ -230,7 +235,6 @@ impl ProjectIndex {
                 "Каталог Resources/Locale отсутствует: локализации не проиндексированы.".into(),
             );
         }
-
         let count = |kind: &str| resources.iter().filter(|item| item.kind == kind).count();
         let prototype_files = count("yaml");
         let rsi_directories = count("rsi");
@@ -284,6 +288,128 @@ impl ProjectIndex {
             removed_resources,
         };
         Ok((refreshed, summary))
+    }
+
+    /// Update only paths reported by the native watcher. The immutable old
+    /// snapshot remains usable until the caller atomically publishes this one.
+    /// Ambiguous/large event sets always fall back to the full validated scan.
+    pub fn refresh_paths(&self, changed_paths: &[String]) -> Result<(Self, ProjectRefresh), StudioError> {
+        if changed_paths.is_empty() || changed_paths.len() > 256 {
+            return self.refresh();
+        }
+        let prototypes = self.root.join("Resources/Prototypes");
+        if !prototypes.is_dir() {
+            return self.refresh();
+        }
+        for scope in ["Resources/Prototypes", "Resources/Textures", "Resources/Locale"] {
+            validate_scope(&self.root, &self.root.join(scope))?;
+        }
+
+        let mut targets = HashMap::<String, ScanScope>::new();
+        for path in changed_paths {
+            if path.is_empty() || path.len() > 1024 || path.contains('\\') {
+                return self.refresh();
+            }
+            let relative = Path::new(path);
+            if !relative.components().all(|component| matches!(component, Component::Normal(_))) {
+                return self.refresh();
+            }
+            // Content.* changes invalidate lazy C#/UI caches by publishing a
+            // new ProjectIndex; these paths never enter the resource list.
+            if relative.components().next().is_some_and(|part| {
+                matches!(part, Component::Normal(name) if name.to_string_lossy().starts_with("Content."))
+            }) {
+                continue;
+            }
+            let (scope, target) = if relative.starts_with("Resources/Prototypes") {
+                (ScanScope::Prototype, path.to_owned())
+            } else if relative.starts_with("Resources/Locale") {
+                (ScanScope::Locale, path.to_owned())
+            } else if let Ok(texture_relative) = relative.strip_prefix("Resources/Textures") {
+                let mut rsi = PathBuf::from("Resources/Textures");
+                let mut detected = false;
+                for component in texture_relative.components() {
+                    rsi.push(component.as_os_str());
+                    if has_extension(&rsi, "rsi") {
+                        detected = true;
+                        break;
+                    }
+                }
+                if detected {
+                    (ScanScope::Texture, rsi.to_string_lossy().replace('\\', "/"))
+                } else {
+                    (ScanScope::Texture, path.to_owned())
+                }
+            } else {
+                return self.refresh();
+            };
+            targets.insert(target, scope);
+        }
+
+        // Recheck all candidate paths before constructing the new index.
+        // Never follow a newly introduced symlink into a different checkout.
+        let mut updates = Vec::<ResourceEntry>::new();
+        let mut visited = 0;
+        for (target, scope) in &targets {
+            let absolute = self.root.join(target);
+            if has_symlink_ancestor(&self.root, &absolute)? {
+                // Symlinked entries are not indexed; drop the old affected
+                // subtree without traversing the symlink target.
+                continue;
+            }
+            match fs::symlink_metadata(&absolute) {
+                Ok(metadata) if metadata.is_dir() => {
+                    if matches!(scope, ScanScope::Texture) && has_extension(&absolute, "rsi") {
+                        updates.push(resource_entry(&self.root, &absolute, "rsi")?);
+                    } else {
+                        scan(&self.root, &absolute, *scope, &mut visited, &mut updates)?;
+                    }
+                }
+                Ok(metadata) if metadata.is_file() => {
+                    let kind = match scope {
+                        ScanScope::Prototype
+                            if has_extension(&absolute, "yml") || has_extension(&absolute, "yaml") =>
+                        {
+                            Some("yaml")
+                        }
+                        ScanScope::Locale if has_extension(&absolute, "ftl") => Some("ftl"),
+                        _ => None,
+                    };
+                    if let Some(kind) = kind {
+                        updates.push(resource_entry(&self.root, &absolute, kind)?);
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(walk_error(&absolute, error)),
+                _ => {}
+            }
+        }
+        let mut entries = self
+            .resources
+            .iter()
+            .filter(|entry| {
+                !targets.keys().any(|target| {
+                    entry.path == *target || entry.path.starts_with(&format!("{target}/"))
+                })
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        entries.extend(updates);
+        let fresh = Self::from_resources(self.root.clone(), entries)?;
+        let summary = ProjectRefresh {
+            added_resources: fresh
+                .positions
+                .keys()
+                .filter(|path| !self.positions.contains_key(*path))
+                .count(),
+            removed_resources: self
+                .positions
+                .keys()
+                .filter(|path| !fresh.positions.contains_key(*path))
+                .count(),
+            overview: fresh.overview.clone(),
+        };
+        Ok((fresh, summary))
     }
 
     /// Lazy, one-shot source scan. Concurrent requests share one result and
@@ -1234,6 +1360,29 @@ fn validate_scope(root: &Path, scope: &Path) -> Result<(), StudioError> {
         .with_details(canonical.display().to_string()));
     }
     Ok(())
+}
+
+/// Only inspect path metadata; do not canonicalize through a symlink.
+fn has_symlink_ancestor(root: &Path, path: &Path) -> Result<bool, StudioError> {
+    let relative = path.strip_prefix(root).map_err(|error| {
+        StudioError::new(
+            "PROJECT_PATH_INVALID",
+            "Путь обновления вышел за границы проекта.",
+            "Выполните полный перескан проекта.",
+        )
+        .with_details(error.to_string())
+    })?;
+    let mut current = root.to_path_buf();
+    for component in relative.components() {
+        current.push(component);
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => return Ok(true),
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(walk_error(&current, error)),
+        }
+    }
+    Ok(false)
 }
 
 fn scan(
