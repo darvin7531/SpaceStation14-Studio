@@ -1122,7 +1122,7 @@ mod tests {
     #[test]
     fn configured_and_explicit_partial_declarations_remain_separate() {
         let (items, _) = parse(
-            "- type: entity\n  id: Test\n- !Partial:0\n  type: entity\n  id: Other\n",
+            "- type: entity\n  id: Test\n- type: !Partial:0 entity\n  id: Other\n",
             Some(0),
         );
         assert_eq!(items.len(), 2);
@@ -1291,10 +1291,10 @@ mod tests {
     #[test]
     fn unresolved_aliases_and_invalid_variant_lists_make_catalog_incomplete() {
         let (items, issues) = parse(
-            "- type: entity\n  id: !type:CreateVariants\n    values: [One, *Second]\n- type: entity\n  id: *ExternalId\n",
+            "- type: entity\n  id: &ExternalId External\n- type: entity\n  id: !type:CreateVariants\n    values: [One, *ExternalId]\n- type: entity\n  id: *ExternalId\n",
             None,
         );
-        assert!(items.is_empty());
+        assert_eq!(items.iter().map(|item| item.id.as_str()).collect::<Vec<_>>(), ["External"]);
         assert!(issues
             .iter()
             .any(|issue| issue.code == "PROTOTYPE_VARIANTS_INVALID"));
