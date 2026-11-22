@@ -978,13 +978,14 @@ export default function App() {
     }
   }
 
-  async function navigatePrototypeIdentifier(identifier: string, sourcePath: string) {
+  async function navigatePrototypeIdentifier(identifier: string, sourcePath: string, kindFilter = '') {
     if (!overview || opening || saving || refreshing || transitioning) return;
     const root = overview.project_root;
     try {
-      const result = await studio.searchPrototypes(identifier, '', 0, 100);
+      const result = await studio.searchPrototypes(identifier, kindFilter, 0, 100);
       if (selectedPathRef.current !== sourcePath || projectRootRef.current !== root) return;
-      const exact = result.items.filter((item) => item.id === identifier);
+      const exact = result.items.filter((item) => item.id === identifier
+        && (!kindFilter || item.kind === kindFilter));
       // Partial, generated variants and duplicate IDs require explicit choice.
       if (exact.length === 1 && result.total <= 100) {
         openPrototypeSource(exact[0].file, exact[0].line);
@@ -1647,6 +1648,10 @@ export default function App() {
               path={selected.path} source={activeText}
               cursorLine={yamlCursor?.path === selected.path
                 ? yamlCursor.line : jumpTarget?.path === selected.path ? jumpTarget.line : null}
+              workspaceKey={overview.project_root + ':' + workspaceRevision}
+              sourceDirty={isDirty(selected.path)}
+              onNavigatePrototype={(kind, id) => void navigatePrototypeIdentifier(id, selected.path, kind)}
+              onOpenSource={openPrototypeSource}
               busy={saving || refreshing || transitioning}
               requiredLocales={localizationSettings.requiredLocales}
               liveValidation={editorSettings.liveValidation}
