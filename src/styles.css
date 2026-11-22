@@ -284,3 +284,11 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .resource-tree-error { display: flex; gap: 5px; padding: 6px; font-size: 11px; color: #ffc2bc; }
 .resource-tree-error button { color: #fff; background: #29435e; border: 0; }
 .resource-tree-warning { padding: 7px; font-size: 11px; color: #fed09c; }
+
+/* Original Electron FTL inspector metadata: path, locale, entries and characters. */
+.fluent-resource-summary { display: flex; flex-direction: column; gap: 7px; padding: 11px 13px; border-bottom: 1px solid #293345; font-size: 12px; }
+.fluent-resource-summary > strong { font-size: 12px; color: #d5e5f5; }
+.fluent-resource-summary dl { display: flex; flex-wrap: wrap; gap: 7px 18px; margin: 0; }
+.fluent-resource-summary dl div { display: flex; gap: 7px; min-width: 0; flex: 1 1 42%; }
+.fluent-resource-summary dt { color: #8399ad; flex-shrink: 0; }
+.fluent-resource-summary dd { color: #c8d8ea; margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

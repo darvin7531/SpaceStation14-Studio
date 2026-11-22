@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, FileWarning } from 'lucide-react';
 import { studio, type FluentInspection } from '../lib/api';
+import { useI18n } from '../i18n';
+import { ftlInspectorDetails } from '../lib/ftl-inspector';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 
 interface Props {
@@ -24,6 +26,7 @@ interface Inspection {
  * findings from an old tab or an obsolete draft.
  */
 export default function FluentDiagnosticsPanel({ path, source, onRevealLine, onRevealSource, enabled, delayMs }: Props) {
+  const { t } = useI18n();
   const [inspection, setInspection] = useState<Inspection | null>(null);
   const [failure, setFailure] = useState<StudioError | null>(null);
   const [manual, setManual] = useState<{ path: string; source: string; token: number } | null>(null);
@@ -56,8 +59,18 @@ export default function FluentDiagnosticsPanel({ path, source, onRevealLine, onR
     : null;
   const syntax = visible?.syntax;
   const locale = visible?.locale;
+  const metadata = ftlInspectorDetails(path, source, syntax?.entry_count ?? null);
 
   return <section className="fluent-diagnostics" aria-label="Диагностика Fluent">
+    <div className="fluent-resource-summary" aria-label={t('ftl.inspector')}>
+      <strong>{t('ftl.inspector')}</strong>
+      <dl>
+        <div><dt>{t('ftl.path')}</dt><dd title={metadata.path}>{metadata.path}</dd></div>
+        <div><dt>{t('ftl.locale')}</dt><dd>{metadata.locale ?? '—'}</dd></div>
+        <div><dt>{t('ftl.entries')}</dt><dd>{metadata.entries ?? '—'}</dd></div>
+        <div><dt>{t('ftl.characters')}</dt><dd>{metadata.characters}</dd></div>
+      </dl>
+    </div>
     <div className="fluent-diagnostics-heading">
       <FileWarning size={16}/>
       <strong>Проверка Fluent</strong>
