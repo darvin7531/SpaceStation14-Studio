@@ -99,14 +99,12 @@ fn is_sequence_row(line: &str) -> bool {
     line.starts_with("  - ") || line.starts_with("    - ")
 }
 
-fn linebreak(line: &str) -> &'static str {
-    if line.ends_with("\r\n") {
-        "\r\n"
-    } else if line.ends_with('\n') {
-        "\n"
-    } else {
-        ""
-    }
+struct ParentSnapshot {
+    docs: Vec<Yaml>,
+    lines: Vec<String>,
+    start: usize,
+    end: usize,
+    parents: Vec<String>,
 }
 
 /// The parsed AST is authoritative for values. The line layout is only used
@@ -191,19 +189,25 @@ fn source_span(
 fn snapshot(
     source: &str,
     locator: &FieldLocator,
-) -> Result<(Vec<Yaml>, Vec<String>, usize, usize, Vec<String>), StudioError> {
+) -> Result<ParentSnapshot, StudioError> {
     let docs = parse_source(source)?;
     let (row, items) = item(&docs, locator)?;
     let values = parents(row)?;
     let (lines, start, end) = item_rows(source, items.len(), locator.item_index)?;
     source_span(&lines, start, end, &values)?;
-    Ok((docs, lines, start, end, values))
+    Ok(ParentSnapshot {
+        docs,
+        lines,
+        start,
+        end,
+        parents: values,
+    })
 }
 
 pub fn inspect(source: &str, locator: &FieldLocator) -> Result<ParentInspection, StudioError> {
-    let (_, _, _, _, parents) = snapshot(source, locator)?;
+    let parsed = snapshot(source, locator)?;
     Ok(ParentInspection {
-        parents,
+        parents: parsed.parents,
         notice: "Поддерживаются обычные объявления, одиночный parent и списки parent. Изменения попадут в черновик YAML; сохраните их Ctrl+S.".into(),
     })
 }
@@ -214,7 +218,13 @@ pub fn patch(
     requested: &[String],
 ) -> Result<FieldPatch, StudioError> {
     validate_ids(requested)?;
-    let (docs, lines, start, end, original) = snapshot(source, locator)?;
+    let ParentSnapshot {
+        docs,
+        lines,
+        start,
+        end,
+        parents: original,
+    } = snapshot(source, locator)?;
     if requested == original {
         return Ok(FieldPatch {
             content: source.to_owned(),
@@ -244,7 +254,7 @@ pub fn patch(
         more => {
             let values = more
                 .iter()
-                .map(|id| serde_json::to_string(id))
+                .map(serde_json::to_string)
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|_| {
                     issue(
