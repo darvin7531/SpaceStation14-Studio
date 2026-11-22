@@ -716,7 +716,9 @@ mod tests {
             declaration("entity", "Grandparent", &[], "normal"),
         ];
         let (graph, index) = build(&definitions, &[]);
-        let result = graph.relations("entity", "Root", &definitions, &index).unwrap();
+        let result = graph
+            .relations("entity", "Root", &definitions, &index)
+            .unwrap();
         assert_eq!(result.ancestors.len(), 2);
         assert!(result.ancestors.iter().all(|step| step.depth == 1));
         assert!(!result.ancestry_complete);
