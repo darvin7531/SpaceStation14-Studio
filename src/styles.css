@@ -134,3 +134,13 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .resource-folder-breadcrumbs button:disabled { color: #d1dfef; font-weight: 700; }
 .resource-folder-browser .resource-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .resource-folder-browser .resource-row > small { margin-left: auto; }
+
+/* Recent canonical source roots (no source data is persisted in this menu). */
+.recent-project-select {
+  flex: 0 1 190px;
+  min-width: 108px;
+  max-width: 220px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}

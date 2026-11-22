@@ -10,6 +10,7 @@ import { studio, type DraftList, type DraftSnapshot, type CreatedPrototype, type
 import { normalizeStudioError, type StudioError } from './lib/errors';
 import { closeTab, openTab, nextTabPath, type TabState } from './lib/tabs';
 import { readTabSession, retainAvailableTabs, writeTabSession } from './lib/tab-session';
+import { readRecentProjects, rememberRecentProject, writeRecentProjects } from './lib/recent-projects';
 import { dirtyDocumentPaths, reconcileSavedDraft } from './lib/draft-state';
 import { DraftWriteQueue, journalKey } from './lib/draft-queue';
 import { reviewDecision } from './lib/review-guard';
@@ -78,6 +79,13 @@ export default function App() {
     } catch {
       return '';
     }
+  });
+  const [recentProjects, setRecentProjects] = useState<string[]>(() => {
+    const recent = readRecentProjects(window.localStorage);
+    try {
+      const last = window.localStorage.getItem(LAST_PROJECT_KEY);
+      return last ? rememberRecentProject(recent, last) : recent;
+    } catch { return recent; }
   });
   const [overview, setOverview] = useState<ProjectOverview | null>(null);
   const [opening, setOpening] = useState(false);
@@ -263,6 +271,11 @@ export default function App() {
     setError(null);
     try {
       const next = await studio.openProject(requestedPath);
+      setRecentProjects((current) => {
+        const updated = rememberRecentProject(current, next.project_root);
+        try { writeRecentProjects(window.localStorage, updated); } catch { /* optional */ }
+        return updated;
+      });
       try {
         window.localStorage.setItem(LAST_PROJECT_KEY, next.project_root);
       } catch {
@@ -1113,6 +1126,18 @@ export default function App() {
           <input id="project-path" value={path} spellCheck={false} autoComplete="off"
             placeholder="/home/user/SpaceStation14 или C:\SpaceStation14"
             onChange={(event) => setPath(event.target.value)}/>
+          {recentProjects.length > 0 && <select className="recent-project-select"
+            aria-label={t('app.recentProjects')} title={t('app.recentProjects')} value=""
+            disabled={opening || picking || saving || refreshing || transitioning}
+            onChange={(event) => {
+              const selected = event.target.value;
+              if (!selected) return;
+              setPath(selected);
+              requestAction({ type: 'open', path: selected });
+            }}>
+            <option value="">{t('app.recentProjects')}</option>
+            {recentProjects.map((project) => <option key={project} value={project}>{project}</option>)}
+          </select>}
           <button type="button" className="browse-button" disabled={opening || picking || saving || refreshing} onClick={() => void chooseProjectFolder()}>{t('app.browse')}</button>
           <button type="submit" disabled={opening || picking || saving || refreshing}><FolderOpen size={16}/>{opening ? t('app.opening') : t('app.openProject')}</button>
         </div>
