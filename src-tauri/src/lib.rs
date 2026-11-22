@@ -12,6 +12,7 @@ mod prototype_create;
 mod prototype_fields;
 mod prototype_graph;
 mod prototype_localization;
+mod prototype_merge;
 mod prototype_parents;
 mod prototype_sources;
 mod prototypes;
@@ -47,6 +48,7 @@ use prototype_create::{PrototypeDraft, PrototypePreview};
 use prototype_fields::{FieldInspection, FieldLocator, FieldPatch, PrototypeFields};
 use prototype_graph::PrototypeRelations;
 use prototype_localization::EntityLocalizationSource;
+use prototype_merge::PrototypePartialPreview;
 use prototype_parents::ParentInspection;
 use prototype_sources::PrototypeSourceReport;
 use prototypes::{DiagnosticPage, PrototypePage, SourceOutline};
@@ -472,6 +474,19 @@ async fn list_prototype_diagnostics(
 }
 
 /// Source relationships are informational and do not perform YAML inheritance.
+/// Read-only SS14 partial overlay preview (no parent or C# inheritance).
+#[tauri::command]
+async fn prototype_partial_preview(
+    kind: String,
+    id: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<PrototypePartialPreview, StudioError> {
+    let project = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || project.prototype_partial_preview(&kind, &id))
+        .await
+        .map_err(interrupted)?
+}
+
 /// Inspect explicit field and component declarations through the ancestry
 /// graph. This does not apply YAML inheritance or partial merging.
 #[tauri::command]
@@ -1048,6 +1063,7 @@ pub fn run() -> Result<(), tauri::Error> {
             search_prototypes,
             prototype_relations,
             prototype_sources,
+            prototype_partial_preview,
             list_prototype_diagnostics,
             read_resource,
             list_rsi_sheets,
