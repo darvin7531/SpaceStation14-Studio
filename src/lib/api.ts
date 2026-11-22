@@ -1,6 +1,17 @@
 import { invoke } from '@tauri-apps/api/core';
 
 export type ResourceKind = 'all' | 'yaml' | 'rsi' | 'ftl';
+export interface AppUpdateCheck {
+  status: 'disabled' | 'available' | 'unavailable';
+  current_version: string;
+  available_version: string | null;
+  message: string;
+}
+export interface AppUpdateProgress {
+  event: 'downloading' | 'finished';
+  downloaded_bytes: number;
+  total_bytes: number | null;
+}
 export interface ProjectScanProgress {
   requested_path: string;
   phase: 'prototypes' | 'textures' | 'locale' | 'finalizing';
@@ -688,6 +699,12 @@ export interface ResourceDocument {
 
 /** The only UI boundary to the filesystem: all operations execute in Rust. */
 export const studio = {
+  checkAppUpdates(): Promise<AppUpdateCheck> {
+    return invoke('check_app_updates');
+  },
+  installAppUpdate(): Promise<void> {
+    return invoke('install_app_update');
+  },
   openProject(path: string): Promise<ProjectOverview> {
     return invoke('open_project', { path });
   },

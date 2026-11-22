@@ -1,3 +1,4 @@
+mod app_updater;
 mod csharp_index;
 mod draft_journal;
 mod error;
@@ -33,6 +34,7 @@ mod ui_sources;
 
 use std::sync::{Arc, Mutex};
 
+use app_updater::{PendingUpdate, UpdateStatus};
 use csharp_index::{CSharpPage, ComponentSchemaBatch};
 use draft_journal::{DraftJournal, DraftList, DraftSnapshot, DraftSummary, DraftWriteResult};
 use error::{internal_lock, interrupted, StudioError};
@@ -110,6 +112,22 @@ fn current_project(state: &WorkspaceState) -> Result<Arc<ProjectIndex>, StudioEr
                 "Сначала откройте корневую папку исходников SS14.",
             )
         })
+}
+
+#[tauri::command]
+async fn check_app_updates(
+    app: tauri::AppHandle,
+    pending: State<'_, PendingUpdate>,
+) -> Result<UpdateStatus, StudioError> {
+    app_updater::check(app, &pending).await
+}
+
+#[tauri::command]
+async fn install_app_update(
+    app: tauri::AppHandle,
+    pending: State<'_, PendingUpdate>,
+) -> Result<(), StudioError> {
+    app_updater::install(app, &pending).await
 }
 
 /// Scan on the blocking thread pool, then atomically publish the new index.
@@ -1214,12 +1232,19 @@ pub fn run() -> Result<(), tauri::Error> {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            app_updater::register(app)?;
+            Ok(())
+        })
+        .manage(PendingUpdate::default())
         .manage(WorkspaceState::default())
         .manage(ProjectWatcher::default())
         .manage(DraftStorageLock::default())
         .invoke_handler(tauri::generate_handler![
             open_project,
             refresh_project,
+            check_app_updates,
+            install_app_update,
             search_resources,
             browse_resource_folder,
             search_ui_sources,

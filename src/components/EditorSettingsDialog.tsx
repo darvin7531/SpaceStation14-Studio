@@ -1,21 +1,30 @@
 import { useEffect, useRef, useState } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
+import { listen } from '@tauri-apps/api/event';
 import { Settings2, X } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { DEFAULT_EDITOR_SETTINGS, type EditorSettings } from '../lib/editor-settings';
 import { sanitizeLocalizationSettings, type LocalizationSettings } from '../lib/localization-settings';
+import { studio, type AppUpdateCheck, type AppUpdateProgress } from '../lib/api';
+import { normalizeStudioError } from '../lib/errors';
 
 interface Props {
   value: EditorSettings;
   onChange: (value: EditorSettings) => void;
   localizationSettings: LocalizationSettings;
+  dirtyCount: number;
   onLocalizationChange: (value: LocalizationSettings) => void;
   onClose: () => void;
 }
-export default function EditorSettingsDialog({ value, onChange, localizationSettings, onLocalizationChange, onClose }: Props) {
+export default function EditorSettingsDialog({ value, onChange, localizationSettings, dirtyCount, onLocalizationChange, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const { language, setLanguage, t } = useI18n();
-  const [section, setSection] = useState<'general' | 'editor' | 'about'>('general');
+  const [section, setSection] = useState<'general' | 'editor' | 'updates' | 'about'>('general');
+  const [updateStatus, setUpdateStatus] = useState<AppUpdateCheck | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [checkingUpdates, setCheckingUpdates] = useState(false);
+  const [installingUpdate, setInstallingUpdate] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState<AppUpdateProgress | null>(null);
   const [localeInput, setLocaleInput] = useState(localizationSettings.requiredLocales.join(', '));
   const [appVersion, setAppVersion] = useState<string | null>(null);
   useEffect(() => {
@@ -23,6 +32,49 @@ export default function EditorSettingsDialog({ value, onChange, localizationSett
     void getVersion().then((version) => { if (active) setAppVersion(version); }).catch(() => {});
     return () => { active = false; };
   }, []);
+  useEffect(() => {
+    let active = true;
+    let unlisten: (() => void) | undefined;
+    void listen<AppUpdateProgress>('studio:update-progress', (event) => {
+      if (active) setUpdateProgress(event.payload);
+    }).then((stop) => {
+      if (active) unlisten = stop;
+      else stop();
+    }).catch(() => {});
+    return () => { active = false; unlisten?.(); };
+  }, []);
+
+  async function checkUpdates() {
+    if (checkingUpdates || installingUpdate) return;
+    setCheckingUpdates(true);
+    setUpdateError(null);
+    setUpdateProgress(null);
+    try {
+      setUpdateStatus(await studio.checkAppUpdates());
+    } catch (reason) {
+      const error = normalizeStudioError(reason);
+      setUpdateError(error.message + ' ' + error.hint);
+      setUpdateStatus(null);
+    } finally {
+      setCheckingUpdates(false);
+    }
+  }
+
+  async function installUpdate() {
+    if (installingUpdate || dirtyCount > 0 || updateStatus?.status !== 'available') return;
+    setInstallingUpdate(true);
+    setUpdateError(null);
+    try {
+      await studio.installAppUpdate();
+      setUpdateStatus(null);
+    } catch (reason) {
+      const error = normalizeStudioError(reason);
+      setUpdateError(error.message + ' ' + error.hint);
+    } finally {
+      setInstallingUpdate(false);
+    }
+  }
+
   const commitLocales = () => {
     const next = sanitizeLocalizationSettings({ requiredLocales: localeInput.split(',') });
     setLocaleInput(next.requiredLocales.join(', '));
@@ -53,6 +105,7 @@ export default function EditorSettingsDialog({ value, onChange, localizationSett
       <nav className="settings-tabs" aria-label={t('settings.sections')}>
         <button type="button" aria-current={section === 'general' ? 'page' : undefined} onClick={() => setSection('general')}>{t('settings.general')}</button>
         <button type="button" aria-current={section === 'editor' ? 'page' : undefined} onClick={() => setSection('editor')}>{t('settings.editor')}</button>
+        <button type="button" aria-current={section === 'updates' ? 'page' : undefined} onClick={() => setSection('updates')}>{t('settings.updates')}</button>
         <button type="button" aria-current={section === 'about' ? 'page' : undefined} onClick={() => setSection('about')}>{t('settings.about')}</button>
       </nav>
       <p>{t('settings.description')}</p>
@@ -97,6 +150,33 @@ export default function EditorSettingsDialog({ value, onChange, localizationSett
               if (Number.isFinite(next) && next >= 100 && next <= 1500) patch({ validationDelay: Math.round(next) });
             }}/>
         </label>
+      </div>}
+      {section === 'updates' && <div className="settings-fields">
+        <p>{t('settings.updatesDescription')}</p>
+        <p>{t('settings.updatesVersion')}: {appVersion ?? '—'}</p>
+        {updateStatus && <p role="status">{updateStatus.message}
+          {updateStatus.available_version ? ' (' + updateStatus.available_version + ')' : ''}
+        </p>}
+        {updateError && <p role="alert">{updateError}</p>}
+        {updateProgress?.event === 'downloading' && <p role="status">
+          {t('settings.updatesDownloading')} {updateProgress.total_bytes && updateProgress.total_bytes > 0
+            ? Math.floor(updateProgress.downloaded_bytes * 100 / updateProgress.total_bytes) + '%'
+            : Math.round(updateProgress.downloaded_bytes / 1024) + ' KiB'}
+        </p>}
+        {updateProgress?.event === 'finished' && <p role="status">{t('settings.updatesDownloaded')}</p>}
+        {dirtyCount > 0 && <small role="status">{t('settings.updatesDirty', { count: dirtyCount })}</small>}
+        <div className="settings-update-actions">
+          <button type="button" disabled={checkingUpdates || installingUpdate}
+            onClick={() => void checkUpdates()}>
+            {checkingUpdates ? t('settings.updatesChecking') : t('settings.updatesCheck')}
+          </button>
+          <button type="button" disabled={installingUpdate || checkingUpdates || dirtyCount > 0
+            || updateStatus?.status !== 'available'}
+            onClick={() => void installUpdate()}>
+            {installingUpdate ? t('settings.updatesInstalling') : t('settings.updatesInstall')}
+          </button>
+        </div>
+        <small>{t('settings.updatesSigningNotice')}</small>
       </div>}
       {section === 'about' && <div className="settings-about">
         <p>{t('settings.aboutDescription')}</p>

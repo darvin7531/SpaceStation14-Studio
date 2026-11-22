@@ -1289,6 +1289,7 @@ export default function App() {
     {quickOpen && overview && <QuickOpenPanel onClose={() => setQuickOpen(false)}
       onOpen={(resource) => { setQuickOpen(false); openResource(resource); }}/>}
     {settingsOpen && <EditorSettingsDialog value={editorSettings}
+      dirtyCount={dirtyPaths.length}
       onChange={(settings) => setEditorSettings(sanitizeEditorSettings(settings))}
       localizationSettings={localizationSettings}
       onLocalizationChange={(settings) => setLocalizationSettings(sanitizeLocalizationSettings(settings))}
