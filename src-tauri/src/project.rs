@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
@@ -345,6 +345,16 @@ impl ProjectIndex {
             };
             targets.insert(target, scope);
         }
+
+        // A directory notification and its children may occur in the same
+        // burst. Scan the directory only once; otherwise the new snapshot
+        // would contain duplicate paths.
+        let all_targets = targets.keys().cloned().collect::<Vec<_>>();
+        targets.retain(|target, _| {
+            !all_targets.iter().any(|parent| {
+                parent != target && target.starts_with(&format!("{parent}/"))
+            })
+        });
 
         // Recheck all candidate paths before constructing the new index.
         // Never follow a newly introduced symlink into a different checkout.
@@ -1770,6 +1780,92 @@ mod tests {
             .items
             .iter()
             .all(|item| !item.path.contains("secrets")));
+    }
+
+    #[test]
+    fn incremental_refresh_matches_full_scan_for_changed_files_and_directories() {
+        let fx = Fixture::new();
+        fx.write("Resources/Prototypes/A.yml", "- type: entity\n  id: Before\n");
+        fx.write("Resources/Prototypes/Remove.yml", "- type: entity\n  id: Gone\n");
+        fx.write("Resources/Locale/en-US/remove.ftl", "old = Old\n");
+        let old = ProjectIndex::open(fx.root_str()).unwrap();
+        assert_eq!(old.prototypes().unwrap().search("Before", None, 0, 10).total, 1);
+
+        fx.write("Resources/Prototypes/A.yml", "- type: entity\n  id: After\n");
+        fx.write("Resources/Prototypes/New/Child.yaml", "- type: entity\n  id: Added\n");
+        fx.write("Resources/Locale/en-US/new.ftl", "new = Updated\n");
+        fx.write("Resources/Textures/Items/new.rsi/meta.json", "{\"version\":1}");
+        fs::remove_file(fx.root.join("Resources/Prototypes/Remove.yml")).unwrap();
+        fs::remove_file(fx.root.join("Resources/Locale/en-US/remove.ftl")).unwrap();
+
+        let paths = vec![
+            "Resources/Prototypes/A.yml".into(),
+            "Resources/Prototypes/Remove.yml".into(),
+            "Resources/Prototypes/New".into(),
+            "Resources/Prototypes/New/Child.yaml".into(),
+            "Resources/Locale/en-US".into(),
+            "Resources/Locale/en-US/new.ftl".into(),
+            "Resources/Textures/Items/new.rsi/meta.json".into(),
+        ];
+        let (incremental, summary) = old.refresh_paths(&paths).unwrap();
+        let (full, _) = old.refresh().unwrap();
+        let entries = |index: &ProjectIndex| {
+            index.resources.iter().map(|entry| (&entry.path, entry.kind)).collect::<Vec<_>>()
+        };
+        assert_eq!(entries(&incremental), entries(&full));
+        assert_eq!(incremental.overview().total_resources, 3);
+        assert_eq!(summary.added_resources, 3);
+        assert_eq!(summary.removed_resources, 2);
+        assert_eq!(incremental.prototypes().unwrap().search("After", None, 0, 10).total, 1);
+        assert_eq!(incremental.prototypes().unwrap().search("Before", None, 0, 10).total, 0);
+        assert_eq!(old.prototypes().unwrap().search("Before", None, 0, 10).total, 1);
+    }
+
+    #[test]
+    fn incremental_refresh_rebuilds_lazy_csharp_cache_on_content_change() {
+        let fx = Fixture::new();
+        let file = "Content.Shared/Components/WidgetComponent.cs";
+        fx.write(file, "[RegisterComponent]\npublic class WidgetComponent : Component {\n [DataField]\n public bool OldField = true;\n}\n");
+        let original = ProjectIndex::open(fx.root_str()).unwrap();
+        let before = original.csharp_component_schemas(&["Widget".into()]).unwrap();
+        assert_eq!(before.components[0].declarations[0].fields[0].name, "oldField");
+        fx.write(file, "[RegisterComponent]\npublic class WidgetComponent : Component {\n [DataField]\n public bool NewField = true;\n}\n");
+        let (fresh, summary) = original.refresh_paths(&[file.into()]).unwrap();
+        assert_eq!(summary.added_resources, 0);
+        assert_eq!(summary.removed_resources, 0);
+        let after = fresh.csharp_component_schemas(&["Widget".into()]).unwrap();
+        assert_eq!(after.components[0].declarations[0].fields[0].name, "newField");
+        assert_eq!(original.csharp_component_schemas(&["Widget".into()]).unwrap()
+            .components[0].declarations[0].fields[0].name, "oldField");
+    }
+
+    #[test]
+    fn incremental_refresh_unknown_or_invalid_hints_use_full_scan() {
+        let fx = Fixture::new();
+        let original = ProjectIndex::open(fx.root_str()).unwrap();
+        fx.write("Resources/Prototypes/new.yml", "- type: entity\n  id: New\n");
+        let (invalid, _) = original.refresh_paths(&["../outside".into()]).unwrap();
+        assert!(invalid.is_yaml_indexed("Resources/Prototypes/new.yml"));
+        let (unknown, _) = original.refresh_paths(&[".git/index".into()]).unwrap();
+        assert!(unknown.is_yaml_indexed("Resources/Prototypes/new.yml"));
+        let (no_hints, _) = original.refresh_paths(&[]).unwrap();
+        assert!(no_hints.is_yaml_indexed("Resources/Prototypes/new.yml"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn incremental_refresh_ignores_new_symlinked_resource() {
+        use std::os::unix::fs::symlink;
+        let fx = Fixture::new();
+        fx.write("Resources/Prototypes/real.yml", "- type: entity\n  id: Real\n");
+        let old = ProjectIndex::open(fx.root_str()).unwrap();
+        symlink(
+            fx.root.join("Resources/Prototypes/real.yml"),
+            fx.root.join("Resources/Prototypes/link.yml"),
+        ).unwrap();
+        let (fresh, _) = old.refresh_paths(&["Resources/Prototypes/link.yml".into()]).unwrap();
+        assert!(!fresh.is_yaml_indexed("Resources/Prototypes/link.yml"));
+        assert!(fresh.is_yaml_indexed("Resources/Prototypes/real.yml"));
     }
 
     #[test]
