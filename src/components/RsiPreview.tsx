@@ -153,9 +153,10 @@ export default function RsiPreview({
         path={path} revision={revision} name={selectedState.name}
         expectedPngRevision={image.revision} onRenamed={onRenamed}/>}
 
-    {frameLayout && selectedState && <RsiTimingPanel
+    {frameLayout && selectedState && image && inspection.size && !loadingImage && !imageError && <RsiTimingPanel
       key={path + ':' + selectedState.name + ':' + revision}
-      path={path} revision={revision} state={selectedState} onUpdated={onTimingUpdated}/>}
+      path={path} revision={revision} state={selectedState} pngRevision={image.revision}
+      cells={frameLayout.columns * frameLayout.rows} onUpdated={onTimingUpdated}/>}
     {selectedState && <RsiDeletePanel
       key={'delete:' + path + ':' + selectedState.name + ':' + revision}
       path={path} revision={revision} name={selectedState.name} onDeleted={onDeleted}/>}

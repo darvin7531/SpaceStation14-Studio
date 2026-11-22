@@ -9,14 +9,12 @@ interface Props {
   path: string;
   revision: string;
   state: RsiState;
+  pngRevision: string;
+  cells: number;
   onUpdated: (result: ImportedRsiState) => void;
 }
 
-/**
- * Only edit the existing animation delays. Direction count and number of
- * frames are deliberately immutable because changing either needs a PNG edit.
- */
-export default function RsiTimingPanel({ path, revision, state, onUpdated }: Props) {
+export default function RsiTimingPanel({ path, revision, state, pngRevision, cells, onUpdated }: Props) {
   const [delays, setDelays] = useState<number[][]>(
     () => state.delays.map((direction) => [...direction]),
   );
@@ -27,7 +25,7 @@ export default function RsiTimingPanel({ path, revision, state, onUpdated }: Pro
   const valid = supported && delays.every((direction) => direction.every(
     (seconds) => Number.isFinite(seconds) && seconds >= 0.01 && seconds <= 60,
   ));
-  const changed = delays.some((direction, index) => direction.some(
+  const changed = delays.length !== state.directions || delays.some((direction, index) => direction.some(
     (seconds, frame) => seconds !== state.delays[index]?.[frame],
   ));
 
@@ -46,7 +44,7 @@ export default function RsiTimingPanel({ path, revision, state, onUpdated }: Pro
     setError(null);
     try {
       const updated = await studio.updateRsiTiming({
-        path, expected_revision: revision, name: state.name, delays,
+        path, expected_revision: revision, expected_png_revision: pngRevision, name: state.name, delays,
       });
       onUpdated(updated);
     } catch (failure) {
@@ -57,10 +55,20 @@ export default function RsiTimingPanel({ path, revision, state, onUpdated }: Pro
   }
 
   return <details className="rsi-timing-panel">
-    <summary><Save size={15}/> Задержки кадров: {state.name}</summary>
+    <summary><Save size={15}/> Направления и задержки: {state.name}</summary>
     <form onSubmit={(event) => void submit(event)}>
-      <p>Изменяются только длительности кадров в <code>meta.json</code>.
-        Число кадров, направления и сами PNG останутся прежними. Сохранение проверяет ревизию файла.</p>
+      <p>PNG не изменяется. При изменении направлений длительности распределяются по ячейкам по порядку; новые получают 1 секунду. Проверяются ревизии метаданных и PNG.</p>
+      <label>Направления <select value={delays.length} disabled={saving} onChange={(event) => {
+        const count = Number(event.target.value);
+        const flat = delays.flat();
+        if (count === state.directions) { setDelays(state.delays.map((row) => [...row])); setError(null); return; }
+        setDelays(Array.from({ length: count }, (_, direction) =>
+          Array.from({ length: cells / count }, (_, frame) => flat[direction * (cells / count) + frame] ?? 1)));
+        setError(null);
+      }}>
+        {[1, 4, 8].map((count) => <option key={count} value={count}
+          disabled={count !== state.directions && (cells > 256 || cells % count !== 0 || cells / count > 128)}>{count}</option>)}
+      </select></label>
       {!supported ? <p role="status">
         Для этого состояния более 256 кадров либо более 128 на направление.
         Изменение длительностей в Studio пока недоступно.
@@ -84,7 +92,7 @@ export default function RsiTimingPanel({ path, revision, state, onUpdated }: Pro
         <span>{error.message} {error.hint} <code>{error.code}</code></span>
       </div>}
       <button type="submit" disabled={!valid || !changed || saving}>
-        <Save size={15}/>{saving ? 'Сохраняю…' : 'Сохранить задержки'}
+        <Save size={15}/>{saving ? 'Сохраняю…' : 'Сохранить состояние'}
       </button>
     </form>
   </details>;

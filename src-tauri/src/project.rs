@@ -3079,6 +3079,7 @@ mod tests {
             path: path.into(),
             expected_revision: first.revision,
             name: "walk".into(),
+            expected_png_revision: None,
             delays: vec![vec![0.5, 0.6]],
         };
         let result = index.update_rsi_timing(&update).unwrap();

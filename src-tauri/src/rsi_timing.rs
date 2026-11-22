@@ -1,5 +1,4 @@
-//! Conservative timing-only edits to existing RSI v1 states.
-//! This never modifies PNGs or changes the number/order of frames.
+//! Edit timing and regroup directions without modifying PNG sheets.
 use serde::Deserialize;
 use serde_json::Value;
 use std::path::Path;
@@ -20,6 +19,7 @@ pub struct RsiTimingUpdate {
     pub expected_revision: String,
     pub name: String,
     pub delays: Vec<Vec<f64>>,
+    pub expected_png_revision: Option<String>,
 }
 
 fn issue(code: &'static str, message: &str, hint: &str) -> StudioError {
@@ -126,7 +126,7 @@ fn updated_metadata(
             )
         })?,
     };
-    if !matches!(directions, 1 | 4 | 8) || update.delays.len() != directions as usize {
+    if !matches!(directions, 1 | 4 | 8) || !matches!(update.delays.len(), 1 | 4 | 8) {
         return Err(issue(
             "RSI_TIMING_SHAPE_INVALID",
             "Число направлений не совпадает с исходным состоянием.",
@@ -156,8 +156,9 @@ fn updated_metadata(
         }
     };
 
-    if old_delays.iter().map(Vec::len).collect::<Vec<_>>()
-        != update.delays.iter().map(Vec::len).collect::<Vec<_>>()
+    if update.delays.len() == directions as usize
+        && old_delays.iter().map(Vec::len).collect::<Vec<_>>()
+            != update.delays.iter().map(Vec::len).collect::<Vec<_>>()
     {
         return Err(issue(
             "RSI_TIMING_FRAME_COUNT_CHANGED",
@@ -176,6 +177,9 @@ fn updated_metadata(
             "Исправьте meta.json.",
         )
     })?;
+    if update.delays.len() != directions as usize {
+        state_object.insert("directions".into(), serde_json::json!(update.delays.len()));
+    }
     state_object.insert(
         "delays".into(),
         serde_json::to_value(&update.delays).map_err(|e| {
@@ -247,6 +251,55 @@ pub fn update(root: &Path, request: &RsiTimingUpdate) -> Result<ImportedRsiState
             archive_path: None,
         });
     };
+    let old: Value = serde_json::from_slice(&original).map_err(|_| {
+        issue("RSI_TIMING_META_INVALID", "Некорректный JSON.", "Проверьте meta.json.")
+    })?;
+    let old_state = old["states"]
+        .as_array()
+        .and_then(|states| states.iter().find(|state| state["name"] == request.name))
+        .ok_or_else(|| {
+            issue("RSI_TIMING_STATE_NOT_FOUND", "Состояние отсутствует.", "Обновите RSI.")
+        })?;
+    if old_state.get("directions").and_then(Value::as_u64).unwrap_or(1)
+        != request.delays.len() as u64
+    {
+        if !request.name.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'_' | b'-')
+        }) {
+            return Err(issue("RSI_TIMING_NAME_INVALID", "Некорректное имя состояния.", "Проверьте имя."));
+        }
+        let expected = request
+            .expected_png_revision
+            .as_deref()
+            .filter(|value| value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit()))
+            .ok_or_else(|| {
+                issue("RSI_TIMING_PNG_REVISION_INVALID", "Ревизия PNG некорректна.", "Обновите PNG.")
+            })?;
+        let png_path = folder.join(format!("{}.png", request.name));
+        let png = crate::rsi_delete::read_png(&png_path)?;
+        if revision(&png) != expected {
+            return Err(issue("RSI_TIMING_PNG_CONFLICT", "PNG изменился.", "Обновите RSI."));
+        }
+        let (width, height) = crate::rsi_preview::png_dimensions(&png)?;
+        crate::rsi_import::validate_png(&png, width, height)?;
+        let size = |axis: &str| {
+            old["size"][axis]
+                .as_u64()
+                .filter(|value| (1..=2048).contains(value))
+                .ok_or_else(|| issue("RSI_TIMING_GRID_INVALID", "Некорректный размер кадра.", "Проверьте meta.json."))
+        };
+        let (x, y) = (size("x")?, size("y")?);
+        let count: usize = request.delays.iter().map(Vec::len).sum();
+        if u64::from(width) % x != 0
+            || u64::from(height) % y != 0
+            || (u64::from(width) / x) * (u64::from(height) / y) != count as u64
+        {
+            return Err(issue("RSI_TIMING_GRID_INVALID", "Сетка PNG не совпадает с кадрами.", "Выберите подходящее число направлений."));
+        }
+        if revision(&crate::rsi_delete::read_png(&png_path)?) != expected {
+            return Err(issue("RSI_TIMING_PNG_CONFLICT", "PNG изменился.", "Обновите RSI."));
+        }
+    }
     let result = resource_edit::save_rsi_metadata(
         root,
         &format!("{}/meta.json", request.path),
@@ -293,6 +346,7 @@ mod tests {
                 path: self.relative.clone(),
                 expected_revision: revision(&original),
                 name: "walk".into(),
+                expected_png_revision: None,
                 delays: vec![
                     vec![0.15, 0.25],
                     vec![0.35, 0.45],
@@ -364,6 +418,56 @@ mod tests {
             "RSI_TIMING_SHAPE_INVALID"
         );
         assert_eq!(fs::read(&meta_file).unwrap(), original);
+    }
+
+    #[test]
+    fn changes_directions_only_for_matching_unchanged_png() {
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        let fixture = Fixture::new();
+        let folder = fixture.root.join(&fixture.relative);
+        let meta = folder.join("meta.json");
+        let png_path = folder.join("walk.png");
+        let png = STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAAQAAAABCAYAAAD5PA/NAAAAC0lEQVR4nGNgQAMAABEAAe4mBk8AAAAASUVORK5CYII=").unwrap();
+        fs::write(&png_path, &png).unwrap();
+        fs::write(&meta, r#"{"version":1,"size":{"x":1,"y":1},"custom":true,"states":[{"name":"walk","delays":[[0.1]],"extra":7}]}"#).unwrap();
+        let mut request = fixture.request();
+        request.delays = vec![vec![0.1], vec![1.0], vec![1.0], vec![1.0]];
+        request.expected_png_revision = Some(revision(&png));
+        let result = update(&fixture.root, &request).unwrap();
+        let doc: Value = serde_json::from_str(&result.content).unwrap();
+        assert_eq!(doc["states"][0]["directions"], 4);
+        assert_eq!(doc["states"][0]["extra"], 7);
+        assert_eq!(doc["custom"], true);
+        assert_eq!(fs::read(&png_path).unwrap(), png);
+        assert_eq!(update(&fixture.root, &request).unwrap_err().code, "RSI_TIMING_CONFLICT");
+        request.expected_revision = result.revision;
+        request.delays = vec![vec![0.1, 1.0, 1.0, 1.0]];
+        request.expected_png_revision = Some("0".repeat(64));
+        assert_eq!(update(&fixture.root, &request).unwrap_err().code, "RSI_TIMING_PNG_CONFLICT");
+        request.expected_png_revision = Some(revision(&png));
+        request.delays = vec![vec![1.0]; 8];
+        assert_eq!(update(&fixture.root, &request).unwrap_err().code, "RSI_TIMING_GRID_INVALID");
+        assert_eq!(fs::read_to_string(&meta).unwrap(), result.content);
+        request.delays = vec![vec![0.1, 1.0, 1.0, 1.0]];
+        let changed = update(&fixture.root, &request).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&changed.content).unwrap()["states"][0]["directions"], 1);
+        assert_eq!(fs::read(&png_path).unwrap(), png);
+        let png8 = STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAAgAAAABCAYAAADjAO9DAAAAC0lEQVR4nGNgIAAAACEAAcdv3ZQAAAAASUVORK5CYII=").unwrap();
+        fs::write(&png_path, &png8).unwrap();
+        request.expected_revision = changed.revision;
+        request.expected_png_revision = Some(revision(&png8));
+        request.delays = vec![vec![1.0]; 8];
+        let eight = update(&fixture.root, &request).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&eight.content).unwrap()["states"][0]["directions"], 8);
+        assert_eq!(fs::read(&png_path).unwrap(), png8);
+        request.expected_revision = eight.revision;
+        request.delays = vec![vec![1.0; 8]];
+        let mut broken = png8;
+        broken[30] ^= 1;
+        fs::write(&png_path, &broken).unwrap();
+        request.expected_png_revision = Some(revision(&broken));
+        assert!(update(&fixture.root, &request).is_err());
+        assert_eq!(fs::read_to_string(&meta).unwrap(), eight.content);
     }
 
     #[test]

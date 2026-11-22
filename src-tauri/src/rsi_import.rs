@@ -168,7 +168,7 @@ fn crc32(bytes: &[u8]) -> u32 {
 
 /// Restrict import to structurally complete PNG streams. The WebView still
 /// performs image decoding; no arbitrary file bytes are executed or rewritten.
-fn validate_png(
+pub(crate) fn validate_png(
     bytes: &[u8],
     expected_width: u32,
     expected_height: u32,

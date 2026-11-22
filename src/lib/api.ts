@@ -553,6 +553,7 @@ export interface RsiSizeUpdate {
 }
 
 export interface RsiTimingUpdate {
+  expected_png_revision?: string;
   path: string;
   expected_revision: string;
   name: string;
