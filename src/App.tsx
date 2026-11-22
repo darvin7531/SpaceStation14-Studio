@@ -124,6 +124,8 @@ export default function App() {
   const [showingCSharp, setShowingCSharp] = useState(false);
   const [showingUiSources, setShowingUiSources] = useState(false);
   const [fieldTarget, setFieldTarget] = useState<PrototypeFieldLocator | null>(null);
+  const fieldTargetRef = useRef(fieldTarget);
+  fieldTargetRef.current = fieldTarget;
   const [prototypePanel, setPrototypePanel] = useState<'fields' | 'components' | 'localization' | 'parents'>('fields');
   const [showYamlOutline, setShowYamlOutline] = useState(false);
   const [rsiRequested, setRsiRequested] = useState<{ path: string; state: string | null } | null>(null);
@@ -1099,10 +1101,17 @@ export default function App() {
     }
     const root = overview.project_root;
     if (keepSource) {
-      const yamlFile = fieldTarget?.file;
+      const currentTarget = fieldTargetRef.current;
+      const yamlFile = currentTarget?.file;
       const currentYaml = yamlFile
         ? (draftsRef.current[yamlFile] ?? documents.current.get(yamlFile)?.content) : null;
-      if (!yamlFile || selectedPathRef.current !== yamlFile
+      if (!currentTarget || !fieldTarget
+          || currentTarget.file !== fieldTarget.file
+          || currentTarget.id !== fieldTarget.id
+          || currentTarget.kind !== fieldTarget.kind
+          || currentTarget.document_index !== fieldTarget.document_index
+          || currentTarget.item_index !== fieldTarget.item_index
+          || !yamlFile || selectedPathRef.current !== yamlFile
           || sourceSnapshot === undefined || currentYaml !== sourceSnapshot) {
         throw new Error('Исходный YAML изменился во время массовой записи. Следующие FTL не сохранены.');
       }
