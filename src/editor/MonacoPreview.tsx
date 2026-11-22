@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { studio, type ResourceDocument, type ResourceEntry } from '../lib/api';
 import { yamlCompletionContext, yamlComponentHoverTarget, yamlSpriteLinkTarget } from './yaml-completion';
+import { componentHoverMarkdown } from './component-hover';
 import type { EditorSettings } from '../lib/editor-settings';
 import { identifierAtColumn } from '../lib/editor-navigation';
 
@@ -206,18 +207,10 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
                   const status = schema.status === 'unique' && batch.index_complete
                     && schema.declarations.length === 1;
                   const definition = status ? schema.declarations[0] : null;
-                  const content = definition ? [
-                    '**' + title + '** · `' + definition.class_name.replace(/[`\\]/g, '') + '`',
-                    '',
-                    'C# source: `' + definition.file.replace(/[`\\]/g, '') + ':' + definition.line + '`',
-                    '',
-                    ...definition.fields.slice(0, 16).map((field) =>
-                      '- `' + field.name.replace(/[`\\]/g, '') + '`: `'
-                        + field.field_type.replace(/[`\\]/g, '') + '`'),
-                    '',
-                    'Показаны только прямые DataField без проверки движкового наследования.',
-                  ].join('\n') : '**' + title
-                    + '** — C# схема неоднозначна или индекс неполный. Проверьте исходники вручную.';
+                  const content = definition
+                    ? componentHoverMarkdown(definition)
+                    : '**' + title
+                      + '** — C# схема неоднозначна или индекс неполный. Проверьте исходники вручную.';
                   return {
                     range: new monaco.Range(position.lineNumber, hover.startColumn,
                       position.lineNumber, hover.endColumn),
