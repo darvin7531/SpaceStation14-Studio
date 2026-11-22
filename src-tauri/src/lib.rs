@@ -1180,6 +1180,16 @@ async fn patch_prototype_components(
 
 pub fn run() -> Result<(), tauri::Error> {
     tauri::Builder::default()
+        // Electron's requestSingleInstanceLock parity: secondary launches focus
+        // the existing editor instead of creating a second independent instance.
+        // Register first so later plugins cannot intercept startup beforehand.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .manage(WorkspaceState::default())
         .manage(ProjectWatcher::default())
