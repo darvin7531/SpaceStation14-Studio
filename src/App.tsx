@@ -20,6 +20,7 @@ import { persistExitRecovery } from './lib/exit-recovery';
 import { reviewDecision } from './lib/review-guard';
 import { reconcileWorkspaceRefresh } from './lib/workspace-refresh';
 import MonacoPreview from './editor/MonacoPreview';
+import { directEntityLocaleField } from './editor/yaml-locale-navigation';
 import RsiPreview from './components/RsiPreview';
 import CreateRsiWizard from './components/CreateRsiWizard';
 import PrototypeExplorer from './components/PrototypeExplorer';
@@ -1016,6 +1017,45 @@ export default function App() {
     openResource({ path: file, kind: 'yaml' });
   }
 
+  /** Electron Ctrl+Click quick-fix on direct entity localization fields.
+   * Use the native YAML declaration index and missing-translation analysis,
+   * never infer an entity or a game locale from a regex alone.
+   */
+  async function navigateYamlLocalization(line: number, source: string, sourcePath: string) {
+    if (!overview || opening || saving || refreshing || transitioning || fieldTarget) return;
+    const projectRoot = overview.project_root;
+    const current = () => selectedPathRef.current === sourcePath
+      && projectRootRef.current === projectRoot
+      && (draftsRef.current[sourcePath] ?? documents.current.get(sourcePath)?.content) === source;
+    if (!current()) return;
+    try {
+      const outline = await studio.inspectYamlOutline(sourcePath, source);
+      if (!current() || outline.truncated) return;
+      const entries = outline.declarations.map((entry) => entry.declaration)
+        .sort((a, b) => a.line - b.line);
+      const index = entries.findIndex((entry, index) => entry.line <= line
+        && (index + 1 === entries.length || entries[index + 1].line > line));
+      if (index < 0) return;
+      const entity = entries[index];
+      const field = directEntityLocaleField(source.split('\n'), line, entity);
+      if (!field) return;
+      const analysis = await studio.analyzeEntityLocalization(
+        entity, source, [...localizationSettings.requiredLocales],
+      );
+      if (!current()) return;
+      if (analysis.complete && analysis.diagnostics.some((issue) => issue.field === field)) {
+        editPrototypeFields(entity, 'localization');
+      } else if (analysis.complete) {
+        setNotice('Для поля ' + field
+          + ' отсутствующих переводов в выбранных игровых локалях не обнаружено.');
+      } else {
+        setNotice('Индекс игровых локалей неполный. Откройте инспектор для проверки вручную.');
+      }
+    } catch (failure) {
+      if (current()) setError(normalizeStudioError(failure));
+    }
+  }
+
   function editPrototypeFields(entry: PrototypeDeclaration, panel: 'fields' | 'components' | 'localization' | 'parents') {
     if (saving || opening || transitioning || refreshing) return;
     openPrototypeSource(entry.file, entry.line);
@@ -1654,6 +1694,8 @@ export default function App() {
                 ? (id) => void navigatePrototypeIdentifier(id, selected.path) : undefined}
               onNavigateRsi={selected.kind === 'yaml'
                 ? (indexedPath) => void navigateIndexedRsi(indexedPath, selected.path) : undefined}
+              onNavigateLocalization={selected.kind === 'yaml'
+                ? (line, source) => void navigateYamlLocalization(line, source, selected.path) : undefined}
               onChange={isEditableText(selected.kind) ? (value) => {
                 const next = { ...draftsRef.current, [selected.path]: value };
                 draftsRef.current = next;

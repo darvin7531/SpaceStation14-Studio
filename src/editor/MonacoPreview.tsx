@@ -3,6 +3,7 @@ import { AlertCircle } from 'lucide-react';
 import { studio, type ResourceDocument, type ResourceEntry } from '../lib/api';
 import { yamlCompletionContext, yamlComponentHoverTarget, yamlSpriteLinkTarget } from './yaml-completion';
 import { componentHoverMarkdown } from './component-hover';
+import { yamlLocaleClickField } from './yaml-locale-navigation';
 import type { EditorSettings } from '../lib/editor-settings';
 import { identifierAtColumn } from '../lib/editor-navigation';
 
@@ -17,13 +18,14 @@ interface Props {
   onChange?: (value: string) => void;
   onNavigateIdentifier?: (identifier: string) => void;
   onNavigateRsi?: (indexedPath: string) => void;
+  onNavigateLocalization?: (line: number, source: string) => void;
 }
 
 /**
  * Lazy-loads Monaco only when a resource is opened, and disposes the model,
  * workers' consumers and editor on tab switch/unmount.
  */
-export default function MonacoPreview({ resource, document, revealLine, jumpToken, value, editable, onChange, onNavigateIdentifier, onNavigateRsi, settings }: Props) {
+export default function MonacoPreview({ resource, document, revealLine, jumpToken, value, editable, onChange, onNavigateIdentifier, onNavigateRsi, onNavigateLocalization, settings }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<{ revealLineInCenter(line: number): void; setPosition(position: { lineNumber: number; column: number }): void } | null>(null);
   const latestJump = useRef(revealLine);
@@ -41,6 +43,8 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
   onNavigateRef.current = onNavigateIdentifier;
   const onNavigateRsiRef = useRef(onNavigateRsi);
   onNavigateRsiRef.current = onNavigateRsi;
+  const onNavigateLocalizationRef = useRef(onNavigateLocalization);
+  onNavigateLocalizationRef.current = onNavigateLocalization;
 
   // A new disk revision or a discarded draft updates Monaco without losing
   // text typed before a React rerender. Ordinary keystrokes do not reset undo.
@@ -237,6 +241,11 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
                 return;
               }
               if (/^\s*sprite:\s*/.test(line)) return;
+            }
+            if (resource.kind === 'yaml' && onNavigateLocalizationRef.current
+              && yamlLocaleClickField(line, position.column)) {
+              onNavigateLocalizationRef.current(position.lineNumber, model.getValue());
+              return;
             }
             const identifier = identifierAtColumn(line, position.column);
             if (identifier) onNavigateRef.current?.(identifier);
