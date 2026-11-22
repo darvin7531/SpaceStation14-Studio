@@ -5,6 +5,8 @@ import {
 } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 import SpriteLayerInspector from './SpriteLayerInspector';
+import LinkedPrototypePanel from './LinkedPrototypePanel';
+import InheritancePreviewPanel from './InheritancePreviewPanel';
 import { missingLocaleFiles } from '../lib/localization-navigation';
 import { outlineDeclarationKey, outlineKeyAtLine } from '../lib/outline-selection';
 
@@ -22,6 +24,10 @@ interface Props {
   liveValidation: boolean;
   validationDelay: number;
   cursorLine: number | null;
+  workspaceKey: string;
+  sourceDirty: boolean;
+  onNavigatePrototype: (kind: string, id: string) => void;
+  onOpenSource: (file: string, line: number) => void;
 }
 
 /** Electron parity: live missing-locale diagnostics for the selected normal entity.
@@ -91,12 +97,15 @@ function SelectedEntityLocaleStatus({
 export default function PrototypeOutlinePanel({
   path, source, busy, onJump, onEdit, onOpenRsi, onOpenFtl,
   requiredLocales, liveValidation, validationDelay, cursorLine,
+  workspaceKey, sourceDirty, onNavigatePrototype, onOpenSource,
 }: Props) {
   const [snapshot, setSnapshot] = useState<{ path: string; source: string; outline: SourceOutline } | null>(null);
   const [failure, setFailure] = useState<StudioError | null>(null);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
   const [manualSelection, setManualSelection] = useState<{ key: string; line: number } | null>(null);
+  const [showLinked, setShowLinked] = useState(false);
+  const [showInheritance, setShowInheritance] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -209,6 +218,30 @@ export default function PrototypeOutlinePanel({
             </>}
           </> : <small>Сложные, partial и генерируемые объявления доступны для навигации, но не для автоматических форм.</small>}
         </div>
+        <div className="prototype-outline-actions" aria-label="Разделы инспектора Electron">
+          <button type="button" className="prototype-relations-trigger"
+            aria-expanded={showLinked} onClick={() => setShowLinked((value) => !value)}>
+            {showLinked ? 'Скрыть связанные прототипы' : 'Связанные прототипы'}
+          </button>
+          <button type="button" className="prototype-relations-trigger"
+            aria-expanded={showInheritance} onClick={() => setShowInheritance((value) => !value)}>
+            {showInheritance ? 'Скрыть наследование' : 'Наследование'}
+          </button>
+        </div>
+        {(showLinked || showInheritance) && sourceDirty && <p className="prototype-outline-warning">
+          В YAML есть несохранённые изменения. Связи и наследование берутся из Rust-индекса
+          сохранённого проекта; сохраните черновик, чтобы увидеть актуальный результат.
+        </p>}
+        {!sourceDirty && showLinked && <LinkedPrototypePanel
+          key={selected.declaration.kind + ':' + selected.declaration.id}
+          kind={selected.declaration.kind} id={selected.declaration.id}
+          workspaceKey={workspaceKey}
+          onNavigate={onNavigatePrototype}/>}
+        {!sourceDirty && showInheritance && <InheritancePreviewPanel
+          key={selected.declaration.kind + ':' + selected.declaration.id}
+          kind={selected.declaration.kind} id={selected.declaration.id}
+          workspaceKey={workspaceKey}
+          onNavigate={onNavigatePrototype} onOpen={onOpenSource}/>}
         {editable && selected.declaration.kind === 'entity' && <SelectedEntityLocaleStatus
           declaration={selected.declaration} source={source} requiredLocales={requiredLocales}
           enabled={liveValidation} delayMs={validationDelay} busy={busy}
