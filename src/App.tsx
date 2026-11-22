@@ -127,7 +127,10 @@ export default function App() {
   const fieldTargetRef = useRef(fieldTarget);
   fieldTargetRef.current = fieldTarget;
   const [prototypePanel, setPrototypePanel] = useState<'fields' | 'components' | 'localization' | 'parents'>('fields');
-  const [showYamlOutline, setShowYamlOutline] = useState(false);
+  // The Electron inspector followed the active prototype without requiring a
+  // second click in a resource list. Keep it visible for opened YAML by default.
+  const [showYamlOutline, setShowYamlOutline] = useState(true);
+  const [yamlCursor, setYamlCursor] = useState<{ path: string; line: number } | null>(null);
   const [rsiRequested, setRsiRequested] = useState<{ path: string; state: string | null } | null>(null);
   const [picking, setPicking] = useState(false);
   const [explorerMode, setExplorerMode] = useState<'files' | 'prototypes'>('files');
@@ -1015,6 +1018,8 @@ export default function App() {
   }
 
   function openPrototypeSource(file: string, line: number) {
+    setShowYamlOutline(true);
+    setYamlCursor({ path: file, line });
     setJumpTarget({ path: file, line, token: ++jumpCounter.current });
     openResource({ path: file, kind: 'yaml' });
   }
@@ -1640,13 +1645,16 @@ export default function App() {
           {showYamlOutline && selected.kind === 'yaml' && document?.path === selected.path && !reading
             && <PrototypeOutlinePanel key={overview.project_root + ':' + workspaceRevision + ':' + selected.path}
               path={selected.path} source={activeText}
+              cursorLine={yamlCursor?.path === selected.path
+                ? yamlCursor.line : jumpTarget?.path === selected.path ? jumpTarget.line : null}
               busy={saving || refreshing || transitioning}
               requiredLocales={localizationSettings.requiredLocales}
               liveValidation={editorSettings.liveValidation}
               validationDelay={editorSettings.validationDelay}
-              onJump={(line) => setJumpTarget({
-                path: selected.path, line, token: ++jumpCounter.current,
-              })}
+              onJump={(line) => {
+                setYamlCursor({ path: selected.path, line });
+                setJumpTarget({ path: selected.path, line, token: ++jumpCounter.current });
+              }}
               onEdit={editPrototypeFields}
               onOpenRsi={(path, state) => openResource({ path, kind: 'rsi' }, state)}
               onOpenFtl={(path) => openResource({ path, kind: 'ftl' })}/>}
@@ -1712,6 +1720,10 @@ export default function App() {
                 onRenamed={(result) => onRsiRenamed(selected.path, result)}/>
               : document ? <MonacoPreview settings={editorSettings} key={document.path} resource={selected} document={document}
               value={activeText} gameLocales={localizationSettings.requiredLocales}
+              onCursorLineChange={selected.kind === 'yaml' ? (line) => {
+                setYamlCursor((current) => current?.path === selected.path && current.line === line
+                  ? current : { path: selected.path, line });
+              } : undefined}
               editable={isEditableText(selected.kind) && !saving && !refreshing}
               onNavigateIdentifier={selected.kind === 'yaml'
                 ? (id) => void navigatePrototypeIdentifier(id, selected.path) : undefined}
