@@ -115,3 +115,16 @@ export function planMissingEntityTranslations(
       : [];
   });
 }
+
+/** Reuse the scaffold's validation and include only fields confirmed missing. */
+export function buildMissingFluentDraft(file: string, values: EntityLocaleValues, fields: readonly EntityLocaleField[]): import('./api').NewFluentDraft {
+  const patch = buildEntityLocalePatch('', values, fields);
+  if (!patch.changed) throw new Error('Нет полей для создания FTL.');
+  return {
+    file, starter_key: values.localization_id,
+    starter_value: fields.includes('name') ? values.name.trim() : '',
+    starter_description: fields.includes('description') ? values.description.trim() : undefined,
+    starter_suffix: fields.includes('suffix') ? values.suffix.trim() : undefined,
+    allow_empty_value: !fields.includes('name'),
+  };
+}

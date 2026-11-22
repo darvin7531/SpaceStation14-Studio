@@ -1096,17 +1096,7 @@ export default function App() {
     return true;
   }
 
-  /** Explicit localization write: never clobber an open FTL draft or stale file. */
-  async function applyEntityLocalization(
-    file: string, baseline: ResourceDocument, content: string, keepSource = false,
-    sourceSnapshot?: string,
-  ): Promise<boolean> {
-    if (!overview || !file.startsWith('Resources/Locale/') || !file.endsWith('.ftl')
-        || baseline.path !== file || saving || opening || refreshing || transitioning) {
-      throw new Error('Невозможно записать FTL во время другой операции.');
-    }
-    const root = overview.project_root;
-    if (keepSource) {
+  function checkLocalizationSource(sourceSnapshot?: string) {
       const currentTarget = fieldTargetRef.current;
       const yamlFile = currentTarget?.file;
       const currentYaml = yamlFile
@@ -1121,7 +1111,19 @@ export default function App() {
           || sourceSnapshot === undefined || currentYaml !== sourceSnapshot) {
         throw new Error('Исходный YAML изменился во время массовой записи. Следующие FTL не сохранены.');
       }
+  }
+
+  /** Explicit localization write: never clobber an open FTL draft or stale file. */
+  async function applyEntityLocalization(
+    file: string, baseline: ResourceDocument, content: string, keepSource = false,
+    sourceSnapshot?: string,
+  ): Promise<boolean> {
+    if (!overview || !file.startsWith('Resources/Locale/') || !file.endsWith('.ftl')
+        || baseline.path !== file || saving || opening || refreshing || transitioning) {
+      throw new Error('Невозможно записать FTL во время другой операции.');
     }
+    const root = overview.project_root;
+    if (keepSource) checkLocalizationSource(sourceSnapshot);
     const opened = documents.current.get(file);
     if (opened && (draftsRef.current[file] ?? opened.content) !== opened.content) {
       throw new Error('У выбранного FTL уже есть несохранённый черновик. Сохраните или закройте его перед генерацией локализации.');
@@ -1159,6 +1161,26 @@ export default function App() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function createBatchLocalization(draft: NewFluentDraft, sourceSnapshot: string): Promise<CreatedFluent> {
+    if (!overview || saving || opening || refreshing || transitioning) throw new Error('Другая операция уже выполняется.');
+    checkLocalizationSource(sourceSnapshot);
+    const root = overview.project_root;
+    const opened = documents.current.get(draft.file);
+    if (draftsRef.current[draft.file] !== undefined || draftBasesRef.current[draft.file] !== undefined || opened) {
+      throw new Error('У FTL есть открытый документ или черновик. Разрешите конфликт перед созданием.');
+    }
+    if (projectRootRef.current !== root) throw new Error('Проект изменился.');
+    setSaving(true);
+    try {
+      const result = await studio.createNewFluent(draft);
+      if (projectRootRef.current === root && result.overview) {
+        setOverview(result.overview);
+        setWorkspaceRevision((value) => value + 1);
+      }
+      return result;
+    } finally { setSaving(false); }
   }
 
   function selectTab(path: string) {
@@ -1699,7 +1721,7 @@ export default function App() {
                       setQuickFixFluentDraft(draft);
                       setCreatingFluent(true);
                     }}
-                    onApply={applyEntityLocalization} onClose={() => setFieldTarget(null)}/>
+                    onApply={applyEntityLocalization} onCreateBatch={createBatchLocalization} onClose={() => setFieldTarget(null)}/>
                 : <PrototypeComponentsPanel
                     key={fieldTarget.file + ':' + fieldTarget.document_index + ':' + fieldTarget.item_index}
                     locator={fieldTarget} source={activeText} workspaceRevision={workspaceRevision}

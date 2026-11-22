@@ -20,6 +20,8 @@ pub struct FluentDraft {
     pub starter_description: Option<String>,
     #[serde(default)]
     pub starter_suffix: Option<String>,
+    #[serde(default)]
+    pub allow_empty_value: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -99,7 +101,9 @@ pub fn preview(draft: &FluentDraft) -> Result<FluentPreview, StudioError> {
             "Разрешены латинские буквы, цифры, дефис и подчёркивание, максимум 128 символов.",
         ));
     }
-    if draft.starter_value.trim().is_empty()
+    if (draft.starter_value.trim().is_empty() && (!draft.allow_empty_value
+        || ![draft.starter_description.as_deref(), draft.starter_suffix.as_deref()]
+            .iter().any(|value| value.is_some_and(|value| !value.trim().is_empty()))))
         || draft.starter_value.len() > MAX_VALUE_BYTES
         || draft
             .starter_value
@@ -112,7 +116,11 @@ pub fn preview(draft: &FluentDraft) -> Result<FluentPreview, StudioError> {
             "Введите непустой однострочный текст до 8 КиБ без фигурных скобок и управляющих символов. Сложные Fluent-выражения добавьте позже в редакторе.",
         ));
     }
-    let mut content = format!("{key} = {}\n", draft.starter_value);
+    let mut content = if draft.starter_value.is_empty() {
+        format!("{key} =\n")
+    } else {
+        format!("{key} = {}\n", draft.starter_value)
+    };
     for (attribute, value) in [
         ("desc", draft.starter_description.as_deref()),
         ("suffix", draft.starter_suffix.as_deref()),
@@ -417,6 +425,7 @@ mod tests {
                 starter_value: "Example item".into(),
                 starter_description: None,
                 starter_suffix: None,
+                allow_empty_value: false,
             }
         }
     }
@@ -466,6 +475,22 @@ mod tests {
             create(&fx.root, &draft).unwrap_err().code,
             "FTL_FILE_EXISTS"
         );
+    }
+
+    #[test]
+    fn creates_attribute_only_message_without_overwriting() {
+        let fx = Fixture::new();
+        let draft = FluentDraft {
+            starter_value: String::new(),
+            starter_description: Some("Description".into()),
+            allow_empty_value: true,
+            ..fx.draft()
+        };
+        assert_eq!(preview(&draft).unwrap().content, "item-example =\n    .desc = Description\n");
+        create(&fx.root, &draft).unwrap();
+        assert_eq!(create(&fx.root, &draft).unwrap_err().code, "FTL_FILE_EXISTS");
+        let empty = FluentDraft { starter_description: None, ..draft };
+        assert_eq!(preview(&empty).unwrap_err().code, "FTL_VALUE_INVALID");
     }
 
     #[test]

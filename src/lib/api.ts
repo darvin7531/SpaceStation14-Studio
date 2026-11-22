@@ -608,6 +608,7 @@ export interface NewFluentDraft {
   starter_value: string;
   starter_description?: string;
   starter_suffix?: string;
+  allow_empty_value?: boolean;
 }
 
 export interface ExternalCreatedFluent {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildEntityLocalePatch, planMissingEntityTranslations, type EntityLocaleValues } from '../src/lib/entity-localization';
+import { buildEntityLocalePatch, planMissingEntityTranslations, buildMissingFluentDraft, type EntityLocaleValues } from '../src/lib/entity-localization';
 
 const entity: EntityLocaleValues = {
   localization_id: 'ent-TestEntity',
@@ -85,4 +85,12 @@ test('missing main value can be added to an existing attribute-only Fluent messa
   assert.equal(patch.content, 'ent-TestEntity = Test entity\r\n    .desc = Existing description\r\n    .suffix = Suffix\r\n\r\n');
   assert.equal(buildEntityLocalePatch('ent-TestEntity =\n    .desc = Old\n', entity, ['name']).content,
     'ent-TestEntity = Test entity\n    .desc = Old\n');
+});
+
+
+test('missing FTL draft contains only selected fields, including attribute-only messages', () => {
+  const draft = buildMissingFluentDraft('Resources/Locale/en-US/entities.ftl', entity, ['description']);
+  assert.deepEqual(draft, { file: 'Resources/Locale/en-US/entities.ftl', starter_key: entity.localization_id,
+    starter_value: '', starter_description: entity.description, starter_suffix: undefined, allow_empty_value: true });
+  assert.throws(() => buildMissingFluentDraft('Resources/Locale/en-US/entities.ftl', { ...entity, description: '{ $bad }' }, ['description']));
 });

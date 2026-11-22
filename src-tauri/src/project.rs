@@ -2792,6 +2792,7 @@ mod tests {
             starter_value: "New value".into(),
             starter_description: None,
             starter_suffix: None,
+            allow_empty_value: false,
         };
         let created = index.create_new_fluent(&draft).unwrap();
         assert_eq!(created.file, draft.file);
