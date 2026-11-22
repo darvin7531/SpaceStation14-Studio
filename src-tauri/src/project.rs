@@ -1571,13 +1571,21 @@ mod tests {
         fx.write(file, "- type: entity\n  id: Before\n");
         fx.write("Resources/Textures/Test.rsi/meta.json", r#"{"version":1}"#);
         let index = ProjectIndex::open(fx.root_str()).unwrap();
-        let unsaved = "- type: entity\n  id: After\n  components:\n  - type: Sprite\n    sprite: Test.rsi\n";
+        let unsaved =
+            "- type: entity\n  id: After\n  components:\n  - type: Sprite\n    sprite: Test.rsi\n";
         let report = index.inspect_yaml_outline(file, unsaved).unwrap();
         assert_eq!(report.declarations[0].declaration.id, "After");
         assert!(report.declarations[0].sprite.as_ref().unwrap().indexed);
-        assert!(index.read_resource(file).unwrap().content.contains("Before"));
+        assert!(index
+            .read_resource(file)
+            .unwrap()
+            .content
+            .contains("Before"));
         assert_eq!(
-            index.inspect_yaml_outline("secret.yml", unsaved).unwrap_err().code,
+            index
+                .inspect_yaml_outline("secret.yml", unsaved)
+                .unwrap_err()
+                .code,
             "OUTLINE_NOT_INDEXED"
         );
     }
