@@ -2,9 +2,11 @@
  * Only suggest IDs/types when the key being edited is structurally recognizable.
  */
 export interface YamlCompletionContext {
-  kind: 'prototype-parent' | 'component-type';
+  kind: 'prototype-parent' | 'component-type' | 'component-entry-start' | 'component-field' | 'rsi-path';
   query: string;
   startColumn: number;
+  componentType?: string;
+  existingFields?: readonly string[];
 }
 
 function insideComponents(lines: readonly string[], lineNumber: number): boolean {
@@ -14,6 +16,47 @@ function insideComponents(lines: readonly string[], lineNumber: number): boolean
     if (/^-\s*type:\s*\S+/.test(line)) return false;
   }
   return false;
+}
+
+
+const RSI_COMPONENTS = new Set(['Sprite', 'Clothing', 'Icon', 'HumanoidAppearance', 'Construction', 'FootstepModifier']);
+
+/** Find a component and its already declared fields without treating other YAML lists as components. */
+function componentScope(lines: readonly string[], lineNumber: number) {
+  let sectionIndent: number | null = null;
+  let component: { type: string; depth: number; fields: Set<string> } | null = null;
+  for (let i = 0; i < lineNumber - 1; i += 1) {
+    const line = lines[i];
+    if (!line.trim() || /^\s*#/.test(line)) continue;
+    const depth = line.match(/^\s*/)?.[0].length ?? 0;
+    const listItem = /^\s*-\s*/.test(line);
+    if (sectionIndent !== null &&
+        (depth < sectionIndent || (depth === sectionIndent && !listItem))) {
+      sectionIndent = null;
+      component = null;
+    }
+    if (/^\s*components:\s*(?:#.*)?$/.test(line)) {
+      sectionIndent = depth;
+      component = null;
+      continue;
+    }
+    if (sectionIndent === null || depth < sectionIndent) continue;
+    if (component && depth <= component.depth) component = null;
+    const entry = line.match(/^\s*-\s*type:\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:#.*)?$/);
+    if (entry) {
+      component = { type: entry[1], depth, fields: new Set() };
+    } else if (component && depth > component.depth) {
+      const field = line.match(/^\s*([a-zA-Z_][\w-]*):\s*/);
+      if (field) component.fields.add(field[1]);
+    }
+  }
+  const line = lines[lineNumber - 1] ?? '';
+  const depth = line.match(/^\s*/)?.[0].length ?? 0;
+  return {
+    inside: sectionIndent !== null && (depth > sectionIndent ||
+      (depth === sectionIndent && /^\s*-\s*/.test(line))),
+    component: component && depth > component.depth ? component : null,
+  };
 }
 
 function insideParentList(lines: readonly string[], lineNumber: number): boolean {
@@ -42,9 +85,22 @@ export function yamlCompletionContext(
   if (match && insideParentList(lines, lineNumber)) {
     return { kind: 'prototype-parent', query: match[1], startColumn: column - match[1].length };
   }
+  const scope = componentScope(lines, lineNumber);
+  if (!scope.inside) return null;
   match = prefix.match(/^(\s*-\s*type:\s*)([A-Za-z0-9_-]*)$/);
-  if (match && insideComponents(lines, lineNumber)) {
-    return { kind: 'component-type', query: match[2], startColumn: column - match[2].length };
+  if (match) return { kind: 'component-type', query: match[2], startColumn: column - match[2].length };
+  match = prefix.match(/^\s*-\s*([A-Za-z0-9_-]*)$/);
+  if (match) return { kind: 'component-entry-start', query: match[1], startColumn: column - match[1].length };
+  if (!scope.component) return null;
+  match = prefix.match(/^\s*sprite:\s*(["']?)([^"'#\s]*)$/);
+  if (match && RSI_COMPONENTS.has(scope.component.type)) {
+    return { kind: 'rsi-path', query: match[2], startColumn: column - match[2].length,
+      componentType: scope.component.type };
+  }
+  match = prefix.match(/^\s*([a-zA-Z_][\w-]*)$/);
+  if (match) {
+    return { kind: 'component-field', query: match[1], startColumn: column - match[1].length,
+      componentType: scope.component.type, existingFields: [...scope.component.fields] };
   }
   return null;
 }
@@ -61,4 +117,25 @@ export function yamlComponentHoverTarget(
   const endColumn = startColumn + match[2].length;
   if (column < startColumn || column > endColumn) return null;
   return { name: match[2], startColumn, endColumn };
+}
+
+
+export function indexedRsiPath(raw: string): string | null {
+  if (!/^[A-Za-z0-9_./-]+\.rsi$/.test(raw)) return null;
+  const path = raw.startsWith('Resources/Textures/') ? raw : 'Resources/Textures/' + raw;
+  const parts = path.split('/');
+  if (parts.length < 4 || parts[0] !== 'Resources' || parts[1] !== 'Textures'
+      || parts.some((part) => !part || part === '.' || part === '..')) return null;
+  return path;
+}
+
+export function yamlSpriteLinkTarget(
+  lines: readonly string[], lineNumber: number, column: number,
+): string | null {
+  const line = lines[lineNumber - 1] ?? '';
+  const match = line.match(/^(\s*sprite:\s*)(["']?)([^"'#\s]+)(["']?)(?:\s*#.*)?$/);
+  if (!match || match[2] !== match[4] || !componentScope(lines, lineNumber).component) return null;
+  const start = match[1].length + match[2].length + 1;
+  if (column < start || column > start + match[3].length) return null;
+  return indexedRsiPath(match[3]);
 }
