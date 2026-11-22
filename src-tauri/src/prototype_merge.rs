@@ -1095,7 +1095,8 @@ pub fn preview_inheritance(
         .with_details(reason)
     })?;
     let (fields, components) = preview_fields(&result.node, &result.sources);
-    let index_complete = catalog.relations(kind, id)
+    let index_complete = catalog
+        .relations(kind, id)
         .is_some_and(|relations| relations.index_complete);
     let mut structural_complete = result.complete && index_complete;
     if !index_complete {
