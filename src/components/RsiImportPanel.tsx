@@ -178,7 +178,7 @@ export default function RsiImportPanel({
           </select>
         </label>
         <label>Кадров на направление
-          <input type="number" min={1} max={Math.floor(256 / directions)} step={1}
+          <input type="number" min={1} max={Math.min(128, Math.floor(256 / directions))} step={1}
             value={frames} disabled={uploading}
             onChange={(event) => setFrames(Number(event.target.value))}/>
         </label>
@@ -198,7 +198,7 @@ export default function RsiImportPanel({
         <span>{error.message} {error.hint} <code>{error.code}</code></span>
       </div>}
       <button type="submit" disabled={uploading || !file || (!replacing && !name)
-          || !Number.isInteger(frames) || frames < 1 || frames * directions > 256
+          || !Number.isInteger(frames) || frames < 1 || frames > 128 || frames * directions > 256
           || (replacing && !expectedPngRevision)}>
         <ImagePlus size={15}/>{uploading
           ? (replacing ? 'Заменяю…' : 'Импортирую…')
