@@ -284,6 +284,17 @@ export interface PrototypeRelations {
   index_complete: boolean;
 }
 
+export interface PrototypePartialPreview {
+  kind: string;
+  id: string;
+  exact: boolean;
+  parents: string[];
+  fields: { key: string; preview: string; source_file: string }[];
+  components: { type_name: string; keys: string[]; source_file: string }[];
+  applied_partials: number;
+  warnings: string[];
+}
+
 export interface PrototypeSourceContribution {
   kind: string;
   id: string;
@@ -663,6 +674,9 @@ export const studio = {
   },
   patchPrototypeComponents(locator: PrototypeFieldLocator, source: string, operation: ComponentOperation): Promise<FieldPatch> {
     return invoke('patch_prototype_components', { locator, source, operation });
+  },
+  prototypePartialPreview(kind: string, id: string): Promise<PrototypePartialPreview> {
+    return invoke('prototype_partial_preview', { kind, id });
   },
   prototypeSources(kind: string, id: string): Promise<PrototypeSourceReport> {
     return invoke('prototype_sources', { kind, id });
