@@ -322,7 +322,7 @@ fn merge(dst: &mut Node, src: &Node, components: bool) -> Result<(), String> {
                 if value.tag.as_deref() == Some("Remove") {
                     if let Some(position) = old.iter().position(|(existing, _)| existing == key) {
                         let condition = matches!(&value.value, Value::Scalar(text) if text.is_empty())
-                            || &old[position].1.value == &value.value;
+                            || old[position].1.value == value.value;
                         if condition {
                             old.remove(position);
                         }
