@@ -6,7 +6,7 @@ import {
   AlertCircle, AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight,
   FileCode2, FileText, FolderOpen, Image as ImageIcon, Search, X, RotateCcw, Save, FilePlus2, Settings2,
 } from 'lucide-react';
-import { studio, type DraftList, type DraftSnapshot, type CreatedPrototype, type CreatedFluent, type CreatedRsi, type DeletedRsiState, type ImportedRsiState, RenamedRsiState, type RestoredRsiState, type PrototypeDeclaration, type PrototypeFieldLocator, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage } from './lib/api';
+import { studio, type DraftList, type DraftSnapshot, type CreatedPrototype, type CreatedFluent, type CreatedRsi, type DeletedRsiState, type ImportedRsiState, RenamedRsiState, type RestoredRsiState, type PrototypeDeclaration, type PrototypeFieldLocator, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage, type NewFluentDraft } from './lib/api';
 import { normalizeStudioError, type StudioError } from './lib/errors';
 import type { ProjectScanProgress } from './lib/api';
 import { closeTab, openTab, nextTabPath, type TabState } from './lib/tabs';
@@ -121,6 +121,7 @@ export default function App() {
   const [driftRetry, setDriftRetry] = useState(0);
   const [creatingPrototype, setCreatingPrototype] = useState(false);
   const [creatingFluent, setCreatingFluent] = useState(false);
+  const [quickFixFluentDraft, setQuickFixFluentDraft] = useState<NewFluentDraft | null>(null);
   const [creatingRsi, setCreatingRsi] = useState(false);
   const [showingCSharp, setShowingCSharp] = useState(false);
   const [showingUiSources, setShowingUiSources] = useState(false);
@@ -1166,6 +1167,7 @@ export default function App() {
 
   function onFluentCreated(created: CreatedFluent) {
     setCreatingFluent(false);
+    setQuickFixFluentDraft(null);
     setFieldTarget(null);
     if (created.overview) {
       setOverview(created.overview);
@@ -1209,8 +1211,9 @@ export default function App() {
       onCreated={onRsiCreated}
       preferredPath={selected?.kind === 'rsi' ? selected.path : undefined}/>}
     {creatingFluent && overview && <CreateFluentWizard
-      onClose={() => setCreatingFluent(false)}
+      onClose={() => { setCreatingFluent(false); setQuickFixFluentDraft(null); }}
       onCreated={onFluentCreated}
+      preferredDraft={quickFixFluentDraft ?? undefined}
       preferredFile={selected?.kind === 'ftl' ? selected.path : undefined}/>}
     {creatingPrototype && overview && <CreatePrototypeWizard
       onClose={() => setCreatingPrototype(false)} onCreated={onPrototypeCreated}
@@ -1485,6 +1488,10 @@ export default function App() {
                     key={fieldTarget.file + ':' + fieldTarget.document_index + ':' + fieldTarget.item_index}
                     locator={fieldTarget} source={activeText} busy={saving || transitioning || refreshing}
                     requiredLocales={localizationSettings.requiredLocales}
+                    onCreateMissing={(draft) => {
+                      setQuickFixFluentDraft(draft);
+                      setCreatingFluent(true);
+                    }}
                     onApply={applyEntityLocalization} onClose={() => setFieldTarget(null)}/>
                 : <PrototypeComponentsPanel
                     key={fieldTarget.file + ':' + fieldTarget.document_index + ':' + fieldTarget.item_index}

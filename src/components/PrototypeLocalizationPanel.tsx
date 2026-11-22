@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, Languages, RefreshCw, X } from 'lucide-react';
-import { studio, type EntityLocalizationSource, type EntityLocalizationAnalysis, type PrototypeFieldLocator, type ResourceDocument, type ResourceEntry } from '../lib/api';
+import { studio, type EntityLocalizationSource, type EntityLocalizationAnalysis, type PrototypeFieldLocator, type ResourceDocument, type ResourceEntry, type NewFluentDraft } from '../lib/api';
 import { buildEntityLocalePatch, type EntityLocaleField, type EntityLocalePatch } from '../lib/entity-localization';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 import { localeFromFtlPath, localeResourceSearch } from '../lib/localization-settings';
@@ -10,6 +10,7 @@ interface Props {
   source: string;
   busy: boolean;
   requiredLocales: readonly string[];
+  onCreateMissing: (draft: NewFluentDraft) => void;
   onApply: (file: string, original: ResourceDocument, content: string) => Promise<boolean>;
   onClose: () => void;
 }
@@ -20,7 +21,7 @@ const FIELDS: { field: EntityLocaleField; label: string }[] = [
   { field: 'suffix', label: 'suffix → .suffix' },
 ];
 
-export default function PrototypeLocalizationPanel({ locator, source, busy, requiredLocales, onApply, onClose }: Props) {
+export default function PrototypeLocalizationPanel({ locator, source, busy, requiredLocales, onCreateMissing, onApply, onClose }: Props) {
   const [entity, setEntity] = useState<EntityLocalizationSource | null>(null);
   const [analysis, setAnalysis] = useState<EntityLocalizationAnalysis | null>(null);
   const [files, setFiles] = useState<ResourceEntry[]>([]);
@@ -150,7 +151,15 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, requ
                     setSelected([issue.field]);
                     setPreview(null);
                   }}>Исправить {target.locale}</button>
-                  : <small key={target.locale}> {target.locale}: файл {target.path} отсутствует — создайте FTL в мастере локализаций.</small>)}
+                  : <span key={target.locale}>
+                    <small> {target.locale}: FTL отсутствует ({target.path}). </small>
+                    {entity.name.trim() && <button type="button" disabled={disabled}
+                      onClick={() => onCreateMissing({
+                        file: target.path,
+                        starter_key: entity.localization_id,
+                        starter_value: entity.name,
+                      })}>Создать FTL {target.locale}</button>}
+                  </span>)}
             </div>)}
           </div>}
       </div>}

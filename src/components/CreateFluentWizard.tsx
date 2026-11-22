@@ -2,25 +2,17 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { AlertCircle, FilePlus2, X } from 'lucide-react';
 import { studio, type CreatedFluent, type NewFluentDraft, type NewFluentPreview } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
+import { suggestedFluentDraft } from '../lib/fluent-create-defaults';
 
 interface Props {
   onClose: () => void;
   onCreated: (created: CreatedFluent) => void;
   preferredFile?: string;
+  preferredDraft?: NewFluentDraft;
 }
 
-function initialFile(preferred?: string): string {
-  const parent = preferred?.slice(0, preferred.lastIndexOf('/') + 1);
-  return (parent?.startsWith('Resources/Locale/') ? parent : 'Resources/Locale/en-US/')
-    + 'StudioNew.ftl';
-}
-
-export default function CreateFluentWizard({ onClose, onCreated, preferredFile }: Props) {
-  const [draft, setDraft] = useState<NewFluentDraft>(() => ({
-    file: initialFile(preferredFile),
-    starter_key: 'new-message',
-    starter_value: 'New message',
-  }));
+export default function CreateFluentWizard({ onClose, onCreated, preferredFile, preferredDraft }: Props) {
+  const [draft, setDraft] = useState<NewFluentDraft>(() => suggestedFluentDraft(preferredFile, preferredDraft));
   const [preview, setPreview] = useState<NewFluentPreview | null>(null);
   const [validationError, setValidationError] = useState<StudioError | null>(null);
   const [creationError, setCreationError] = useState<StudioError | null>(null);
