@@ -1572,7 +1572,8 @@ export default function App() {
         </div>
         </> : <ResourceFolderBrowser
           key={overview.project_root + ':' + workspaceRevision}
-          selectedPath={selected?.path ?? null} onOpen={(item) => void openResource(item)} />}
+          selectedPath={selected?.path ?? null} onOpen={(item) => void openResource(item)}
+          onOpenPrototype={openPrototypeSource} />}
         </> : <PrototypeExplorer workspaceKey={overview.project_root + ':' + workspaceRevision}
           onOpen={openPrototypeSource} onEdit={editPrototypeFields} />}
       </aside>

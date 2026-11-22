@@ -4,16 +4,19 @@ import { AlertTriangle, ChevronLeft, ChevronRight, Folder, FolderOpen, FileCode2
 import { studio, type ResourceBrowserPage, type ResourceEntry } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 import { resourceBreadcrumbs } from '../lib/resource-breadcrumbs';
+import ResourceTreeBrowser from './ResourceTreeBrowser';
 
 interface Props {
   selectedPath: string | null;
   onOpen: (resource: ResourceEntry) => void;
+  onOpenPrototype: (path: string, line: number) => void;
 }
 
 const PAGE_SIZE = 100;
 
-export default function ResourceFolderBrowser({ selectedPath, onOpen }: Props) {
+export default function ResourceFolderBrowser({ selectedPath, onOpen, onOpenPrototype }: Props) {
   const { t } = useI18n();
+  const [view, setView] = useState<'tree' | 'directory'>('tree');
   const [directory, setDirectory] = useState('Resources');
   const [page, setPage] = useState(0);
   const [result, setResult] = useState<ResourceBrowserPage | null>(null);
@@ -42,6 +45,15 @@ export default function ResourceFolderBrowser({ selectedPath, onOpen }: Props) {
 
   const breadcrumbs = resourceBreadcrumbs(directory);
   return <div className="resource-folder-browser">
+    <div className="resource-folder-view-switch" role="group" aria-label={t('browser.view')}>
+      <button type="button" className={view === 'tree' ? 'selected' : ''} aria-pressed={view === 'tree'}
+        onClick={() => setView('tree')}>{t('browser.treeView')}</button>
+      <button type="button" className={view === 'directory' ? 'selected' : ''} aria-pressed={view === 'directory'}
+        onClick={() => setView('directory')}>{t('browser.directoryView')}</button>
+    </div>
+    {view === 'tree' && <ResourceTreeBrowser selectedPath={selectedPath} onOpen={onOpen}
+      onOpenPrototype={onOpenPrototype}/>}
+    <div className="resource-folder-directory" hidden={view !== 'directory'}>
     <nav className="resource-folder-breadcrumbs" aria-label={t('browser.path')}>
       {breadcrumbs.map((segment, index) => <span key={segment.path}>
         {index > 0 && <span aria-hidden="true"> / </span>}
@@ -82,6 +94,7 @@ export default function ResourceFolderBrowser({ selectedPath, onOpen }: Props) {
       <button type="button" aria-label={t('browser.next')}
         disabled={loading || !result || (page + 1) * PAGE_SIZE >= result.total}
         onClick={() => setPage((value) => value + 1)}><ChevronRight size={17}/></button>
+    </div>
     </div>
   </div>;
 }

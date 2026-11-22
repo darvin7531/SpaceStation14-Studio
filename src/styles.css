@@ -262,3 +262,25 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   background: rgba(127, 29, 29, 0.12);
   border-radius: 3px;
 }
+
+.resource-folder-view-switch { display: flex; gap: 5px; padding: 7px; border-bottom: 1px solid #293345; }
+.resource-folder-view-switch button { flex: 1; background: transparent; border: 1px solid #35455b; border-radius: 5px; padding: 5px; color: #b5c8df; font-size: 11px; }
+.resource-folder-view-switch button.selected { background: #29435e; color: white; border-color: #75a3cb; }
+.resource-folder-directory { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.resource-folder-directory[hidden] { display: none; }
+.resource-folder-directory .resource-list { min-height: 0; }
+.resource-tree { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 2px; }
+.resource-tree-row { display: flex; align-items: center; gap: 5px; width: 100%; padding-top: 5px; padding-bottom: 5px; padding-right: 8px; border: 0; background: transparent; text-align: left; color: #bdd0e4; font-size: 11px; min-height: 27px; }
+.resource-tree-row:hover { background: #1c3045; }
+.resource-tree-row.active { background: #29435e; color: white; }
+.resource-tree-row > span:not(.resource-tree-spacer) { flex: 1; min-width: 0; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.resource-tree-row small { font-size: 10px; color: #8fa9c5; flex-shrink: 0; }
+.resource-tree-spacer { width: 13px; flex-shrink: 0; }
+.resource-tree-row svg { flex-shrink: 0; }
+.resource-tree-filename { display: flex; gap: 5px; min-width: 0; align-items: center; flex: 1; padding: 0; color: inherit; font-size: inherit; text-align: left; border: 0; background: transparent; }
+.resource-tree-filename span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resource-tree-toggle { padding: 0; background: transparent; border: 0; color: inherit; display: grid; place-items: center; }
+.resource-tree-page { background: #1d344a; color: #c7dcf0; border: 0; padding: 6px 12px; width: 100%; text-align: left; font-size: 11px; }
+.resource-tree-error { display: flex; gap: 5px; padding: 6px; font-size: 11px; color: #ffc2bc; }
+.resource-tree-error button { color: #fff; background: #29435e; border: 0; }
+.resource-tree-warning { padding: 7px; font-size: 11px; color: #fed09c; }
