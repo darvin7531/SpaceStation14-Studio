@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, GitBranch, X } from 'lucide-react';
-import { studio, type PrototypeAncestor, type PrototypeRelationLink, type PrototypeRelations } from '../lib/api';
+import { studio, type PrototypeAncestor, type PrototypeRelationLink, type PrototypeRelations, type PrototypeSourceReport } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 
 interface PrototypeIdentity {
@@ -115,12 +115,80 @@ function AncestorItems({
   </section>;
 }
 
+/** Loads source YAML only when explicitly expanded, avoiding expensive reads
+ * for every catalogue selection. Displays declarations, not a final merged value. */
+function SourceContributions({
+  selected, workspaceKey, onOpen,
+}: {
+  selected: PrototypeIdentity;
+  workspaceKey: string;
+  onOpen: Props['onOpen'];
+}) {
+  const [report, setReport] = useState<PrototypeSourceReport | null>(null);
+  const [failure, setFailure] = useState<StudioError | null>(null);
+  const [busy, setBusy] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    setBusy(true);
+    setReport(null);
+    setFailure(null);
+    void studio.prototypeSources(selected.kind, selected.id).then((value) => {
+      if (active) setReport(value);
+    }).catch((reason: unknown) => {
+      if (active) setFailure(normalizeStudioError(reason));
+    }).finally(() => { if (active) setBusy(false); });
+    return () => { active = false; };
+  }, [selected.kind, selected.id, workspaceKey]);
+
+  return <div className="proto-source-report" aria-label="Источники полей и компонентов">
+    {busy && <p className="muted" role="status">Читаю исходные YAML для анализа происхождения…</p>}
+    {failure && <div role="alert" className="proto-error">
+      <strong>{failure.message}</strong><p>{failure.hint}</p><code>{failure.code}</code>
+    </div>}
+    {report && <>
+      <p className="proto-relations-caveat">
+        Это только явно объявленные ключи и type компонентов. Не вычисляются
+        переопределения, YAML-теги, partial-операции и значения после наследования.
+        {!report.ancestry_complete && ' Есть неоднозначные источники или ошибки чтения.'}
+        {report.truncated && ' Обзор ограничен: не все источники показаны.'}
+      </p>
+      {report.warnings.map((warning, i) => <p key={i} className="proto-relations-caveat">{warning}</p>)}
+      {!report.items.length && <p className="muted">Подходящие объявления не найдены.</p>}
+      {report.items.map((item, i) => <div className="proto-source-card"
+        key={item.file + ':' + item.line + ':' + item.id + ':' + i}>
+        <div className="proto-source-head">
+          <button type="button" className="proto-definition-link"
+            onClick={() => onOpen(item.file, item.line)}>
+            {item.id} · {item.file.split('/').at(-1)}:{item.line}
+          </button>
+          <small>Уровень {item.depth} · {item.mode}
+            {item.partial_order !== null ? ' · partial index ' + item.partial_order : ''}
+          </small>
+        </div>
+        {item.notice && <p className="proto-relations-caveat">{item.notice}</p>}
+        {item.fields.length > 0 && <div className="proto-source-tags">
+          <strong>Поля:</strong>{item.fields.map((field) =>
+            <code key={field}>{field}</code>)}
+        </div>}
+        {item.components.length > 0 && <div className="proto-source-tags">
+          <strong>Компоненты:</strong>{item.components.map((name, index) =>
+            <code key={index}>{name}</code>)}
+        </div>}
+        {item.notice === null && !item.fields.length && !item.components.length
+          && <small>Других ключей и компонентов не объявлено.</small>}
+      </div>)}
+    </>}
+  </div>;
+}
+
 export default function PrototypeRelationsPanel({
   selected, workspaceKey, onClose, onNavigate, onOpen,
 }: Props) {
   const [details, setDetails] = useState<PrototypeRelations | null>(null);
   const [error, setError] = useState<StudioError | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showSources, setShowSources] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -170,6 +238,14 @@ export default function PrototypeRelationsPanel({
         onNavigate={onNavigate} onOpen={onOpen}/>
       <AncestorItems items={details.ancestors} complete={details.ancestry_complete}
         truncated={details.ancestry_truncated} onNavigate={onNavigate} onOpen={onOpen}/>
+      <section className="proto-relation-group">
+        <button type="button" className="prototype-relations-trigger"
+          aria-expanded={showSources} onClick={() => setShowSources((value) => !value)}>
+          {showSources ? 'Скрыть происхождение полей и компонентов' : 'Показать происхождение полей и компонентов'}
+        </button>
+        {showSources && <SourceContributions selected={selected}
+          workspaceKey={workspaceKey} onOpen={onOpen}/>}
+      </section>
       <RelationItems title="Потомки" items={details.children} total={details.child_total}
         onNavigate={onNavigate} onOpen={onOpen}/>
     </div>}
