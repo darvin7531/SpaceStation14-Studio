@@ -5,6 +5,7 @@ import {
 } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 import SpriteLayerInspector from './SpriteLayerInspector';
+import { missingLocaleFiles } from '../lib/localization-navigation';
 
 type EditorPanel = 'fields' | 'components' | 'localization' | 'parents';
 
@@ -15,6 +16,7 @@ interface Props {
   onJump: (line: number) => void;
   onEdit: (declaration: PrototypeDeclaration, panel: EditorPanel) => void;
   onOpenRsi: (path: string, state: string | null) => void;
+  onOpenFtl: (path: string) => void;
   requiredLocales: readonly string[];
   liveValidation: boolean;
   validationDelay: number;
@@ -24,7 +26,7 @@ interface Props {
  * Never infers a runtime fallback and never writes without an explicit user action.
  */
 function SelectedEntityLocaleStatus({
-  declaration, source, requiredLocales, enabled, delayMs, busy, onRepair,
+  declaration, source, requiredLocales, enabled, delayMs, busy, onRepair, onOpenFtl,
 }: {
   declaration: PrototypeDeclaration;
   source: string;
@@ -33,6 +35,7 @@ function SelectedEntityLocaleStatus({
   delayMs: number;
   busy: boolean;
   onRepair: () => void;
+  onOpenFtl: (path: string) => void;
 }) {
   const [report, setReport] = useState<EntityLocalizationAnalysis | null>(null);
   const [failure, setFailure] = useState<StudioError | null>(null);
@@ -71,13 +74,20 @@ function SelectedEntityLocaleStatus({
                 <small>Отсутствуют: {report.diagnostics.map((issue) =>
                   issue.field + ' (' + issue.missing_locales.join(', ') + ')').join('; ')}</small>
                 <button type="button" disabled={busy} onClick={onRepair}>Исправить локализацию</button>
+                <div className="prototype-outline-actions" aria-label="Открыть существующий FTL">
+                  {missingLocaleFiles(report).map((target) => <button type="button"
+                    disabled={busy} key={target.locale + ':' + target.path}
+                    title={target.path} onClick={() => onOpenFtl(target.path)}>
+                    Открыть {target.locale} · {target.path.split('/').at(-1)}
+                  </button>)}
+                </div>
               </div>}
   </div>;
 }
 
 /** Parses the currently visible YAML draft, not the last saved catalog copy. */
 export default function PrototypeOutlinePanel({
-  path, source, busy, onJump, onEdit, onOpenRsi,
+  path, source, busy, onJump, onEdit, onOpenRsi, onOpenFtl,
   requiredLocales, liveValidation, validationDelay,
 }: Props) {
   const [snapshot, setSnapshot] = useState<{ path: string; source: string; outline: SourceOutline } | null>(null);
@@ -194,7 +204,8 @@ export default function PrototypeOutlinePanel({
         {editable && selected.declaration.kind === 'entity' && <SelectedEntityLocaleStatus
           declaration={selected.declaration} source={source} requiredLocales={requiredLocales}
           enabled={liveValidation} delayMs={validationDelay} busy={busy}
-          onRepair={() => onEdit(selected.declaration, 'localization')}/>}
+          onRepair={() => onEdit(selected.declaration, 'localization')}
+          onOpenFtl={onOpenFtl}/>}
         <small className="prototype-outline-footnote">Показаны только прямые поля исходного YAML, не итоговое наследование RobustToolbox.</small>
       </div>}
     </>}

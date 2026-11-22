@@ -1569,7 +1569,8 @@ export default function App() {
                 path: selected.path, line, token: ++jumpCounter.current,
               })}
               onEdit={editPrototypeFields}
-              onOpenRsi={(path, state) => openResource({ path, kind: 'rsi' }, state)}/>}
+              onOpenRsi={(path, state) => openResource({ path, kind: 'rsi' }, state)}
+              onOpenFtl={(path) => openResource({ path, kind: 'ftl' })}/>}
           {selected.kind === 'yaml' && document?.path === selected.path && !reading
             && <YamlDiagnosticsPanel key={selected.path} path={selected.path} source={activeText}
               enabled={editorSettings.liveValidation} delayMs={editorSettings.validationDelay}

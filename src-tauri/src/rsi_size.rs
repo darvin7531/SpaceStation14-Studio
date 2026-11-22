@@ -377,9 +377,10 @@ mod tests {
         let result = update(&fixture.root, &same).unwrap();
         assert_eq!(result.revision, same.expected_revision);
         assert_eq!(fs::read(&fixture.file()).unwrap(), before);
+        let stale = fixture.request();
         fs::write(fixture.file(), b"external update").unwrap();
         assert_eq!(
-            update(&fixture.root, &fixture.request()).unwrap_err().code,
+            update(&fixture.root, &stale).unwrap_err().code,
             "RSI_SIZE_CONFLICT"
         );
     }
