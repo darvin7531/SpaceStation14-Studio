@@ -990,7 +990,8 @@ async fn create_external_prototype(
                 "PROTOTYPE_EXTERNAL_DIALOG_PATH",
                 "Системный диалог вернул неподдерживаемый путь.",
                 "Выберите обычный локальный файл.",
-            ).with_details(reason.to_string())
+            )
+            .with_details(reason.to_string())
         })?;
         prototype_create::create_external_at(&chosen, &draft).map(Some)
     })

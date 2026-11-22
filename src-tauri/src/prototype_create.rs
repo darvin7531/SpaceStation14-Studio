@@ -391,7 +391,8 @@ pub fn create_external_at(
             "PROTOTYPE_EXTERNAL_PARENT_MISSING",
             "Папка для внешнего YAML недоступна.",
             "Выберите существующий каталог.",
-        ).with_details(reason.to_string())
+        )
+        .with_details(reason.to_string())
     })?;
     if !parent.is_dir() {
         return Err(invalid(
@@ -427,10 +428,12 @@ pub fn create_external_at(
                 "PROTOTYPE_CREATE_FAILED",
                 "Не удалось создать внешний YAML.",
                 "Проверьте права записи и место на диске.",
-            ).with_details(reason.to_string())
+            )
+            .with_details(reason.to_string())
         }
     })?;
-    let written = handle.write_all(generated.yaml.as_bytes())
+    let written = handle
+        .write_all(generated.yaml.as_bytes())
         .and_then(|_| handle.sync_all());
     drop(handle);
     if let Err(reason) = written {
@@ -439,13 +442,15 @@ pub fn create_external_at(
                 "PROTOTYPE_CLEANUP_FAILED",
                 "После ошибки записи остался неполный YAML.",
                 "Проверьте файл вручную перед повторным созданием.",
-            ).with_details(format!("{reason}; очистка: {cleanup}")));
+            )
+            .with_details(format!("{reason}; очистка: {cleanup}")));
         }
         return Err(invalid(
             "PROTOTYPE_WRITE_FAILED",
             "Не удалось полностью записать внешний YAML.",
             "Проверьте свободное место и права записи.",
-        ).with_details(reason.to_string()));
+        )
+        .with_details(reason.to_string()));
     }
     let warning = sync_directory(&parent)
         .err()
@@ -546,7 +551,8 @@ mod tests {
         );
         assert_eq!(
             create_external_at(&fixture.0.join("invalid.txt"), &draft)
-                .unwrap_err().code,
+                .unwrap_err()
+                .code,
             "PROTOTYPE_EXTERNAL_EXTENSION"
         );
     }
