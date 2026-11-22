@@ -1,6 +1,11 @@
 import { invoke } from '@tauri-apps/api/core';
 
 export type ResourceKind = 'all' | 'yaml' | 'rsi' | 'ftl';
+export interface ProjectScanProgress {
+  requested_path: string;
+  phase: 'prototypes' | 'textures' | 'locale' | 'finalizing';
+  indexed_resources: number;
+}
 export interface ProjectOverview {
   project_root: string;
   prototype_files: number;
