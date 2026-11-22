@@ -3,6 +3,7 @@ import { AlertCircle, GitBranch, X } from 'lucide-react';
 import { studio, type PrototypeAncestor, type PrototypePartialPreview, type PrototypeRelationLink, type PrototypeRelations, type PrototypeSourceReport } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 import InheritancePreviewPanel from './InheritancePreviewPanel';
+import LinkedPrototypePanel from './LinkedPrototypePanel';
 
 interface PrototypeIdentity {
   kind: string;
@@ -259,6 +260,7 @@ export default function PrototypeRelationsPanel({
   const [showSources, setShowSources] = useState(false);
   const [showPartial, setShowPartial] = useState(false);
   const [showInheritance, setShowInheritance] = useState(false);
+  const [showLinked, setShowLinked] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -331,6 +333,14 @@ export default function PrototypeRelationsPanel({
         </button>
         {showSources && <SourceContributions selected={selected}
           workspaceKey={workspaceKey} onOpen={onOpen}/>}
+      </section>
+      <section className="proto-relation-group">
+        <button type="button" className="prototype-relations-trigger"
+          aria-expanded={showLinked} onClick={() => setShowLinked((value) => !value)}>
+          {showLinked ? 'Скрыть связанные прототипы' : 'Связанные прототипы'}
+        </button>
+        {showLinked && <LinkedPrototypePanel kind={selected.kind} id={selected.id}
+          workspaceKey={workspaceKey} onNavigate={onNavigate}/>}
       </section>
       <RelationItems title="Потомки" items={details.children} total={details.child_total}
         onNavigate={onNavigate} onOpen={onOpen}/>
