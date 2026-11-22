@@ -3,6 +3,16 @@ export type Language = 'ru' | 'en';
 export const LANGUAGE_STORAGE_KEY = 'ss14-studio-language';
 const ru = {
   "settings.title": "Настройки редактора",
+  "settings.sections": "Разделы настроек",
+  "settings.general": "Общие",
+  "settings.editor": "Редактор",
+  "settings.about": "О программе",
+  "settings.aboutDescription": "SS14 Studio — редактор ресурсов Space Station 14, переносимый с Electron на Rust + Tauri.",
+  "settings.aboutVersion": "Версия",
+  "settings.aboutAuthor": "Автор",
+  "settings.aboutLicense": "Лицензия",
+  "settings.requiredLocales": "Обязательные локали игрового проекта",
+  "settings.requiredLocalesHint": "Например: ru-RU, en-US. Это не язык интерфейса редактора. Проверка отсутствующих переводов ещё переносится.",
   "settings.language": "Язык интерфейса",
   "settings.languageHint": "Переключение применяется без перезапуска. Перевод специализированных редакторов ещё не завершён.",
   "settings.description": "Параметры применяются сразу и сохраняются для следующих запусков. Файлы проекта не меняются.",
@@ -116,6 +126,16 @@ const ru = {
 } as const;
 const en: Record<keyof typeof ru, string> = {
   "settings.title": "Editor settings",
+  "settings.sections": "Settings sections",
+  "settings.general": "General",
+  "settings.editor": "Editor",
+  "settings.about": "About",
+  "settings.aboutDescription": "SS14 Studio is a Space Station 14 resource editor being migrated from Electron to Rust + Tauri.",
+  "settings.aboutVersion": "Version",
+  "settings.aboutAuthor": "Author",
+  "settings.aboutLicense": "License",
+  "settings.requiredLocales": "Required game project locales",
+  "settings.requiredLocalesHint": "For example: ru-RU, en-US. Separate from the editor UI language. Missing-translation checks are still being ported.",
   "settings.language": "Interface language",
   "settings.languageHint": "The language switches immediately. Translation of specialized editors is still in progress.",
   "settings.description": "Changes apply immediately and persist across launches. Project files are untouched.",

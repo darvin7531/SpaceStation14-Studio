@@ -1,16 +1,33 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { getVersion } from '@tauri-apps/api/app';
 import { Settings2, X } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { DEFAULT_EDITOR_SETTINGS, type EditorSettings } from '../lib/editor-settings';
+import { sanitizeLocalizationSettings, type LocalizationSettings } from '../lib/localization-settings';
 
 interface Props {
   value: EditorSettings;
   onChange: (value: EditorSettings) => void;
+  localizationSettings: LocalizationSettings;
+  onLocalizationChange: (value: LocalizationSettings) => void;
   onClose: () => void;
 }
-export default function EditorSettingsDialog({ value, onChange, onClose }: Props) {
+export default function EditorSettingsDialog({ value, onChange, localizationSettings, onLocalizationChange, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const { language, setLanguage, t } = useI18n();
+  const [section, setSection] = useState<'general' | 'editor' | 'about'>('general');
+  const [localeInput, setLocaleInput] = useState(localizationSettings.requiredLocales.join(', '));
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    void getVersion().then((version) => { if (active) setAppVersion(version); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+  const commitLocales = () => {
+    const next = sanitizeLocalizationSettings({ requiredLocales: localeInput.split(',') });
+    setLocaleInput(next.requiredLocales.join(', '));
+    onLocalizationChange(next);
+  };
   useEffect(() => {
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     ref.current?.focus();
@@ -32,9 +49,14 @@ export default function EditorSettingsDialog({ value, onChange, onClose }: Props
   }}>
     <div className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-heading" tabIndex={-1} ref={ref}>
       <header><h2 id="settings-heading"><Settings2 size={18}/> {t('settings.title')}</h2>
-        <button type="button" onClick={onClose} aria-label="{t('settings.close')}"><X size={18}/></button></header>
+        <button type="button" onClick={onClose} aria-label={t('settings.close')}><X size={18}/></button></header>
+      <nav className="settings-tabs" aria-label={t('settings.sections')}>
+        <button type="button" aria-current={section === 'general' ? 'page' : undefined} onClick={() => setSection('general')}>{t('settings.general')}</button>
+        <button type="button" aria-current={section === 'editor' ? 'page' : undefined} onClick={() => setSection('editor')}>{t('settings.editor')}</button>
+        <button type="button" aria-current={section === 'about' ? 'page' : undefined} onClick={() => setSection('about')}>{t('settings.about')}</button>
+      </nav>
       <p>{t('settings.description')}</p>
-      <div className="settings-fields">
+      {section === 'general' && <div className="settings-fields">
         <label>{t('settings.language')}
           <select value={language} onChange={(event) => setLanguage(event.target.value === 'en' ? 'en' : 'ru')}>
             <option value="ru">Русский</option>
@@ -42,6 +64,15 @@ export default function EditorSettingsDialog({ value, onChange, onClose }: Props
           </select>
           <small>{t('settings.languageHint')}</small>
         </label>
+        <label>{t('settings.requiredLocales')}
+          <input type="text" placeholder="ru-RU, en-US" value={localeInput}
+            onChange={(event) => setLocaleInput(event.target.value)}
+            onBlur={commitLocales}
+            onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }}/>
+          <small>{t('settings.requiredLocalesHint')}</small>
+        </label>
+      </div>}
+      {section === 'editor' && <div className="settings-fields">
         <label>{t('settings.fontSize')}
           <input type="number" min={10} max={28} step={1} value={value.fontSize}
             onChange={(event) => { const n = Number(event.target.value); if (Number.isFinite(n) && n >= 10 && n <= 28) patch({ fontSize: Math.round(n) }); }}/></label>
@@ -66,9 +97,20 @@ export default function EditorSettingsDialog({ value, onChange, onClose }: Props
               if (Number.isFinite(next) && next >= 100 && next <= 1500) patch({ validationDelay: Math.round(next) });
             }}/>
         </label>
-      </div>
-      <footer><button type="button" onClick={() => onChange({ ...DEFAULT_EDITOR_SETTINGS })}>{t('settings.reset')}</button>
-      <button type="button" onClick={onClose}>{t('settings.done')}</button></footer>
+      </div>}
+      {section === 'about' && <div className="settings-about">
+        <p>{t('settings.aboutDescription')}</p>
+        <dl>
+          <dt>{t('settings.aboutVersion')}</dt><dd>{appVersion ?? '—'}</dd>
+          <dt>{t('settings.aboutAuthor')}</dt><dd>darvin7531</dd>
+          <dt>{t('settings.aboutLicense')}</dt><dd>AGPL-3.0-or-later</dd>
+          <dt>GitHub</dt><dd>github.com/darvin7531/SpaceStation14-Studio</dd>
+        </dl>
+      </div>}
+      <footer>
+        {section === 'editor' && <button type="button" onClick={() => onChange({ ...DEFAULT_EDITOR_SETTINGS })}>{t('settings.reset')}</button>}
+        <button type="button" onClick={onClose}>{t('settings.done')}</button>
+      </footer>
     </div>
   </div>;
 }

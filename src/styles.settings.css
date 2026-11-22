@@ -24,3 +24,16 @@
 .quick-open-results button span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #9eb9d5; font-size: 12px; }
 .quick-open-results small { color: #8db1d7; }
 .quick-open-dialog footer { border-top: 1px solid #35485e; padding: 10px 14px; font-size: 11px; color: #91a8c0; }
+
+.settings-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0 8px; }
+.settings-tabs button[aria-current="page"] { background: #3a618a; border-color: #88add1; }
+.settings-fields input[type="text"] { width: 100%; border-radius: 6px; border: 1px solid #45617d; background: #0c1521; color: #ecf5ff; padding: 9px; }
+.settings-fields small { display: block; color: #9bb3cd; line-height: 1.4; }
+.settings-about { margin: 18px 0 24px; }
+.settings-about dl { display: grid; grid-template-columns: minmax(90px,1fr) minmax(0,2fr); gap: 12px; font-size: 13px; overflow-wrap: anywhere; }
+.settings-about dt { color: #9bb3cd; }
+.settings-about dd { margin: 0; }
+.entity-locale-shortcuts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0; }
+.entity-locale-shortcuts small { margin-right: 4px; }
+.entity-locale-shortcuts button { border: 1px solid #526c88; background: #243a54; color: #ecf5ff; border-radius: 5px; padding: 4px 7px; }
+.entity-locale-shortcuts button:disabled { opacity: .5; }

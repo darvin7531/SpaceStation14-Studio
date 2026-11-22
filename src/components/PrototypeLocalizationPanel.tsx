@@ -3,11 +3,13 @@ import { AlertTriangle, Languages, RefreshCw, X } from 'lucide-react';
 import { studio, type EntityLocalizationSource, type PrototypeFieldLocator, type ResourceDocument, type ResourceEntry } from '../lib/api';
 import { buildEntityLocalePatch, type EntityLocaleField, type EntityLocalePatch } from '../lib/entity-localization';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
+import { localeFromFtlPath, localeResourceSearch } from '../lib/localization-settings';
 
 interface Props {
   locator: PrototypeFieldLocator;
   source: string;
   busy: boolean;
+  requiredLocales: readonly string[];
   onApply: (file: string, original: ResourceDocument, content: string) => Promise<boolean>;
   onClose: () => void;
 }
@@ -18,7 +20,7 @@ const FIELDS: { field: EntityLocaleField; label: string }[] = [
   { field: 'suffix', label: 'suffix → .suffix' },
 ];
 
-export default function PrototypeLocalizationPanel({ locator, source, busy, onApply, onClose }: Props) {
+export default function PrototypeLocalizationPanel({ locator, source, busy, requiredLocales, onApply, onClose }: Props) {
   const [entity, setEntity] = useState<EntityLocalizationSource | null>(null);
   const [files, setFiles] = useState<ResourceEntry[]>([]);
   const [fileTotal, setFileTotal] = useState(0);
@@ -136,6 +138,14 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, onAp
           <span>{label} — <code>{entity[field] || 'нет значения в YAML'}</code></span>
         </label>)}
       </div>
+      <div className="entity-locale-shortcuts">
+        <small>Локали проекта для проверки: </small>
+        {requiredLocales.map((locale) => <button type="button" key={locale}
+          disabled={disabled} onClick={() => { setSearch(localeResourceSearch(locale)); setTarget(''); setPreview(null); }}>
+          {locale}</button>)}
+        <button type="button" disabled={disabled}
+          onClick={() => { setSearch(''); setTarget(''); setPreview(null); }}>Все FTL</button>
+      </div>
       <label className="entity-locale-filter">Поиск существующего FTL-файла
         <input type="search" placeholder="имя файла или путь в Resources/Locale…"
           value={search} onChange={(event) => { setSearch(event.target.value); setPreview(null); }}/>
@@ -148,6 +158,8 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, onAp
             && <option value={target}>{target}</option>}
           {files.map((entry) => <option key={entry.path} value={entry.path}>{entry.path}</option>)}
         </select>
+        {target && <small>Локаль выбранного файла: {localeFromFtlPath(target) ?? 'не определена'}.
+          Переводы вне списка обязательных локалей тоже можно редактировать.</small>}
       </label>
       {preview && <div className="entity-locale-preview">
         <strong>Предпросмотр:</strong>

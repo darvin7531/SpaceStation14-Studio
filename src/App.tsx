@@ -41,6 +41,7 @@ import ResourceDriftBanner from './components/ResourceDriftBanner';
 import ResourceFolderBrowser from './components/ResourceFolderBrowser';
 import { retainCurrentDrifts } from './lib/resource-drift';
 import { readEditorSettings, sanitizeEditorSettings, SETTINGS_KEY } from './lib/editor-settings';
+import { readLocalizationSettings, sanitizeLocalizationSettings, LOCALIZATION_SETTINGS_KEY } from './lib/localization-settings';
 
 const PAGE_SIZE = 100;
 const LAST_PROJECT_KEY = 'ss14-studio-rust.last-project-root';
@@ -102,9 +103,13 @@ export default function App() {
   const [contentSearchOpen, setContentSearchOpen] = useState(false);
   const [contentSearchSeed, setContentSearchSeed] = useState('');
   const [editorSettings, setEditorSettings] = useState(() => readEditorSettings(window.localStorage));
+  const [localizationSettings, setLocalizationSettings] = useState(() => readLocalizationSettings(window.localStorage));
   useEffect(() => {
     try { window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(editorSettings)); } catch { /* storage may be blocked */ }
   }, [editorSettings]);
+  useEffect(() => {
+    try { window.localStorage.setItem(LOCALIZATION_SETTINGS_KEY, JSON.stringify(localizationSettings)); } catch { /* storage may be blocked */ }
+  }, [localizationSettings]);
   const [refreshing, setRefreshing] = useState(false);
   const [autoRefreshTick, setAutoRefreshTick] = useState(0);
   const autoRefreshHandled = useRef(0);
@@ -1190,6 +1195,8 @@ export default function App() {
       onOpen={(resource) => { setQuickOpen(false); openResource(resource); }}/>}
     {settingsOpen && <EditorSettingsDialog value={editorSettings}
       onChange={(settings) => setEditorSettings(sanitizeEditorSettings(settings))}
+      localizationSettings={localizationSettings}
+      onLocalizationChange={(settings) => setLocalizationSettings(sanitizeLocalizationSettings(settings))}
       onClose={() => setSettingsOpen(false)}/>}
     {showingUiSources && overview && <UiSourcesPanel
       projectKey={overview.project_root + ':' + workspaceRevision}
@@ -1477,6 +1484,7 @@ export default function App() {
                 ? <PrototypeLocalizationPanel
                     key={fieldTarget.file + ':' + fieldTarget.document_index + ':' + fieldTarget.item_index}
                     locator={fieldTarget} source={activeText} busy={saving || transitioning || refreshing}
+                    requiredLocales={localizationSettings.requiredLocales}
                     onApply={applyEntityLocalization} onClose={() => setFieldTarget(null)}/>
                 : <PrototypeComponentsPanel
                     key={fieldTarget.file + ':' + fieldTarget.document_index + ':' + fieldTarget.item_index}
