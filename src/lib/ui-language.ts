@@ -218,7 +218,7 @@ export function resolveLanguage(value: unknown): Language {
 export function uiText(language: Language, key: UIKey,
   params?: Record<string, string | number | null | undefined>): string {
   const template: string = language === 'en' ? en[key] : ru[key];
-  return template.replace(/\\{\\{([a-zA-Z][a-zA-Z0-9]*)\\}\\}/g, (_match, variable: string) => {
+  return template.replace(/\{\{([a-zA-Z][a-zA-Z0-9]*)\}\}/g, (_match, variable: string) => {
     const value = params?.[variable];
     return value == null ? '' : String(value);
   });
