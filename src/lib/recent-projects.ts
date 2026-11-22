@@ -27,9 +27,12 @@ export function readRecentProjects(storage: Pick<Storage, 'getItem'>): string[] 
     if (!raw || raw.length > 50_000) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    const valid = parsed.filter(validProjectPath);
-    return valid.reduce<string[]>((result, path) =>
-      rememberRecentProject(result, path).reverse(), []).reverse().slice(0, MAX_RECENT_PROJECTS);
+    const unique = new Set<string>();
+    return parsed.filter((path): path is string => {
+      if (!validProjectPath(path) || unique.has(path)) return false;
+      unique.add(path);
+      return true;
+    }).slice(0, MAX_RECENT_PROJECTS);
   } catch { return []; }
 }
 
