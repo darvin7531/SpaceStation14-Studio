@@ -148,7 +148,8 @@ pub fn inspect_source_outline(
         .into_iter()
         .take(MAX_LIVE_OUTLINE)
         .map(|declaration| {
-            let source_item = if declaration.kind == "entity" && declaration.variant_index.is_none() {
+            let source_item = if declaration.kind == "entity" && declaration.variant_index.is_none()
+            {
                 parsed
                     .as_ref()
                     .and_then(|docs| docs.get(declaration.document_index.saturating_sub(1)))
@@ -221,7 +222,9 @@ fn normalize_sprite_path(raw: &str) -> Option<String> {
 }
 
 fn sprite_component(item: &Yaml) -> Option<&Yaml> {
-    item["components"].as_vec()?.iter()
+    item["components"]
+        .as_vec()?
+        .iter()
         .find(|component| component["type"].as_str() == Some("Sprite"))
 }
 
@@ -263,9 +266,9 @@ fn extract_sprite_layers(
                 path,
                 indexed,
                 state: layer["state"].as_str().map(str::to_owned),
-                visible: layer["visible"].as_bool().or_else(|| {
-                    matches!(layer["visible"], Yaml::BadValue).then_some(true)
-                }),
+                visible: layer["visible"]
+                    .as_bool()
+                    .or_else(|| matches!(layer["visible"], Yaml::BadValue).then_some(true)),
                 shader: layer["shader"].as_str().map(str::to_owned),
                 default_path: explicit.is_none() && default.is_some(),
             }
@@ -1353,15 +1356,29 @@ mod tests {
     #[test]
     fn live_outline_lists_sprite_layers_with_default_and_explicit_paths() {
         let source = "- type: entity\n  id: Layered\n  components:\n  - type: Sprite\n    sprite: Textures/Clothing/shirt\n    state: worn\n    layers:\n    - state: base\n    - state: overlay\n      sprite: /Textures/Effects/shine.rsi\n      visible: false\n      shader: unshaded\n    - state: missing\n      sprite: ../unsafe.rsi\n";
-        let report = inspect_source_outline(Path::new("/tmp"), "Resources/Prototypes/test.yml",
-            source, |path| path == "Resources/Textures/Clothing/shirt.rsi").unwrap();
+        let report = inspect_source_outline(
+            Path::new("/tmp"),
+            "Resources/Prototypes/test.yml",
+            source,
+            |path| path == "Resources/Textures/Clothing/shirt.rsi",
+        )
+        .unwrap();
         let entry = &report.declarations[0];
         assert_eq!(entry.sprite_layers_total, 3);
-        assert_eq!(entry.sprite.as_ref().unwrap().path, "Resources/Textures/Clothing/shirt.rsi");
-        assert_eq!(entry.sprite_layers[0].path.as_deref(), Some("Resources/Textures/Clothing/shirt.rsi"));
+        assert_eq!(
+            entry.sprite.as_ref().unwrap().path,
+            "Resources/Textures/Clothing/shirt.rsi"
+        );
+        assert_eq!(
+            entry.sprite_layers[0].path.as_deref(),
+            Some("Resources/Textures/Clothing/shirt.rsi")
+        );
         assert!(entry.sprite_layers[0].default_path);
         assert!(entry.sprite_layers[0].indexed);
-        assert_eq!(entry.sprite_layers[1].path.as_deref(), Some("Resources/Textures/Effects/shine.rsi"));
+        assert_eq!(
+            entry.sprite_layers[1].path.as_deref(),
+            Some("Resources/Textures/Effects/shine.rsi")
+        );
         assert_eq!(entry.sprite_layers[1].visible, Some(false));
         assert_eq!(entry.sprite_layers[1].shader.as_deref(), Some("unshaded"));
         assert!(!entry.sprite_layers[1].indexed);
@@ -1370,12 +1387,19 @@ mod tests {
 
     #[test]
     fn live_outline_supports_layer_only_sprite_and_caps_large_layer_list() {
-        let mut source = "- type: entity\n  id: LayerOnly\n  components:\n  - type: Sprite\n    layers:\n".to_owned();
+        let mut source =
+            "- type: entity\n  id: LayerOnly\n  components:\n  - type: Sprite\n    layers:\n"
+                .to_owned();
         for _ in 0..40 {
             source.push_str("    - state: icon\n      sprite: Objects/Tool.rsi\n");
         }
-        let result = inspect_source_outline(Path::new("/tmp"), "Resources/Prototypes/test.yml",
-            &source, |_| true).unwrap();
+        let result = inspect_source_outline(
+            Path::new("/tmp"),
+            "Resources/Prototypes/test.yml",
+            &source,
+            |_| true,
+        )
+        .unwrap();
         let entry = &result.declarations[0];
         assert!(entry.sprite.is_none());
         assert_eq!(entry.sprite_layers_total, 40);
