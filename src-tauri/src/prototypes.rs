@@ -1294,7 +1294,13 @@ mod tests {
             "- type: entity\n  id: &ExternalId External\n- type: entity\n  id: !type:CreateVariants\n    values: [One, *ExternalId]\n- type: entity\n  id: *ExternalId\n",
             None,
         );
-        assert_eq!(items.iter().map(|item| item.id.as_str()).collect::<Vec<_>>(), ["External"]);
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            ["External"]
+        );
         assert!(issues
             .iter()
             .any(|issue| issue.code == "PROTOTYPE_VARIANTS_INVALID"));
