@@ -4,6 +4,12 @@ function safeMarkdown(text: string): string {
   return text.replace(/[\x60\\<>{}\r\n]/g, '').slice(0, 180);
 }
 
+// Documentation is untrusted C# source, not Markdown or HTML.
+function safeDocumentation(text: string): string {
+  return text.slice(0, 500).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/[\\`*_{}\[\]()#+.!|~-]/g, '\\$&').replace(/[\r\n]+/g, ' ');
+}
+
 /** Carry over Electron's YAML examples; they are illustrative, not engine-validated. */
 export function sampleYamlValue(field: Pick<CSharpField, 'name' | 'field_type'>): string {
   const name = field.name.toLowerCase();
@@ -46,11 +52,13 @@ export function componentHoverMarkdown(definition: CSharpDefinition): string {
     '',
     'C# source: \x60' + safeMarkdown(definition.file) + ':' + definition.line + '\x60',
   ];
+  if (definition.summary) lines.push('', safeDocumentation(definition.summary));
   if (definition.fields.length) {
     lines.push('', '**Прямые DataField**');
     for (const field of definition.fields.slice(0, 20)) {
       lines.push('- \x60' + safeMarkdown(field.name) + '\x60: \x60' + safeMarkdown(field.field_type) + '\x60'
-        + (field.required ? ' (обязательно)' : ''));
+        + (field.required ? ' (обязательно)' : '')
+        + (field.summary ? ' — ' + safeDocumentation(field.summary) : ''));
     }
   }
   lines.push('', '**Пример YAML (шаблон)**', '\x60\x60\x60yaml', componentYamlExample(definition),

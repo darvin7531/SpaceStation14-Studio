@@ -38,3 +38,14 @@ test('source field names cannot insert another markdown code fence', () => {
   };
   assert.doesNotMatch(componentYamlExample(modified), /\x60/);
 });
+
+test('hover displays documentation as safe text', () => {
+  const shown = componentHoverMarkdown({
+    ...fixture, summary: 'Docs <img src=x> [link](https://evil.test)',
+    fields: [{ ...fixture.fields[0], summary: 'Field `code` **bold**' }],
+  });
+  assert.match(shown, /Docs &lt;img src=x&gt;/);
+  assert.ok(!shown.includes('[link](https://evil.test)'));
+  assert.ok(!shown.includes('**bold**'));
+  assert.match(shown, /Field/);
+});

@@ -29,6 +29,7 @@ pub struct CSharpField {
     pub line: usize,
     pub required: bool,
     pub explicit_name: bool,
+    pub summary: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -41,6 +42,7 @@ pub struct CSharpDefinition {
     pub line: usize,
     pub partial: bool,
     pub base_types: String,
+    pub summary: Option<String>,
     pub fields: Vec<CSharpField>,
     pub parse_uncertain: bool,
 }
@@ -194,6 +196,54 @@ fn attributes(node: Node<'_>, source: &[u8]) -> Vec<Attribute> {
     result
 }
 
+// Read only the contiguous XML documentation immediately preceding the syntax
+// node (which includes its attributes). Never associate a nearby declaration.
+fn xml_summary(node: Node<'_>, source: &[u8]) -> Option<String> {
+    let prefix = std::str::from_utf8(&source[..node.start_byte()]).ok()?;
+    let line_start = prefix.rfind('\n')?;
+    if !prefix[line_start + 1..].trim().is_empty() {
+        return None;
+    }
+    let mut lines = Vec::new();
+    for line in prefix[..line_start].lines().rev() {
+        let Some(doc) = line.trim_start().strip_prefix("///") else {
+            break;
+        };
+        lines.push(doc.trim());
+    }
+    lines.reverse();
+    let docs = lines.join(" ");
+    let text = docs
+        .split_once("<summary>")?
+        .1
+        .split_once("</summary>")?
+        .0;
+    // ponytail: inline XML tags are stripped, not semantically resolved; use
+    // an XML documentation renderer if cref/include/inheritdoc support matters.
+    let mut plain = String::new();
+    let mut in_tag = false;
+    for ch in text.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' if in_tag => in_tag = false,
+            _ if !in_tag => plain.push(ch),
+            _ => {}
+        }
+    }
+    let plain = plain
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&");
+    let normalized = plain.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized)
+    }
+}
+
 fn member_name(member: &str) -> String {
     let cleaned = member.trim_start_matches('@').trim_start_matches('_');
     let mut chars = cleaned.chars();
@@ -283,6 +333,7 @@ fn data_fields(node: Node<'_>, source: &[u8]) -> Vec<CSharpField> {
             line,
             required,
             explicit_name,
+            summary: xml_summary(node, source),
         })
         .collect()
 }
@@ -407,6 +458,7 @@ fn parse_class(
             line,
             partial,
             base_types: base_types.clone(),
+            summary: xml_summary(node, source),
             fields: fields.clone(),
             parse_uncertain: node.has_error(),
         });
@@ -424,6 +476,7 @@ fn parse_class(
             line,
             partial,
             base_types,
+            summary: xml_summary(node, source),
             fields,
             parse_uncertain: node.has_error(),
         });
@@ -842,6 +895,30 @@ mod tests {
         let (defs, _, failed) = parse_source(&mut parser, "Content.Shared/Test.cs", input);
         assert!(!failed, "Syntax error in test fixture");
         defs
+    }
+
+    #[test]
+    fn summaries_are_attached_to_their_own_declarations() {
+        let defs = parse(r#"
+            /// <summary>Component &amp; more.</summary>
+            [RegisterComponent]
+            public class DocsComponent {
+                /// <summary>
+                /// Field <c>value</c> &lt;safe&gt;.
+                /// </summary>
+                [DataField] public int Count;
+                // Not documentation
+                [DataField] public bool Other;
+            }
+            [RegisterComponent] public class UndocumentedComponent {}
+        "#);
+        assert_eq!(defs[0].summary.as_deref(), Some("Component & more."));
+        assert_eq!(
+            defs[0].fields[0].summary.as_deref(),
+            Some("Field value <safe>.")
+        );
+        assert_eq!(defs[0].fields[1].summary, None);
+        assert_eq!(defs[1].summary, None);
     }
 
     #[test]

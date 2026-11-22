@@ -32,6 +32,7 @@ export interface CSharpField {
   line: number;
   required: boolean;
   explicit_name: boolean;
+  summary?: string | null;
 }
 
 export interface CSharpDefinition {
@@ -43,6 +44,7 @@ export interface CSharpDefinition {
   line: number;
   partial: boolean;
   base_types: string;
+  summary?: string | null;
   fields: CSharpField[];
   parse_uncertain: boolean;
 }
