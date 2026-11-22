@@ -38,7 +38,7 @@ export function buildEntityLocalePatch(
   if (original.length > 4 * 1024 * 1024) throw new Error('FTL слишком большой для безопасного изменения.');
   const eol = original.includes('\r\n') ? '\r\n' : '\n';
   const lines = original.split(/\r?\n/);
-  const keyLine = new RegExp('^' + key.replace(/[.*+?^$\\{}()|[\]\\]/g, '\\$&') + '[ \\t]*=');
+  const keyLine = new RegExp('^' + key + '[ \t]*=');
   const indices = lines.flatMap((line, index) => keyLine.test(line) ? [index] : []);
   if (indices.length > 1) throw new Error('Fluent ID объявлен несколько раз в выбранном файле. Исправьте дубликаты вручную.');
   const start = indices.length ? indices[0] : -1;
@@ -46,9 +46,9 @@ export function buildEntityLocalePatch(
   if (start >= 0) present.add('name');
   let end = start >= 0 ? start + 1 : -1;
   if (start >= 0) {
-    while (end < lines.length && (/^[ \\t]/.test(lines[end]) || lines[end] === '')) {
-      if (/^[ \\t]+\\.desc[ \\t]*=/.test(lines[end])) present.add('description');
-      if (/^[ \\t]+\\.suffix[ \\t]*=/.test(lines[end])) present.add('suffix');
+    while (end < lines.length && (/^[ \t]/.test(lines[end]) || lines[end] === '')) {
+      if (/^[ \t]+\.desc[ \t]*=/.test(lines[end])) present.add('description');
+      if (/^[ \t]+\.suffix[ \t]*=/.test(lines[end])) present.add('suffix');
       end += 1;
     }
     // A blank separator is not part of the message: insert new attributes before it.
