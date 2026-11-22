@@ -339,7 +339,11 @@ impl PrototypeGraph {
                         .filter(|&&i| declarations[i].mode != "normal")
                         .count()
                 });
-                let definition = target_declarations
+                // Ambiguous target IDs have no single trustworthy source
+                // location. Let the catalog list all competing definitions.
+                let definition = (target_status == "defined")
+                    .then(|| target_declarations)
+                    .flatten()
                     .and_then(|indices| {
                         indices
                             .iter()
@@ -347,7 +351,9 @@ impl PrototypeGraph {
                             .find(|&i| declarations[i].mode == "normal")
                     })
                     .map(|index| &declarations[index]);
-                let tentative = edge.tagged || source.mode != "normal";
+                let tentative = edge.tagged
+                    || source.mode != "normal"
+                    || status(&current, by_identity, declarations) != "defined";
                 let cycle = trail.contains(&target);
                 let repeated = seen.contains(&target);
                 if tentative || target_status != "defined" || cycle || partial_sources > 0 {
@@ -697,6 +703,23 @@ mod tests {
         assert_eq!(result.ancestors[1].status, "ambiguous");
         assert_eq!(result.ancestors[2].status, "not_indexed");
         assert!(!result.ancestry_complete);
+    }
+
+    #[test]
+    fn ambiguous_root_lists_its_edges_without_resolving_grandparents() {
+        let definitions = vec![
+            declaration("entity", "Root", &["First"], "normal"),
+            declaration("entity", "Root", &["Second"], "normal"),
+            declaration("entity", "First", &["Grandparent"], "normal"),
+            declaration("entity", "Second", &["Grandparent"], "normal"),
+            declaration("entity", "Grandparent", &[], "normal"),
+        ];
+        let (graph, index) = build(&definitions, &[]);
+        let result = graph.relations("entity", "Root", &definitions, &index).unwrap();
+        assert_eq!(result.ancestors.len(), 2);
+        assert!(result.ancestors.iter().all(|step| step.depth == 1));
+        assert!(!result.ancestry_complete);
+        assert!(!result.ancestry_truncated);
     }
 
     #[test]
