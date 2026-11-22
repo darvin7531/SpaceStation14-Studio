@@ -16,6 +16,74 @@ pub struct EntityLocalizationSource {
     pub suffix: String,
 }
 
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EntityLocalePresence {
+    pub name: bool,
+    pub description: bool,
+    pub suffix: bool,
+}
+#[derive(Debug, Clone, Serialize)]
+pub struct EntityLocaleTarget {
+    pub locale: String,
+    pub path: String,
+    pub file_exists: bool,
+    pub exists: EntityLocalePresence,
+}
+#[derive(Debug, Serialize)]
+pub struct EntityLocaleDiagnostic {
+    pub field: &'static str,
+    pub source_text: String,
+    pub missing_locales: Vec<String>,
+    pub targets: Vec<EntityLocaleTarget>,
+}
+#[derive(Debug, Serialize)]
+pub struct EntityLocalizationAnalysis {
+    pub localization_id: String,
+    pub diagnostics: Vec<EntityLocaleDiagnostic>,
+    pub targets: Vec<EntityLocaleTarget>,
+    pub complete: bool,
+    pub warnings: Vec<String>,
+}
+
+pub fn build_analysis(
+    entity: EntityLocalizationSource,
+    targets: Vec<EntityLocaleTarget>,
+    complete: bool,
+    warnings: Vec<String>,
+) -> EntityLocalizationAnalysis {
+    let mut diagnostics = Vec::new();
+    if complete {
+        for (field, source_text) in [
+            ("name", &entity.name),
+            ("description", &entity.description),
+            ("suffix", &entity.suffix),
+        ] {
+            if source_text.is_empty() { continue; }
+            let missing_locales: Vec<String> = targets.iter().filter(|target| match field {
+                "name" => !target.exists.name,
+                "description" => !target.exists.description,
+                _ => !target.exists.suffix,
+            }).map(|target| target.locale.clone()).collect();
+            if !missing_locales.is_empty() {
+                diagnostics.push(EntityLocaleDiagnostic {
+                    field,
+                    source_text: source_text.clone(),
+                    missing_locales,
+                    targets: targets.clone(),
+                });
+            }
+        }
+    }
+    EntityLocalizationAnalysis {
+        localization_id: entity.localization_id,
+        diagnostics,
+        targets,
+        complete,
+        warnings,
+    }
+}
+
 fn scalar(row: &Yaml, key: &str) -> Result<String, StudioError> {
     let value = &row[key];
     match value {

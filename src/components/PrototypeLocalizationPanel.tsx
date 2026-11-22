@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, Languages, RefreshCw, X } from 'lucide-react';
-import { studio, type EntityLocalizationSource, type PrototypeFieldLocator, type ResourceDocument, type ResourceEntry } from '../lib/api';
+import { studio, type EntityLocalizationSource, type EntityLocalizationAnalysis, type PrototypeFieldLocator, type ResourceDocument, type ResourceEntry } from '../lib/api';
 import { buildEntityLocalePatch, type EntityLocaleField, type EntityLocalePatch } from '../lib/entity-localization';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 import { localeFromFtlPath, localeResourceSearch } from '../lib/localization-settings';
@@ -22,6 +22,7 @@ const FIELDS: { field: EntityLocaleField; label: string }[] = [
 
 export default function PrototypeLocalizationPanel({ locator, source, busy, requiredLocales, onApply, onClose }: Props) {
   const [entity, setEntity] = useState<EntityLocalizationSource | null>(null);
+  const [analysis, setAnalysis] = useState<EntityLocalizationAnalysis | null>(null);
   const [files, setFiles] = useState<ResourceEntry[]>([]);
   const [fileTotal, setFileTotal] = useState(0);
   const [search, setSearch] = useState('');
@@ -36,15 +37,21 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, requ
   useEffect(() => {
     let live = true;
     setEntity(null);
+    setAnalysis(null);
     setPreview(null);
     setError(null);
-    void studio.inspectEntityLocalization(locator, source).then((result) => {
-      if (live) setEntity(result);
+    void Promise.all([
+      studio.inspectEntityLocalization(locator, source),
+      studio.analyzeEntityLocalization(locator, source, [...requiredLocales]),
+    ]).then(([result, report]) => {
+      if (!live) return;
+      setEntity(result);
+      setAnalysis(report);
     }).catch((failure) => {
       if (live) setError(normalizeStudioError(failure));
     });
     return () => { live = false; };
-  }, [locator, source]);
+  }, [locator, source, requiredLocales]);
 
   useEffect(() => {
     let live = true;
@@ -126,6 +133,27 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, requ
         Fluent ID: <code>{entity.localization_id}</code>. Берутся только явно заданные поля,
         без предположений о наследовании и fallback локалей.
       </p>
+      {analysis && <div className="entity-locale-status" aria-live="polite">
+        <strong>Проверка игровых локалей</strong>
+        {!analysis.complete ? <p role="alert">Проверка неполная: отсутствующие переводы не считаются подтверждёнными.
+          {analysis.warnings.map((warning) => <span key={warning}>{warning} </span>)}</p>
+          : analysis.diagnostics.length === 0 ? <p>В выбранных локалях нет пропусков для явно заданных полей entity.</p>
+          : <div>
+            <p>Отсутствуют переводы:</p>
+            {analysis.diagnostics.map((issue) => <div key={issue.field}>
+              <strong>{issue.field}</strong>: {issue.missing_locales.join(', ')}
+              {issue.targets.filter((target) => issue.missing_locales.includes(target.locale)).map((target) =>
+                target.file_exists ? <button type="button" key={target.locale} disabled={disabled}
+                  onClick={() => {
+                    setSearch(localeResourceSearch(target.locale));
+                    setTarget(target.path);
+                    setSelected([issue.field]);
+                    setPreview(null);
+                  }}>Исправить {target.locale}</button>
+                  : <small key={target.locale}> {target.locale}: файл {target.path} отсутствует — создайте FTL в мастере локализаций.</small>)}
+            </div>)}
+          </div>}
+      </div>}
       <div className="entity-locale-fields">
         {FIELDS.map(({ field, label }) => <label key={field}>
           <input type="checkbox" checked={selected.includes(field)}

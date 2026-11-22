@@ -748,33 +748,84 @@ impl ProjectIndex {
 
     /// Validate live editor text without reading or writing the disk.
     /// Restrict this action to indexed Fluent resources.
-    pub fn analyze_fluent(
+
+    /// Electron parity: check direct entity name/description/suffix in selected game locales.
+    /// Read-only, index-backed and explicitly incomplete if any locale could not be scanned.
+    pub fn analyze_entity_localization(
         &self,
-        rel_path: &str,
+        locator: &FieldLocator,
         source: &str,
-    ) -> Result<FluentInspection, StudioError> {
-        let indexed_ftl = self
-            .positions
-            .get(rel_path)
-            .and_then(|index| self.resources.get(*index))
-            .is_some_and(|entry| entry.kind == "ftl");
-        if !indexed_ftl {
+        required_locales: &[String],
+    ) -> Result<prototype_localization::EntityLocalizationAnalysis, StudioError> {
+        let entity = self.inspect_entity_localization(locator, source)?;
+        if required_locales.is_empty() || required_locales.len() > 24 {
             return Err(StudioError::new(
-                "FTL_NOT_INDEXED",
-                "Файл отсутствует в каталоге Fluent-локализаций проекта.",
-                "Выберите существующий .ftl в списке ресурсов или обновите индекс.",
+                "ENTITY_LOCALE_SELECTION_INVALID",
+                "Список обязательных локалей пуст или слишком велик.",
+                "Укажите от 1 до 24 игровых локалей в настройках.",
             ));
         }
-        // Check draft size before expensive locale indexing.
-        let syntax = fluent_diagnostics::analyze(source)?;
-        let locale = fluent_locale::locale_of(rel_path).ok_or_else(|| {
-            StudioError::new(
-                "FTL_LOCALE_INVALID",
-                "Невозможно определить язык Fluent-файла.",
-                "Используйте путь внутри Resources/Locale/<язык>/.",
-            )
-        })?;
+        let mut locales = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for locale in required_locales {
+            let valid = locale.len() >= 2 && locale.len() <= 48
+                && locale.split('-').all(|part| !part.is_empty() && part.len() <= 8
+                    && part.bytes().all(|byte| byte.is_ascii_alphanumeric()))
+                && locale.as_bytes().first().is_some_and(u8::is_ascii_alphabetic);
+            if !valid {
+                return Err(StudioError::new(
+                    "ENTITY_LOCALE_SELECTION_INVALID",
+                    "В списке игровых локалей есть некорректный идентификатор.",
+                    "Используйте имена каталогов вроде ru-RU или en-US.",
+                ));
+            }
+            if seen.insert(locale.to_ascii_lowercase()) { locales.push(locale.clone()); }
+        }
 
+        let mut targets = Vec::new();
+        let mut complete = true;
+        let mut warnings = Vec::new();
+        let filename = std::path::Path::new(&locator.file).file_name()
+            .and_then(|name| name.to_str()).unwrap_or("entities.yml");
+        let filename = format!("{}.ftl", filename.trim_end_matches(".yml").trim_end_matches(".yaml"));
+        let module = locator.file.split('/').nth(2).filter(|part| part.starts_with('_'));
+        for locale in &locales {
+            let snapshot = self.locale_snapshot_for(locale)?;
+            if !snapshot.complete || snapshot.has_invalid_files() {
+                complete = false;
+                warnings.push(format!("{}: индекс FTL неполон или содержит ошибки синтаксиса.", locale));
+            }
+            let definitions = snapshot.entity_definitions(&entity.localization_id);
+            if definitions.len() > 1 {
+                complete = false;
+                warnings.push(format!("{}: Fluent ID {} объявлен неоднократно; исправьте дубликаты.", locale, entity.localization_id));
+            }
+            let matching_file = snapshot.file_paths().filter(|path| {
+                std::path::Path::new(path).file_name().is_some_and(|name| name == filename.as_str())
+            }).find(|path| module.is_none_or(|segment| path.contains(&format!("/{segment}/"))));
+            let fallback = match module {
+                Some(segment) => format!("Resources/Locale/{locale}/{segment}/{filename}"),
+                None => format!("Resources/Locale/{locale}/{filename}"),
+            };
+            let destination = definitions.first().map(|definition| definition.file.clone())
+                .or_else(|| matching_file.map(ToString::to_string))
+                .unwrap_or(fallback);
+            let definition = definitions.first();
+            targets.push(prototype_localization::EntityLocaleTarget {
+                locale: locale.clone(),
+                path: destination.clone(),
+                file_exists: self.positions.contains_key(&destination),
+                exists: prototype_localization::EntityLocalePresence {
+                    name: definition.is_some_and(|definition| definition.name),
+                    description: definition.is_some_and(|definition| definition.description),
+                    suffix: definition.is_some_and(|definition| definition.suffix),
+                },
+            });
+        }
+        Ok(prototype_localization::build_analysis(entity, targets, complete, warnings))
+    }
+
+    fn locale_snapshot_for(&self, locale: &str) -> Result<Arc<LocaleSnapshot>, StudioError> {
         let snapshot = {
             let mut cache = self
                 .fluent_locale_cache
@@ -825,6 +876,37 @@ impl ProjectIndex {
                 built
             }
         };
+        Ok(snapshot)
+    }
+
+    pub fn analyze_fluent(
+        &self,
+        rel_path: &str,
+        source: &str,
+    ) -> Result<FluentInspection, StudioError> {
+        let indexed_ftl = self
+            .positions
+            .get(rel_path)
+            .and_then(|index| self.resources.get(*index))
+            .is_some_and(|entry| entry.kind == "ftl");
+        if !indexed_ftl {
+            return Err(StudioError::new(
+                "FTL_NOT_INDEXED",
+                "Файл отсутствует в каталоге Fluent-локализаций проекта.",
+                "Выберите существующий .ftl в списке ресурсов или обновите индекс.",
+            ));
+        }
+        // Check draft size before expensive locale indexing.
+        let syntax = fluent_diagnostics::analyze(source)?;
+        let locale = fluent_locale::locale_of(rel_path).ok_or_else(|| {
+            StudioError::new(
+                "FTL_LOCALE_INVALID",
+                "Невозможно определить язык Fluent-файла.",
+                "Используйте путь внутри Resources/Locale/<язык>/.",
+            )
+        })?;
+
+        let snapshot = self.locale_snapshot_for(locale)?;
         Ok(FluentInspection {
             syntax,
             locale: snapshot.inspect(rel_path, source),

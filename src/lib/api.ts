@@ -185,6 +185,26 @@ export interface EntityLocalizationSource {
   description: string;
   suffix: string;
 }
+export type EntityLocaleField = 'name' | 'description' | 'suffix';
+export interface EntityLocaleTarget {
+  locale: string;
+  path: string;
+  file_exists: boolean;
+  exists: Record<EntityLocaleField, boolean>;
+}
+export interface EntityLocaleDiagnostic {
+  field: EntityLocaleField;
+  source_text: string;
+  missing_locales: string[];
+  targets: EntityLocaleTarget[];
+}
+export interface EntityLocalizationAnalysis {
+  localization_id: string;
+  diagnostics: EntityLocaleDiagnostic[];
+  targets: EntityLocaleTarget[];
+  complete: boolean;
+  warnings: string[];
+}
 
 export interface ParentInspection {
   parents: string[];
@@ -684,6 +704,9 @@ export const studio = {
   },
   inspectEntityLocalization(locator: PrototypeFieldLocator, source: string): Promise<EntityLocalizationSource> {
     return invoke('inspect_entity_localization', { locator, source });
+  },
+  analyzeEntityLocalization(locator: PrototypeFieldLocator, source: string, requiredLocales: string[]): Promise<EntityLocalizationAnalysis> {
+    return invoke('analyze_entity_localization', { locator, source, requiredLocales });
   },
   inspectPrototypeParents(locator: PrototypeFieldLocator, source: string): Promise<ParentInspection> {
     return invoke('inspect_prototype_parents', { locator, source });

@@ -47,7 +47,7 @@ use prototype_components::{ComponentInspection, ComponentOperation};
 use prototype_create::{PrototypeDraft, PrototypePreview};
 use prototype_fields::{FieldInspection, FieldLocator, FieldPatch, PrototypeFields};
 use prototype_graph::PrototypeRelations;
-use prototype_localization::EntityLocalizationSource;
+use prototype_localization::{EntityLocalizationSource, EntityLocalizationAnalysis};
 use prototype_merge::{
     LinkedPrototypeReport, PrototypeInheritancePreview, PrototypePartialPreview,
 };
@@ -1028,6 +1028,19 @@ async fn inspect_entity_localization(
 }
 
 #[tauri::command]
+async fn analyze_entity_localization(
+    locator: FieldLocator,
+    source: String,
+    required_locales: Vec<String>,
+    state: State<'_, WorkspaceState>,
+) -> Result<EntityLocalizationAnalysis, StudioError> {
+    let project = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        project.analyze_entity_localization(&locator, &source, &required_locales)
+    }).await.map_err(interrupted)?
+}
+
+#[tauri::command]
 async fn patch_prototype_fields(
     locator: FieldLocator,
     source: String,
@@ -1124,6 +1137,7 @@ pub fn run() -> Result<(), tauri::Error> {
             inspect_prototype_parents,
             patch_prototype_parents,
             inspect_entity_localization,
+            analyze_entity_localization,
             patch_prototype_fields,
             inspect_prototype_components,
             patch_prototype_components,

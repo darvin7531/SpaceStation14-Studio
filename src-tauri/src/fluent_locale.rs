@@ -74,6 +74,14 @@ pub struct LocaleAnalysis {
     pub issues: Vec<LocaleIssue>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct EntityLocaleDefinition {
+    pub file: String,
+    pub name: bool,
+    pub description: bool,
+    pub suffix: bool,
+}
+
 pub fn locale_of(path: &str) -> Option<&str> {
     let after = path.strip_prefix("Resources/Locale/")?;
     let (locale, rest) = after.split_once('/')?;
@@ -260,6 +268,28 @@ pub fn scan_file(file: &str, source: &str) -> FileSymbols {
 }
 
 impl LocaleSnapshot {
+    /// Returns every declaration, not just the first: callers must report ambiguity.
+    pub fn entity_definitions(&self, id: &str) -> Vec<EntityLocaleDefinition> {
+        self.files.iter().flat_map(|file| {
+            file.definitions.iter().filter(move |entry| entry.id == id).map(|entry| {
+                EntityLocaleDefinition {
+                    file: entry.file.clone(),
+                    name: entry.has_value,
+                    description: entry.attributes.iter().any(|attr| attr == "desc"),
+                    suffix: entry.attributes.iter().any(|attr| attr == "suffix"),
+                }
+            })
+        }).collect()
+    }
+
+    pub fn has_invalid_files(&self) -> bool {
+        self.files.iter().any(|file| file.has_syntax_errors)
+    }
+
+    pub fn file_paths(&self) -> impl Iterator<Item = &str> {
+        self.files.iter().map(|file| file.file.as_str())
+    }
+
     pub fn new(
         locale: &str,
         files: Vec<FileSymbols>,
