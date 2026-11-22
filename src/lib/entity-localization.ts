@@ -43,7 +43,11 @@ export function buildEntityLocalePatch(
   if (indices.length > 1) throw new Error('Fluent ID объявлен несколько раз в выбранном файле. Исправьте дубликаты вручную.');
   const start = indices.length ? indices[0] : -1;
   const present = new Set<EntityLocaleField>();
-  if (start >= 0) present.add('name');
+  // An attribute-only Fluent message may have a blank main value.
+  // Do not mistake "ent-foo =" for an existing name translation.
+  if (start >= 0 && lines[start].slice(lines[start].indexOf('=') + 1).trim()) {
+    present.add('name');
+  }
   let end = start >= 0 ? start + 1 : -1;
   if (start >= 0) {
     while (end < lines.length && (/^[ \t]/.test(lines[end]) || lines[end] === '')) {
@@ -74,8 +78,11 @@ export function buildEntityLocalePatch(
   } else {
     // Existing message. Only add missing attributes; preserve the existing value verbatim.
     const insert = patch.filter((line) => line.startsWith('    .'));
-    // 'name' cannot be added to an existing message; it is always considered present.
     const out = [...lines];
+    if (added.includes('name')) {
+      // Fill an empty message value without replacing its existing attributes.
+      out[start] = out[start].replace(/[ \\t]*$/, '') + ' ' + safeValue(values.name);
+    }
     out.splice(end, 0, ...insert);
     next = out.join(eol);
   }
