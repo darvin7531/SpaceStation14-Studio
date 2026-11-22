@@ -382,6 +382,8 @@ mod tests {
         let restored_meta: Value = serde_json::from_str(&restored.content).unwrap();
         assert_eq!(
             restored_meta["states"]
+                .as_array()
+                .unwrap()
                 .iter()
                 .find(|state| state["name"] == "idle")
                 .unwrap()["directions"],
@@ -389,6 +391,8 @@ mod tests {
         );
         assert_eq!(
             restored_meta["states"]
+                .as_array()
+                .unwrap()
                 .iter()
                 .find(|state| state["name"] == "idle")
                 .unwrap()["customState"],
