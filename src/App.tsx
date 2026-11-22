@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { studio, type DraftList, type DraftSnapshot, type CreatedPrototype, type CreatedFluent, type CreatedRsi, type DeletedRsiState, type ImportedRsiState, RenamedRsiState, type RestoredRsiState, type PrototypeDeclaration, type PrototypeFieldLocator, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage } from './lib/api';
 import { normalizeStudioError, type StudioError } from './lib/errors';
+import type { ProjectScanProgress } from './lib/api';
 import { closeTab, openTab, nextTabPath, type TabState } from './lib/tabs';
 import { readTabSession, retainAvailableTabs, writeTabSession } from './lib/tab-session';
 import { readRecentProjects, rememberRecentProject, writeRecentProjects } from './lib/recent-projects';
@@ -91,6 +92,8 @@ export default function App() {
   });
   const [overview, setOverview] = useState<ProjectOverview | null>(null);
   const [opening, setOpening] = useState(false);
+  const [scanProgress, setScanProgress] = useState<ProjectScanProgress | null>(null);
+  const openingRequestPath = useRef<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [fileView, setFileView] = useState<'search' | 'folders'>('search');
   const [quickOpen, setQuickOpen] = useState(false);
@@ -162,6 +165,26 @@ export default function App() {
   const [reading, setReading] = useState(false);
   const [error, setError] = useState<StudioError | null>(null);
   const readVersion = useRef(0);
+
+  // The backend emits observed phases, not fabricated percentage progress.
+  // Ignore stale events for a different project when an open is superseded.
+  useEffect(() => {
+    let active = true;
+    let unlisten: (() => void) | undefined;
+    void listen<ProjectScanProgress>('studio:scan-progress', (event) => {
+      if (!active || openingRequestPath.current !== event.payload.requested_path) return;
+      setScanProgress(event.payload);
+    }).then((dispose) => {
+      if (active) unlisten = dispose;
+      else dispose();
+    }).catch(() => {
+      // The normal opening state remains usable if events are unavailable.
+    });
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, []);
 
   useEffect(() => {
     if (dirtyPaths.length === 0) return;
@@ -270,6 +293,8 @@ export default function App() {
     comparisonVersion.current += 1;
     setComparison(null);
     cancelJournalTimers();
+    openingRequestPath.current = requestedPath;
+    setScanProgress(null);
     setOpening(true);
     setNotice(null);
     setError(null);
@@ -330,6 +355,8 @@ export default function App() {
     } catch (failure) {
       setError(normalizeStudioError(failure));
     } finally {
+      openingRequestPath.current = null;
+      setScanProgress(null);
       setOpening(false);
     }
   }
@@ -1195,6 +1222,16 @@ export default function App() {
           <button type="submit" disabled={opening || picking || saving || refreshing}><FolderOpen size={16}/>{opening ? t('app.opening') : t('app.openProject')}</button>
         </div>
       </form>
+      {opening && <div className="project-scan-status" role="status" aria-live="polite">
+        <RotateCcw size={15}/>
+        <span>{scanProgress ? ({
+          prototypes: t('app.scanPrototypes'),
+          textures: t('app.scanTextures'),
+          locale: t('app.scanLocale'),
+          finalizing: t('app.scanFinalizing'),
+        }[scanProgress.phase] ?? t('app.scanPreparing')) : t('app.scanPreparing')}</span>
+        {scanProgress && <small>{t('app.scanIndexed', { count: scanProgress.indexed_resources })}</small>}
+      </div>}
       {overview && <div className="project-counts">
         <span><b>{overview.prototype_files}</b> {t('app.yamlFiles')}</span>
         <span><b>{overview.rsi_directories}</b> RSI</span>
