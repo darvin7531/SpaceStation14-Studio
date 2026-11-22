@@ -49,3 +49,14 @@ test('corrupted or inaccessible storage is ignored', () => {
   assert.deepEqual(readTabSession({ getItem: () => { throw Error('denied'); } }, '/repo'),
     { tabs: [], active: null });
 });
+
+
+test('prototype sessions round trip and reject malformed locators', () => {
+  const file = yaml('A').path;
+  const prototype = { file, kind: 'entity', id: 'A', document_index: 1, item_index: 1, mode: 'normal' as const };
+  const valid = { ...yaml('A'), prototype };
+  const invalid = { ...valid, prototype: { ...prototype, file: '../other', item_index: -1 } };
+  const state = readTabSession({ getItem: () => JSON.stringify({ tabs: [valid, invalid], active: file }) }, '/repo');
+  assert.equal(state.tabs.length, 1);
+  assert.deepEqual(state.tabs[0], valid);
+});

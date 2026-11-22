@@ -1,9 +1,18 @@
-import type { ResourceEntry } from './api';
+import type { ResourceEntry, PrototypeFieldLocator } from './api';
+
+export type EditorTab = ResourceEntry & { prototype?: PrototypeFieldLocator };
+export function tabId(tab: EditorTab): string {
+  return tab.prototype ? 'prototype:' + JSON.stringify([tab.path, tab.prototype.kind, tab.prototype.id, tab.prototype.document_index, tab.prototype.item_index, tab.prototype.mode]) : tab.path;
+}
+export function isLastFileView(state: TabState, id: string): boolean {
+  const tab = state.tabs.find((item) => tabId(item) === id);
+  return !!tab && state.tabs.filter((item) => item.path === tab.path).length === 1;
+}
 
 export const MAX_OPEN_TABS = 12;
 
 export interface TabState {
-  tabs: ResourceEntry[];
+  tabs: EditorTab[];
   active: string | null;
 }
 
@@ -15,30 +24,30 @@ export type OpenTabResult =
  * File paths are case-sensitive IDs because SS14 is developed on Linux too.
  * Never discard a tab silently (a later editing mode will have unsaved drafts).
  */
-export function openTab(state: TabState, resource: ResourceEntry, limit = MAX_OPEN_TABS): OpenTabResult {
-  if (state.tabs.some((tab) => tab.path === resource.path)) {
-    return { ok: true, state: { ...state, active: resource.path } };
+export function openTab(state: TabState, resource: EditorTab, limit = MAX_OPEN_TABS): OpenTabResult {
+  if (state.tabs.some((tab) => tabId(tab) === tabId(resource))) {
+    return { ok: true, state: { ...state, active: tabId(resource) } };
   }
   if (state.tabs.length >= limit) {
     return { ok: false, reason: 'LIMIT_REACHED', state };
   }
-  return { ok: true, state: { tabs: [...state.tabs, resource], active: resource.path } };
+  return { ok: true, state: { tabs: [...state.tabs, resource], active: tabId(resource) } };
 }
 
 /** Closing the selected tab activates the nearest remaining neighbor. */
 export function closeTab(state: TabState, path: string): TabState {
-  const index = state.tabs.findIndex((tab) => tab.path === path);
+  const index = state.tabs.findIndex((tab) => tabId(tab) === path);
   if (index < 0) return state;
-  const tabs = state.tabs.filter((tab) => tab.path !== path);
+  const tabs = state.tabs.filter((tab) => tabId(tab) !== path);
   const active = state.active === path
-    ? (tabs[Math.min(index, tabs.length - 1)]?.path ?? null)
+    ? (tabs.length ? tabId(tabs[Math.min(index, tabs.length - 1)]) : null)
     : state.active;
   return { tabs, active };
 }
 
 /** Electron tab reorder parity: moving a tab never changes its active file or draft. */
 export function reorderTab(state: TabState, path: string, index: number): TabState {
-  const previousIndex = state.tabs.findIndex((tab) => tab.path === path);
+  const previousIndex = state.tabs.findIndex((tab) => tabId(tab) === path);
   if (previousIndex < 0 || !Number.isSafeInteger(index)
     || index < 0 || index >= state.tabs.length || index === previousIndex) return state;
   const tabs = [...state.tabs];
@@ -61,7 +70,7 @@ export function insertionIndexForTabPointer(
 export function nextTabPath(state: TabState, backwards = false): string | null {
   const count = state.tabs.length;
   if (count === 0) return null;
-  const current = state.tabs.findIndex((tab) => tab.path === state.active);
+  const current = state.tabs.findIndex((tab) => tabId(tab) === state.active);
   const next = current < 0 ? 0 : (current + (backwards ? count - 1 : 1)) % count;
-  return state.tabs[next].path;
+  return tabId(state.tabs[next]);
 }

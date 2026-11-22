@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import type { ResourceEntry } from '../lib/api';
-import { insertionIndexForTabPointer } from '../lib/tabs';
+import { insertionIndexForTabPointer, tabId, type EditorTab } from '../lib/tabs';
 
 interface Props {
-  tabs: readonly ResourceEntry[];
+  tabs: readonly EditorTab[];
   activePath: string | null;
   dirtyPaths: readonly string[];
   disabled: boolean;
@@ -47,11 +47,11 @@ export default function ResourceTabStrip({
     document.body.style.userSelect = '';
   }
 
-  function pointerDown(event: ReactPointerEvent<HTMLButtonElement>, tab: ResourceEntry) {
+  function pointerDown(event: ReactPointerEvent<HTMLButtonElement>, tab: EditorTab) {
     if (disabled || event.button !== 0) return;
     drag.current = {
-      path: tab.path, pointerId: event.pointerId, startX: event.clientX,
-      targetIndex: tabs.findIndex((item) => item.path === tab.path), active: false,
+      path: tabId(tab), pointerId: event.pointerId, startX: event.clientX,
+      targetIndex: tabs.findIndex((item) => tabId(item) === tabId(tab)), active: false,
     };
   }
 
@@ -71,10 +71,10 @@ export default function ResourceTabStrip({
         else if (event.clientX > bounds.right - 40) scroller.scrollLeft += 18;
       }
       const centers = tabs
-        .filter((tab) => tab.path !== state.path)
+        .filter((tab) => tabId(tab) !== state.path)
         .map((tab) => {
-          const rect = tabNodes.current.get(tab.path)?.getBoundingClientRect();
-          return rect ? { path: tab.path, center: (rect.left + rect.right) / 2 } : null;
+          const rect = tabNodes.current.get(tabId(tab))?.getBoundingClientRect();
+          return rect ? { path: tabId(tab), center: (rect.left + rect.right) / 2 } : null;
         })
         .filter((entry): entry is { path: string; center: number } => Boolean(entry));
       if (centers.length > 0) {
@@ -108,7 +108,7 @@ export default function ResourceTabStrip({
     };
   }, [tabs, disabled]);
 
-  const draggedIndex = dragView ? tabs.findIndex((tab) => tab.path === dragView.path) : -1;
+  const draggedIndex = dragView ? tabs.findIndex((tab) => tabId(tab) === dragView.path) : -1;
   return <div ref={scroll} className="tab-strip" role="tablist" aria-label={label}
     onWheel={(event) => {
       if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
@@ -116,35 +116,35 @@ export default function ResourceTabStrip({
       }
     }}>
     {tabs.map((tab, index) => {
-      const isDragging = dragView?.path === tab.path;
+      const isDragging = dragView?.path === tabId(tab);
       const isTarget = Boolean(dragView && !isDragging && index === dragView.targetIndex);
       const targetPosition = isTarget
         ? (draggedIndex < dragView!.targetIndex ? ' tab-drop-after' : ' tab-drop-before')
         : '';
-      return <div key={tab.path}
+      return <div key={tabId(tab)}
         ref={(node) => {
-          if (node) tabNodes.current.set(tab.path, node);
-          else tabNodes.current.delete(tab.path);
+          if (node) tabNodes.current.set(tabId(tab), node);
+          else tabNodes.current.delete(tabId(tab));
         }}
-        className={'tab' + (activePath === tab.path ? ' active' : '')
+        className={'tab' + (activePath === tabId(tab) ? ' active' : '')
           + (isDragging ? ' tab-dragging' : '') + targetPosition}>
         <button type="button" role="tab" title={tab.path}
-          aria-selected={activePath === tab.path}
+          aria-selected={activePath === tabId(tab)}
           className="tab-focus" disabled={disabled}
           onPointerDown={(event) => pointerDown(event, tab)}
           onClick={() => {
-            if (suppressClick.current === tab.path) {
+            if (suppressClick.current === tabId(tab)) {
               suppressClick.current = null;
               return;
             }
-            onSelect(tab.path);
+            onSelect(tabId(tab));
           }}>
           {renderIcon(tab.kind)}
-          <span>{tab.path.split('/').at(-1)}{dirty.has(tab.path) ? ' ●' : ''}</span>
+          <span>{tab.prototype ? tab.prototype.kind + ':' + tab.prototype.id : tab.path.split('/').at(-1)}{dirty.has(tab.path) ? ' ●' : ''}</span>
         </button>
         <button className="tab-close" type="button"
           aria-label={closeLabel(tab.path)} disabled={disabled}
-          onClick={() => onClose(tab.path)}>
+          onClick={() => onClose(tabId(tab))}>
           <X size={13}/>
         </button>
       </div>;

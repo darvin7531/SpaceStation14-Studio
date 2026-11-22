@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   closeTab, MAX_OPEN_TABS, openTab, type TabState, nextTabPath,
-  reorderTab, insertionIndexForTabPointer,
+  reorderTab, insertionIndexForTabPointer, tabId, isLastFileView,
 } from '../src/lib/tabs';
 import type { ResourceEntry } from '../src/lib/api';
 
@@ -88,4 +88,18 @@ test('drop insertion is decided by the pointer against remaining tab centers', (
   assert.equal(insertionIndexForTabPointer(20, centers), 0);
   assert.equal(insertionIndexForTabPointer(100, centers), 1);
   assert.equal(insertionIndexForTabPointer(340, centers), 2);
+});
+
+
+test('prototype views are independent while retaining one file identity', () => {
+  const file = 'Resources/Prototypes/A.yml';
+  const a = { path: file, kind: 'yaml' as const, prototype: { file, kind: 'entity', id: 'A', document_index: 1, item_index: 1, mode: 'normal' as const } };
+  const b = { ...a, prototype: { ...a.prototype, id: 'B', item_index: 2 } };
+  const state = openTab(openTab({ tabs: [], active: null }, a).state, b).state;
+  assert.equal(state.tabs.length, 2);
+  assert.equal(state.active, tabId(b));
+  assert.equal(isLastFileView(state, tabId(a)), false);
+  const remaining = closeTab(state, tabId(a));
+  assert.equal(remaining.active, tabId(b));
+  assert.equal(isLastFileView(remaining, tabId(b)), true);
 });

@@ -93,3 +93,16 @@ test('unloaded tabs with restored draft preserve restore revision', () => {
   assert.equal(result.draftBases[file], 'old-hash');
   assert.deepEqual(result.conflicting, [file]);
 });
+
+
+test('multiple views keep one shared dirty document and base revision on refresh', () => {
+  const views = [{ ...tabs[0], prototype: { file, kind: 'entity', id: 'A', document_index: 1, item_index: 1, mode: 'normal' as const } },
+    { ...tabs[0], prototype: { file, kind: 'entity', id: 'B', document_index: 1, item_index: 2, mode: 'normal' as const } }];
+  const result = reconcileWorkspaceRefresh(views, new Map([[file, document(file, 'base', 'old')]]),
+    { [file]: 'shared edits' }, { [file]: 'old' },
+    [{ path: file, document: document(file, 'disk', 'new') }]);
+  assert.equal(result.documents.size, 1);
+  assert.equal(result.drafts[file], 'shared edits');
+  assert.equal(result.draftBases[file], 'old');
+  assert.deepEqual(result.conflicting, [file]);
+});

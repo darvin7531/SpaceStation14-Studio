@@ -10,7 +10,7 @@ import {
 import { studio, type DraftList, type DraftSnapshot, type CreatedPrototype, type CreatedFluent, type CreatedRsi, type DeletedRsiState, type ImportedRsiState, RenamedRsiState, type RestoredRsiState, type PrototypeDeclaration, type PrototypeFieldLocator, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage, type NewFluentDraft } from './lib/api';
 import { normalizeStudioError, type StudioError } from './lib/errors';
 import type { ProjectScanProgress } from './lib/api';
-import { closeTab, openTab, nextTabPath, reorderTab, type TabState } from './lib/tabs';
+import { closeTab, openTab, nextTabPath, reorderTab, tabId, isLastFileView, type EditorTab, type TabState } from './lib/tabs';
 import { readTabSession, retainAvailableTabs, writeTabSession } from './lib/tab-session';
 import { readRecentProjects, rememberRecentProject, writeRecentProjects } from './lib/recent-projects';
 import { LAST_PROJECT_KEY, readLastProject, readWorkspaceUi, writeWorkspaceUi } from './lib/workspace-ui';
@@ -145,7 +145,7 @@ export default function App() {
   const [results, setResults] = useState<ResourcePage>({ total: 0, items: [] });
   const [searching, setSearching] = useState(false);
   const [tabState, setTabState] = useState<TabState>({ tabs: [], active: null });
-  const selected = tabState.tabs.find((tab) => tab.path === tabState.active) ?? null;
+  const selected = tabState.tabs.find((tab) => tabId(tab) === tabState.active) ?? null;
   const documents = useRef(new Map<string, ResourceDocument>());
   const [document, setDocument] = useState<ResourceDocument | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -189,6 +189,36 @@ export default function App() {
   const [reading, setReading] = useState(false);
   const [error, setError] = useState<StudioError | null>(null);
   const readVersion = useRef(0);
+
+  // Resolve persisted/indexed locators against the actual shared draft, never an old line number.
+  const lastPrototypeJump = useRef<string | null>(null);
+  useEffect(() => {
+    const target = selected?.prototype;
+    if (!selected || !target || !document || document.path !== target.file) {
+      lastPrototypeJump.current = null;
+      return;
+    }
+    const id = tabId(selected);
+    let cancelled = false;
+    void studio.inspectYamlOutline(target.file, activeText).then((outline) => {
+      if (cancelled) return;
+      const matches = outline.declarations.map((item) => item.declaration).filter((item) =>
+        item.file === target.file && item.kind === target.kind && item.id === target.id
+        && item.document_index === target.document_index && item.item_index === target.item_index
+        && item.mode === target.mode);
+      if (outline.truncated || matches.length !== 1) {
+        setFieldTarget(null);
+        setNotice('Прототип во вкладке больше не соответствует черновику. Откройте его заново из актуального индекса.');
+        return;
+      }
+      if (lastPrototypeJump.current !== id) {
+        lastPrototypeJump.current = id;
+        setYamlCursor({ path: target.file, line: matches[0].line });
+        setJumpTarget({ path: target.file, line: matches[0].line, token: ++jumpCounter.current });
+      }
+    }).catch((failure) => { if (!cancelled) setError(normalizeStudioError(failure)); });
+    return () => { cancelled = true; };
+  }, [tabState.active, document, activeText]);
 
   // The backend emits observed phases, not fabricated percentage progress.
   // Ignore stale events for a different project when an open is superseded.
@@ -445,7 +475,7 @@ export default function App() {
       setPage(0);
       // Trigger the restored file read only after resetting the previous
       // document. Otherwise a late setDocument(null) can hide that read.
-      if (restored.active) void focusResource(restored.active);
+      if (restored.active) { const tab = restored.tabs.find((item) => tabId(item) === restored.active); if (tab) void focusResource(tab.path); }
     } catch (failure) {
       setError(normalizeStudioError(failure));
     } finally {
@@ -502,7 +532,7 @@ export default function App() {
       const changed = await studio.refreshProject(changedPaths);
       // Any old read that finishes now belongs to the replaced index.
       readVersion.current += 1;
-      const reads = await Promise.all(tabState.tabs.map(async (tab) => {
+      const reads = await Promise.all([...new Map(tabState.tabs.map((tab) => [tab.path, tab])).values()].map(async (tab) => {
         try {
           return { path: tab.path, document: await studio.readResource(tab.path), error: null };
         } catch (failure) {
@@ -516,7 +546,7 @@ export default function App() {
       draftsRef.current = result.drafts;
       setDrafts(result.drafts);
       setDraftBases(result.draftBases);
-      setDocument(tabState.active ? result.documents.get(tabState.active) ?? null : null);
+      setDocument(selected ? result.documents.get(selected.path) ?? null : null);
       setReading(false);
       setOverview(changed.overview);
       setDriftReport(null);
@@ -580,7 +610,7 @@ export default function App() {
     let running = false;
     async function check() {
       if (!active || running) return;
-      const opened: OpenRevision[] = tabState.tabs.flatMap((tab) => {
+      const opened: OpenRevision[] = [...new Map(tabState.tabs.map((tab) => [tab.path, tab])).values()].flatMap((tab) => {
         const loaded = documents.current.get(tab.path);
         return loaded ? [{ path: tab.path, expected_revision: loaded.revision }] : [];
       });
@@ -741,7 +771,12 @@ export default function App() {
     cancelJournalTimers();
     setError(null);
     try {
-      const paths = action.type === 'open' ? dirtyPaths : [action.path];
+      if (action.type === 'close' && !isLastFileView(tabState, action.path)) {
+        executeAction(action);
+        return;
+      }
+      const file = action.type === 'close' ? tabState.tabs.find((tab) => tabId(tab) === action.path)?.path : action.path;
+      const paths = action.type === 'open' ? dirtyPaths : file ? [file] : [];
       for (const file of paths) {
         await clearRecoveryCopy(file);
       }
@@ -755,9 +790,10 @@ export default function App() {
 
   function requestAction(action: PendingAction) {
     if (saving || transitioning || opening || refreshing) return;
+    const file = action.type === 'close' ? tabState.tabs.find((tab) => tabId(tab) === action.path)?.path : action.path;
     const needsConfirmation = action.type === 'open'
       ? dirtyPaths.length > 0
-      : isDirty(action.path);
+      : !!file && isDirty(file) && (action.type !== 'close' || isLastFileView(tabState, action.path));
     if (needsConfirmation) {
       setPendingAction(action);
     } else {
@@ -788,22 +824,27 @@ export default function App() {
       void focusResource(action.path);
       return;
     }
+    const closing = tabState.tabs.find((tab) => tabId(tab) === action.path);
+    if (!closing) return;
     const next = closeTab(tabState, action.path);
     setTabState(next);
-    documents.current.delete(action.path);
+    if (!next.tabs.some((tab) => tab.path === closing.path)) {
+      documents.current.delete(closing.path);
     setDraftBases((previous) => {
       const updated = { ...previous };
-      delete updated[action.path];
+      delete updated[closing.path];
       return updated;
     });
     setDrafts((previous) => {
       const updated = { ...previous };
-      delete updated[action.path];
+      delete updated[closing.path];
       return updated;
     });
+    }
     if (next.active !== tabState.active) {
-      if (next.active) {
-        void focusResource(next.active);
+      const active = next.tabs.find((tab) => tabId(tab) === next.active);
+      if (active) {
+        void focusResource(active.path);
       } else {
         readVersion.current += 1;
         setDocument(null);
@@ -960,8 +1001,8 @@ export default function App() {
     return () => window.removeEventListener('keydown', shortcut);
   }, [selected?.path, document?.revision, drafts, saving, refreshing]);
 
-  function openResource(item: ResourceEntry, preferredRsiState?: string | null) {
-    if (saving || transitioning || opening || refreshing) return;
+  function openResource(item: EditorTab, preferredRsiState?: string | null): boolean {
+    if (saving || transitioning || opening || refreshing) return false;
     if (item.kind === 'rsi') {
       setRsiRequested(preferredRsiState === undefined ? null : { path: item.path, state: preferredRsiState });
     }
@@ -974,12 +1015,13 @@ export default function App() {
         message: 'Достигнут лимит открытых вкладок.',
         hint: 'Закройте ненужную вкладку перед открытием следующего файла.',
       });
-      return;
+      return false;
     }
     setTabState(outcome.state);
-    if (tabState.active !== item.path || (!document && !reading)) {
+    if (tabState.active !== tabId(item) || (!document && !reading)) {
       void focusResource(item.path);
     }
+    return true;
   }
 
   async function navigatePrototypeIdentifier(identifier: string, sourcePath: string, kindFilter = '') {
@@ -992,7 +1034,7 @@ export default function App() {
         && (!kindFilter || item.kind === kindFilter));
       // Partial, generated variants and duplicate IDs require explicit choice.
       if (exact.length === 1 && result.total <= 100) {
-        openPrototypeSource(exact[0].file, exact[0].line);
+        openPrototypeSource(exact[0].file, exact[0].line, exact[0]);
       } else {
         setContentSearchSeed(identifier);
         setQuickOpen(false);
@@ -1022,11 +1064,13 @@ export default function App() {
     }
   }
 
-  function openPrototypeSource(file: string, line: number) {
+  function openPrototypeSource(file: string, line: number, entry?: PrototypeDeclaration): boolean {
     setShowYamlOutline(true);
-    setYamlCursor({ path: file, line });
-    setJumpTarget({ path: file, line, token: ++jumpCounter.current });
-    openResource({ path: file, kind: 'yaml' });
+    if (!entry) {
+      setYamlCursor({ path: file, line });
+      setJumpTarget({ path: file, line, token: ++jumpCounter.current });
+    }
+    return openResource({ path: file, kind: 'yaml', ...(entry ? { prototype: { file, kind: entry.kind, id: entry.id, document_index: entry.document_index, item_index: entry.item_index, mode: entry.mode } } : {}) });
   }
 
   /** Electron Ctrl+Click quick-fix on direct entity localization fields.
@@ -1070,7 +1114,7 @@ export default function App() {
 
   function editPrototypeFields(entry: PrototypeDeclaration, panel: 'fields' | 'components' | 'localization' | 'parents') {
     if (saving || opening || transitioning || refreshing) return;
-    openPrototypeSource(entry.file, entry.line);
+    if (!openPrototypeSource(entry.file, entry.line, entry)) return;
     setPrototypePanel(panel);
     setFieldTarget({
       file: entry.file, kind: entry.kind, id: entry.id,
@@ -1192,7 +1236,8 @@ export default function App() {
     setFieldTarget(null);
     closeComparison();
     setTabState((state) => ({ ...state, active: path }));
-    void focusResource(path);
+    const tab = tabState.tabs.find((item) => tabId(item) === path);
+    if (tab) void focusResource(tab.path);
   }
 
   function removeTab(path: string) {
@@ -1226,7 +1271,7 @@ export default function App() {
         if (next) { event.preventDefault(); selectTab(next); }
       } else if (key === 'w' && !event.shiftKey && selected) {
         event.preventDefault();
-        removeTab(selected.path);
+        removeTab(tabId(selected));
       }
     }
     window.addEventListener('keydown', shortcut, true);
@@ -1234,7 +1279,11 @@ export default function App() {
   }, [overview, settingsOpen, quickOpen, contentSearchOpen, opening, refreshing, transitioning, saving, tabState]);
 
   function reloadCurrent() {
-    if (tabState.active) requestAction({ type: 'reload', path: tabState.active });
+    if (selected && isDirty(selected.path) && !isLastFileView(tabState, tabId(selected))) {
+      setNotice('Закройте остальные вкладки этого файла перед удалением общего черновика.');
+      return;
+    }
+    if (selected) requestAction({ type: 'reload', path: selected.path });
   }
 
   function onExternalPrototypeCreated(result: import('./lib/api').ExternalCreatedPrototype) {
@@ -1270,7 +1319,7 @@ export default function App() {
           delete updated[result.file];
           return updated;
         });
-        if (tabState.active === result.file) {
+        if (selected?.path === result.file) {
           closeComparison();
           void focusResource(result.file);
         } else {

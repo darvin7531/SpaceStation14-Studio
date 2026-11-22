@@ -19,7 +19,7 @@ interface Props {
   kind: string;
   onQueryChange: (query: string) => void;
   onKindChange: (kind: string) => void;
-  onOpen: (path: string, line: number) => void;
+  onOpen: (path: string, line: number, entry?: PrototypeDeclaration) => void;
   onEdit: (entry: PrototypeDeclaration, panel: 'fields' | 'components' | 'localization' | 'parents') => void;
 }
 
@@ -108,7 +108,7 @@ export default function PrototypeExplorer({ workspaceKey, query, kind, onQueryCh
         </p>}
         {result.items.map((entry: PrototypeDeclaration) => <div
           className="prototype-entry" key={entry.file + ':' + entry.document_index + ':' + entry.item_index + ':' + (entry.variant_index ?? 'base')}>
-          <button type="button" className="prototype-open" onClick={() => onOpen(entry.file, entry.line)}
+          <button type="button" className="prototype-open" onClick={() => onOpen(entry.file, entry.line, entry)}
             title={t('prototypeExplorer.open', { path: entry.file, line: entry.line })}>
             <span className="prototype-id"><GitBranch size={14}/>{entry.id}</span>
             <span className="prototype-kind-text">{entry.kind}
