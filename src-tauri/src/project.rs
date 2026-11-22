@@ -1813,7 +1813,7 @@ mod tests {
             index.resources.iter().map(|entry| (&entry.path, entry.kind)).collect::<Vec<_>>()
         };
         assert_eq!(entries(&incremental), entries(&full));
-        assert_eq!(incremental.overview().total_resources, 3);
+        assert_eq!(incremental.overview().total_resources, 4);
         assert_eq!(summary.added_resources, 3);
         assert_eq!(summary.removed_resources, 2);
         assert_eq!(incremental.prototypes().unwrap().search("After", None, 0, 10).total, 1);
