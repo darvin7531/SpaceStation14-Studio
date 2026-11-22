@@ -93,9 +93,9 @@ try {
   await until('conflict review', () => find('.conflict-review'));
   try {
     await until('conflict diff', () => script(`
-      const text = (selector) => document.querySelector(selector)?.textContent;
-      return text('.conflict-review .original .view-lines')?.includes('SmokeExternal')
-        && text('.conflict-review .modified .view-lines')?.includes('SmokeDraft');
+      const contains = (selector, value) => [...document.querySelectorAll(selector)].some((el) => el.textContent?.includes(value));
+      return contains('.conflict-review .original .view-lines', 'SmokeExternal')
+        && contains('.conflict-review .modified .view-lines', 'SmokeDraft');
     `));
   } catch (error) {
     console.error('Conflict review DOM:', await script("return document.querySelector('.conflict-review')?.outerHTML;"));
