@@ -1093,7 +1093,12 @@ pub fn preview_inheritance(
         .with_details(reason)
     })?;
     let (fields, components) = preview_fields(&result.node, &result.sources);
-    let mut structural_complete = result.complete;
+    let index_complete = catalog.relations(kind, id)
+        .is_some_and(|relations| relations.index_complete);
+    let mut structural_complete = result.complete && index_complete;
+    if !index_complete {
+        solver.warn("Каталог прототипов неполон: часть YAML, ID или partial-конфигураций не удалось индексировать.".into());
+    }
     if fields.len() >= MAX_PREVIEW_FIELDS || components.len() >= MAX_PREVIEW_COMPONENTS {
         structural_complete = false;
         solver.warn("Вывод ограничен 96 полями и 128 компонентами.".into());
