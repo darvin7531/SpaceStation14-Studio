@@ -13,6 +13,7 @@ use yaml_rust2::parser::{Event, MarkedEventReceiver, Parser, Tag};
 use yaml_rust2::scanner::Marker;
 use yaml_rust2::{Yaml, YamlLoader};
 
+use crate::error::StudioError;
 use crate::project::ResourceEntry;
 use crate::prototype_graph::{PrototypeGraph, PrototypeRelations};
 
@@ -61,6 +62,119 @@ pub struct PrototypePage {
 pub struct DiagnosticPage {
     pub total: usize,
     pub items: Vec<PrototypeDiagnostic>,
+}
+
+const MAX_LIVE_OUTLINE: usize = 256;
+const MAX_OUTLINE_ISSUES: usize = 64;
+
+/// A view of a single *draft*, never a resolved RobustToolbox prototype.
+/// Positions are the collector's YAML document/item markers, not text guesses.
+#[derive(Debug, Serialize)]
+pub struct SourceOutline {
+    pub declarations: Vec<SourceOutlineEntry>,
+    pub diagnostics: Vec<PrototypeDiagnostic>,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SourceOutlineEntry {
+    pub declaration: PrototypeDeclaration,
+    pub sprite: Option<SourceSpriteLink>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SourceSpriteLink {
+    pub path: String,
+    pub state: Option<String>,
+    pub indexed: bool,
+}
+
+/// Reuse the exact catalogue parser on unsaved text. Partial/tagged and
+/// CreateVariants declarations remain visible, but are never implicitly
+/// promoted into editable ordinary prototype declarations.
+pub fn inspect_source_outline(
+    root: &Path,
+    file: &str,
+    source: &str,
+    is_rsi_indexed: impl Fn(&str) -> bool,
+) -> Result<SourceOutline, StudioError> {
+    if source.len() as u64 > MAX_YAML_BYTES {
+        return Err(StudioError::new(
+            "OUTLINE_TOO_LARGE",
+            "YAML превышает лимит предпросмотра 4 МиБ.",
+            "Уменьшите файл или откройте другой YAML-прототип.",
+        ));
+    }
+    let mut issues = Vec::new();
+    let scopes = configured_partials(root, &mut issues);
+    let order = partial_order_for(file, &scopes);
+    let mut collector = DeclarationCollector::new(file, order);
+    if let Err(error) = Parser::new_from_str(source).load(&mut collector, true) {
+        // A failed parse must not present half-read declarations as valid.
+        return Ok(SourceOutline {
+            declarations: Vec::new(),
+            diagnostics: vec![PrototypeDiagnostic {
+                code: "OUTLINE_YAML_PARSE_ERROR",
+                file: file.into(),
+                line: 0,
+                message: format!("Черновик YAML пока невозможно разобрать: {error}"),
+            }],
+            truncated: false,
+        });
+    }
+    issues.extend(collector.diagnostics);
+    let truncated = collector.declarations.len() > MAX_LIVE_OUTLINE || issues.len() > MAX_OUTLINE_ISSUES;
+    let parsed = YamlLoader::load_from_str(source).ok();
+    let declarations = collector
+        .declarations
+        .into_iter()
+        .take(MAX_LIVE_OUTLINE)
+        .map(|declaration| {
+            let sprite = if declaration.kind == "entity" && declaration.variant_index.is_none() {
+                parsed
+                    .as_ref()
+                    .and_then(|docs| docs.get(declaration.document_index.saturating_sub(1)))
+                    .and_then(Yaml::as_vec)
+                    .and_then(|items| items.get(declaration.item_index.saturating_sub(1)))
+                    .and_then(extract_sprite_source)
+                    .map(|(path, state)| SourceSpriteLink {
+                        indexed: is_rsi_indexed(&path),
+                        path,
+                        state,
+                    })
+            } else {
+                None
+            };
+            SourceOutlineEntry { declaration, sprite }
+        })
+        .collect();
+    issues.truncate(MAX_OUTLINE_ISSUES);
+    Ok(SourceOutline {
+        declarations,
+        diagnostics: issues,
+        truncated,
+    })
+}
+
+/// Only explicit, non-inherited Sprite.sprite references are navigable.
+/// Never construct an arbitrary disk path from untrusted YAML input.
+fn extract_sprite_source(item: &Yaml) -> Option<(String, Option<String>)> {
+    let components = item["components"].as_vec()?;
+    let sprite = components.iter().find(|component| component["type"].as_str() == Some("Sprite"))?;
+    let raw = sprite["sprite"].as_str()?;
+    let relative = raw.strip_prefix("Resources/Textures/").unwrap_or(raw);
+    let path = Path::new(relative);
+    if relative.is_empty()
+        || relative.len() > 512
+        || !path
+            .components()
+            .all(|part| matches!(part, Component::Normal(_)))
+        || !path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("rsi"))
+    {
+        return None;
+    }
+    let state = sprite["state"].as_str().map(str::to_owned);
+    Some((format!("Resources/Textures/{relative}"), state))
 }
 
 #[derive(Debug)]
@@ -1093,6 +1207,48 @@ mod tests {
             .load(&mut collector, true)
             .unwrap();
         (collector.declarations, collector.diagnostics)
+    }
+
+    #[test]
+    fn live_outline_preserves_document_coordinates_and_reads_direct_sprite() {
+        let source = "- type: entity\n  id: Item\n  components:\n  - type: Sprite\n    sprite: Objects/Tools/wrench.rsi\n    state: icon\n- type: entity\n  id: Other\n  parent: Item\n";
+        let result = inspect_source_outline(Path::new("/tmp"), "Resources/Prototypes/test.yml", source, |path| {
+            path == "Resources/Textures/Objects/Tools/wrench.rsi"
+        }).unwrap();
+        assert_eq!(result.declarations.len(), 2);
+        let first = &result.declarations[0];
+        assert_eq!(first.declaration.id, "Item");
+        assert_eq!(first.declaration.item_index, 1);
+        assert_eq!(first.declaration.document_index, 1);
+        assert_eq!(first.sprite.as_ref().unwrap().state.as_deref(), Some("icon"));
+        assert!(first.sprite.as_ref().unwrap().indexed);
+        assert_eq!(result.declarations[1].declaration.parents, ["Item"]);
+    }
+
+    #[test]
+    fn live_outline_retains_partial_mode_and_fails_closed_on_yaml_errors() {
+        let result = inspect_source_outline(
+            Path::new("/tmp"),
+            "Resources/Prototypes/test.yml",
+            "- type: !PartialOnly entity\n  id: Variant\n",
+            |_| false,
+        ).unwrap();
+        assert_eq!(result.declarations[0].declaration.mode, "partial_only");
+        let invalid = inspect_source_outline(Path::new("/tmp"), "Resources/Prototypes/test.yml",
+            "- type: entity\n  id: [broken\n", |_| false).unwrap();
+        assert!(invalid.declarations.is_empty());
+        assert_eq!(invalid.diagnostics[0].code, "OUTLINE_YAML_PARSE_ERROR");
+    }
+
+    #[test]
+    fn live_outline_rejects_sprite_path_traversal_and_oversize_text() {
+        for path in ["../Other.rsi", "/abs.rsi", "Resources/Textures/../Out.rsi", "a.png"] {
+            let item = format!("- type: entity\n  id: Item\n  components:\n  - type: Sprite\n    sprite: {path}\n");
+            let result = inspect_source_outline(Path::new("/tmp"), "Resources/Prototypes/test.yml", &item, |_| true).unwrap();
+            assert!(result.declarations[0].sprite.is_none(), "unexpected link for {path}");
+        }
+        assert_eq!(inspect_source_outline(Path::new("/tmp"), "Resources/Prototypes/test.yml",
+            &" ".repeat(MAX_YAML_BYTES as usize + 1), |_| false).unwrap_err().code, "OUTLINE_TOO_LARGE");
     }
 
     #[test]
