@@ -585,7 +585,10 @@ mod tests {
             documents[0][0]["description"].as_str(),
             Some(draft.description.as_str())
         );
-        assert_eq!(documents[0][0]["suffix"].as_str(), Some(draft.suffix.as_str()));
+        assert_eq!(
+            documents[0][0]["suffix"].as_str(),
+            Some(draft.suffix.as_str())
+        );
     }
 
     #[test]
