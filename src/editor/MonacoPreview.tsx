@@ -121,25 +121,24 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
                 const target = yamlCompletionContext(lines, lines.length, position.column);
                 if (!target) return { suggestions: [] };
                 try {
-                  const response = target.kind === 'prototype-parent'
-                    ? await studio.searchPrototypes(target.query, '', 0, 80)
-                    : await studio.searchCSharpDefinitions(target.query, 'component', 0, 80);
+                  const entries = target.kind === 'prototype-parent'
+                    ? (await studio.searchPrototypes(target.query, '', 0, 80)).items
+                        .map((item) => ({ label: item.id, detail: item.kind + ' · ' + item.file }))
+                    : (await studio.searchCSharpDefinitions(target.query, 'component', 0, 80)).items
+                        .map((item) => ({ label: item.name, detail: item.class_name + ' · ' + item.file }));
                   if (token.isCancellationRequested || cancelled) return { suggestions: [] };
                   const seen = new Set<string>();
-                  const candidates = response.items.flatMap((item) => {
-                    const label = item.kind === 'component' ? item.name : item.id;
-                    if (!label.toLowerCase().startsWith(target.query.toLowerCase())) return [];
-                    if (seen.has(label)) return [];
-                    seen.add(label);
+                  const candidates = entries.flatMap((item) => {
+                    if (!item.label.toLowerCase().startsWith(target.query.toLowerCase())) return [];
+                    if (seen.has(item.label)) return [];
+                    seen.add(item.label);
                     return [{
-                      label,
-                      kind: item.kind === 'component'
+                      label: item.label,
+                      kind: target.kind === 'component-type'
                         ? monaco.languages.CompletionItemKind.Class
                         : monaco.languages.CompletionItemKind.Reference,
-                      insertText: label,
-                      detail: item.kind === 'component'
-                        ? item.class_name + ' · ' + item.file
-                        : item.kind + ' · ' + item.file,
+                      insertText: item.label,
+                      detail: item.detail,
                       range: {
                         startLineNumber: position.lineNumber,
                         endLineNumber: position.lineNumber,
