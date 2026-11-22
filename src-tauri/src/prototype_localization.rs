@@ -29,7 +29,10 @@ fn scalar(row: &Yaml, key: &str) -> Result<String, StudioError> {
     }
 }
 
-pub fn inspect(locator: &FieldLocator, source: &str) -> Result<EntityLocalizationSource, StudioError> {
+pub fn inspect(
+    locator: &FieldLocator,
+    source: &str,
+) -> Result<EntityLocalizationSource, StudioError> {
     if locator.kind != "entity" {
         return Err(StudioError::new(
             "ENTITY_LOCALE_ONLY",
@@ -46,7 +49,10 @@ pub fn inspect(locator: &FieldLocator, source: &str) -> Result<EntityLocalizatio
         explicit_id
     };
     if localization_id.len() > 128
-        || !localization_id.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
+        || !localization_id
+            .as_bytes()
+            .first()
+            .is_some_and(u8::is_ascii_alphabetic)
         || !localization_id
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
@@ -93,7 +99,10 @@ mod tests {
     #[test]
     fn explicit_localization_id_is_preserved() {
         let yaml = "- type: entity\n  id: Other\n- type: entity\n  id: TestEntity\n  localizationId: ent-other-name\n";
-        assert_eq!(inspect(&locator(), yaml).unwrap().localization_id, "ent-other-name");
+        assert_eq!(
+            inspect(&locator(), yaml).unwrap().localization_id,
+            "ent-other-name"
+        );
     }
 
     #[test]
