@@ -213,11 +213,7 @@ fn xml_summary(node: Node<'_>, source: &[u8]) -> Option<String> {
     }
     lines.reverse();
     let docs = lines.join(" ");
-    let text = docs
-        .split_once("<summary>")?
-        .1
-        .split_once("</summary>")?
-        .0;
+    let text = docs.split_once("<summary>")?.1.split_once("</summary>")?.0;
     // ponytail: inline XML tags are stripped, not semantically resolved; use
     // an XML documentation renderer if cref/include/inheritdoc support matters.
     let mut plain = String::new();
@@ -899,7 +895,8 @@ mod tests {
 
     #[test]
     fn summaries_are_attached_to_their_own_declarations() {
-        let defs = parse(r#"
+        let defs = parse(
+            r#"
             /// <summary>Component &amp; more.</summary>
             [RegisterComponent]
             public class DocsComponent {
@@ -911,7 +908,8 @@ mod tests {
                 [DataField] public bool Other;
             }
             [RegisterComponent] public class UndocumentedComponent {}
-        "#);
+        "#,
+        );
         assert_eq!(defs[0].summary.as_deref(), Some("Component & more."));
         assert_eq!(
             defs[0].fields[0].summary.as_deref(),

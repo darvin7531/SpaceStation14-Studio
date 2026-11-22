@@ -1355,7 +1355,8 @@ impl MarkedEventReceiver for DeclarationCollector {
                             draft.name = None;
                             draft.pending_key = None;
                             draft.expected_key = true;
-                        } else if !draft.expected_key && draft.pending_key.as_deref() == Some("id") {
+                        } else if !draft.expected_key && draft.pending_key.as_deref() == Some("id")
+                        {
                             draft.id_alias = true;
                         } else if !draft.expected_key
                             && draft.pending_key.as_deref() == Some("parent")
@@ -1824,10 +1825,8 @@ mod tests {
 
     #[test]
     fn catalog_searches_declared_names_without_nested_or_inherited_matches() {
-        let root = std::env::temp_dir().join(format!(
-            "ss14-prototype-name-search-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("ss14-prototype-name-search-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let directory = root.join("Resources/Prototypes");
         fs::create_dir_all(&directory).unwrap();
