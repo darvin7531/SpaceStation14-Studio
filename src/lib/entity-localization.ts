@@ -81,3 +81,30 @@ export function buildEntityLocalePatch(
   }
   return { content: next, added, alreadyPresent, changed: next !== original };
 }
+
+/** Electron quick-fix parity: select missing direct entity fields per required game locale.
+ * Incomplete Rust indexes must never be treated as evidence of absent translations.
+ * This is a plan, not permission to write any FTL file.
+ */
+export interface MissingLocalePlanItem {
+  locale: string;
+  path: string;
+  fileExists: boolean;
+  fields: EntityLocaleField[];
+}
+
+export function planMissingEntityTranslations(
+  analysis: import('./api').EntityLocalizationAnalysis,
+  selected: readonly EntityLocaleField[],
+): MissingLocalePlanItem[] {
+  if (!analysis.complete) return [];
+  const unique = [...new Set(selected)];
+  return analysis.targets.flatMap((target) => {
+    const fields = unique.filter((field) =>
+      analysis.diagnostics.some((issue) =>
+        issue.field === field && issue.missing_locales.includes(target.locale)));
+    return fields.length
+      ? [{ locale: target.locale, path: target.path, fileExists: target.file_exists, fields }]
+      : [];
+  });
+}
