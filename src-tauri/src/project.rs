@@ -32,6 +32,7 @@ use crate::rsi_preview::{self, RsiSheetImage, RsiSheetList};
 use crate::rsi_rename::{self, RenamedRsiState, RsiRenameRequest};
 use crate::rsi_replace;
 use crate::rsi_restore::{self, RestoredRsiState, RsiArchiveList, RsiRestoreRequest};
+use crate::rsi_size::{self, RsiSizeUpdate};
 use crate::rsi_timing::{self, RsiTimingUpdate};
 use crate::ui_sources::{UiSourceCatalog, UiSourcePage};
 
@@ -1428,6 +1429,15 @@ impl ProjectIndex {
         self.verify_indexed_rsi(&request.path)?;
         let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;
         rsi_credits::update(&self.root, request)
+    }
+
+    pub fn update_rsi_size(
+        &self,
+        request: &RsiSizeUpdate,
+    ) -> Result<ImportedRsiState, StudioError> {
+        self.verify_indexed_rsi(&request.path)?;
+        let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;
+        rsi_size::update(&self.root, request)
     }
 
     pub fn update_rsi_timing(

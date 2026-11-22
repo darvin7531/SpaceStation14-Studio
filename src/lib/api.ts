@@ -532,6 +532,13 @@ export interface RsiCreditsUpdate {
   copyright: string;
 }
 
+export interface RsiSizeUpdate {
+  path: string;
+  expected_revision: string;
+  size_x: number;
+  size_y: number;
+}
+
 export interface RsiTimingUpdate {
   path: string;
   expected_revision: string;
@@ -836,6 +843,9 @@ export const studio = {
   },
   updateRsiCredits(request: RsiCreditsUpdate): Promise<ImportedRsiState> {
     return invoke('update_rsi_credits', { request });
+  },
+  updateRsiSize(request: RsiSizeUpdate): Promise<ImportedRsiState> {
+    return invoke('update_rsi_size', { request });
   },
   updateRsiTiming(request: RsiTimingUpdate): Promise<ImportedRsiState> {
     return invoke('update_rsi_timing', { request });

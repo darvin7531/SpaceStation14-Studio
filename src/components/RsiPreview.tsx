@@ -10,6 +10,7 @@ import RsiTimingPanel from './RsiTimingPanel';
 import RsiDeletePanel from './RsiDeletePanel';
 import RsiRestorePanel from './RsiRestorePanel';
 import RsiCreditsPanel from './RsiCreditsPanel';
+import RsiSizePanel from './RsiSizePanel';
 import RsiRenamePanel from './RsiRenamePanel';
 
 function Failure({ error }: { error: StudioError }) {
@@ -21,7 +22,7 @@ function Failure({ error }: { error: StudioError }) {
 
 /** Load one PNG at a time; do not expose project paths to the webview filesystem. */
 export default function RsiPreview({
-  path, metadata, revision, initialState, onImported, onBatchOutcome, onTimingUpdated, onCreditsUpdated, onDeleted, onRestored, onRenamed,
+  path, metadata, revision, initialState, onImported, onBatchOutcome, onTimingUpdated, onCreditsUpdated, onSizeUpdated, onDeleted, onRestored, onRenamed,
 }: {
   path: string;
   metadata: string;
@@ -31,6 +32,7 @@ export default function RsiPreview({
   onBatchOutcome: (message: string) => void;
   onTimingUpdated: (updated: ImportedRsiState) => void;
   onCreditsUpdated: (updated: ImportedRsiState) => void;
+  onSizeUpdated: (updated: ImportedRsiState) => void;
   onDeleted: (result: DeletedRsiState) => void;
   onRestored: (result: RestoredRsiState) => void;
   onRenamed: (result: RenamedRsiState) => void;
@@ -134,6 +136,8 @@ export default function RsiPreview({
     {frameLayout?.warnings.map((warning, index) =>
       <p className="rsi-warning" key={'layout-' + index}>{warning}</p>)}
     {imageError && <Failure error={imageError}/>}
+    <RsiSizePanel key={'size:' + path + ':' + revision}
+      path={path} revision={revision} metadata={metadata} onSaved={onSizeUpdated}/>
     <RsiCreditsPanel key={'credits:' + path + ':' + revision}
       path={path} revision={revision} metadata={metadata} onSaved={onCreditsUpdated}/>
     <RsiImportPanel path={path} revision={revision} onImported={onImported}/>

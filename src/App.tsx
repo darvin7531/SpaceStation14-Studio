@@ -1177,7 +1177,7 @@ export default function App() {
       : 'Прототип ' + result.kind + ':' + result.id + ' ' + verb + ' ' + result.file);
   }
 
-  function onRsiImported(path: string, result: ImportedRsiState, action: 'import' | 'timing' | 'credits' = 'import') {
+  function onRsiImported(path: string, result: ImportedRsiState, action: 'import' | 'timing' | 'credits' | 'size' = 'import') {
     const updated: ResourceDocument = {
       path,
       content: result.content,
@@ -1191,6 +1191,8 @@ export default function App() {
       ? 'Состояние RSI «' + result.name + '» заменено. Предыдущая версия сохранена: ' + result.archive_path
       : action === 'credits'
         ? 'Лицензия и авторство RSI сохранены. PNG не изменены.'
+        : action === 'size'
+          ? 'Размер кадра RSI сохранён. PNG не изменены.'
         : action === 'timing'
           ? 'Сохранены задержки RSI: ' + result.name + '. PNG не изменены.'
           : 'Добавлено состояние RSI: ' + result.name + '. PNG и meta.json записаны.';
@@ -1624,6 +1626,7 @@ export default function App() {
                 onBatchOutcome={(message) => setNotice(message)}
                 onTimingUpdated={(result) => onRsiImported(selected.path, result, 'timing')}
                 onCreditsUpdated={(result) => onRsiImported(selected.path, result, 'credits')}
+                onSizeUpdated={(result) => onRsiImported(selected.path, result, 'size')}
                 onDeleted={(result) => onRsiDeleted(selected.path, result)}
                 onRestored={(result) => onRsiRestored(selected.path, result)}
                 onRenamed={(result) => onRsiRenamed(selected.path, result)}/>
