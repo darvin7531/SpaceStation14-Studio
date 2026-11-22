@@ -29,6 +29,7 @@ import QuickOpenPanel from './components/QuickOpenPanel';
 import ContentSearchPanel from './components/ContentSearchPanel';
 import type { ContentSearchHit, OpenRevision, ResourceDriftReport } from './lib/api';
 import ResourceDriftBanner from './components/ResourceDriftBanner';
+import ResourceFolderBrowser from './components/ResourceFolderBrowser';
 import { retainCurrentDrifts } from './lib/resource-drift';
 import { readEditorSettings, sanitizeEditorSettings, SETTINGS_KEY } from './lib/editor-settings';
 
@@ -76,6 +77,7 @@ export default function App() {
   const [overview, setOverview] = useState<ProjectOverview | null>(null);
   const [opening, setOpening] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [fileView, setFileView] = useState<'search' | 'folders'>('search');
   const [quickOpen, setQuickOpen] = useState(false);
   const [contentSearchOpen, setContentSearchOpen] = useState(false);
   const [editorSettings, setEditorSettings] = useState(() => readEditorSettings(window.localStorage));
@@ -1110,6 +1112,13 @@ export default function App() {
             onClick={() => setExplorerMode('prototypes')}>Прототипы</button>
         </div>
         {explorerMode === 'files' ? <>
+        <div className="explorer-switch" role="group" aria-label="Способ просмотра файлов">
+          <button type="button" className={fileView === 'search' ? 'selected' : ''}
+            onClick={() => setFileView('search')}>Поиск</button>
+          <button type="button" className={fileView === 'folders' ? 'selected' : ''}
+            onClick={() => setFileView('folders')}>Папки</button>
+        </div>
+        {fileView === 'search' ? <>
         <div className="section-heading"><strong>Ресурсы</strong><small>{results.total} найдено</small></div>
         <div className="search"><Search size={16}/><input aria-label="Поиск ресурсов" value={query}
           placeholder="Поиск по путям…" onChange={(event) => { setQuery(event.target.value); setPage(0); }}/></div>
@@ -1132,6 +1141,9 @@ export default function App() {
           <span>{results.total ? (page * PAGE_SIZE + 1) + '–' + Math.min((page + 1) * PAGE_SIZE, results.total) + ' из ' + results.total : '0 ресурсов'}</span>
           <button type="button" aria-label="Следующая страница" disabled={(page + 1) * PAGE_SIZE >= results.total} onClick={() => setPage((value) => value + 1)}><ChevronRight size={17}/></button>
         </div>
+        </> : <ResourceFolderBrowser
+          key={overview.project_root + ':' + workspaceRevision}
+          selectedPath={selected?.path ?? null} onOpen={(item) => void openResource(item)} />}
         </> : <PrototypeExplorer workspaceKey={overview.project_root + ':' + workspaceRevision}
           onOpen={openPrototypeSource} onEdit={editPrototypeFields} />}
       </aside>

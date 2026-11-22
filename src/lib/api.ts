@@ -76,6 +76,18 @@ export interface ResourcePage {
   total: number;
   items: ResourceEntry[];
 }
+export interface ResourceBrowserEntry {
+  path: string;
+  name: string;
+  kind: ResourceEntry['kind'] | 'folder';
+  descendant_resources: number;
+}
+export interface ResourceBrowserPage {
+  directory: string;
+  parent: string | null;
+  total: number;
+  items: ResourceBrowserEntry[];
+}
 export interface ContentSearchHit {
   path: string;
   kind: Exclude<ResourceKind, 'all'>;
@@ -498,6 +510,9 @@ export const studio = {
   },
   searchResources(query: string, kind: ResourceKind, offset: number, limit = 100): Promise<ResourcePage> {
     return invoke('search_resources', { query, kind, offset, limit });
+  },
+  browseResourceFolder(directory: string, offset = 0, limit = 100): Promise<ResourceBrowserPage> {
+    return invoke('browse_resource_folder', { directory, offset, limit });
   },
   searchResourceContent(query: string, kind: ResourceKind): Promise<ContentSearchResults> {
     return invoke('search_resource_content', { query, kind });

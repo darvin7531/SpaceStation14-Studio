@@ -12,6 +12,7 @@ mod prototype_fields;
 mod prototype_graph;
 mod prototypes;
 mod resource_drift;
+mod resource_browser;
 mod resource_edit;
 mod rsi_create;
 mod rsi_credits;
@@ -41,6 +42,7 @@ use prototype_fields::{FieldInspection, FieldLocator, FieldPatch, PrototypeField
 use prototype_graph::PrototypeRelations;
 use prototypes::{DiagnosticPage, PrototypePage};
 use resource_drift::{OpenRevision, ResourceDriftReport};
+use resource_browser::ResourceBrowserPage;
 use resource_edit::{SaveResult, YamlSyntaxReport};
 use rsi_create::{RsiCreationPreview, RsiDraft};
 use rsi_credits::RsiCreditsUpdate;
@@ -122,6 +124,23 @@ async fn refresh_project(state: State<'_, WorkspaceState>) -> Result<ProjectRefr
     }
     *active = Some(Arc::new(rebuilt));
     Ok(summary)
+}
+
+/// Navigate indexed resource folders without scanning the filesystem or building
+/// a huge tree in the webview. Directories are listed before files.
+#[tauri::command]
+async fn browse_resource_folder(
+    directory: String,
+    offset: Option<usize>,
+    limit: Option<usize>,
+    state: State<'_, WorkspaceState>,
+) -> Result<ResourceBrowserPage, StudioError> {
+    let index = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        index.browse_resource_folder(&directory, offset.unwrap_or(0), limit.unwrap_or(100))
+    })
+    .await
+    .map_err(interrupted)?
 }
 
 #[tauri::command]
@@ -878,6 +897,7 @@ pub fn run() -> Result<(), tauri::Error> {
             open_project,
             refresh_project,
             search_resources,
+            browse_resource_folder,
             probe_open_revisions,
             search_resource_content,
             search_csharp_definitions,

@@ -125,3 +125,12 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .resource-drift-banner p { margin: 8px 0 0 26px; }
 .resource-drift-warning { display: flex; align-items: center; gap: 8px; padding: 8px 22px; background: #332b20; color: #f1d0aa; font-size: 12px; }
 .resource-drift-warning button { margin-left: auto; border: 0; background: transparent; color: inherit; text-decoration: underline; }
+
+/* Paginated project-folder browsing, indexed on the Rust side. */
+.resource-folder-browser { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.resource-folder-browser > .resource-list { flex: 1; min-height: 0; }
+.resource-folder-breadcrumbs { display: flex; flex-wrap: wrap; gap: 2px; padding: 7px 10px; border-bottom: 1px solid #293345; font-size: 11px; }
+.resource-folder-breadcrumbs button { border: 0; background: transparent; color: #9abbdf; padding: 2px 3px; max-width: 140px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+.resource-folder-breadcrumbs button:disabled { color: #d1dfef; font-weight: 700; }
+.resource-folder-browser .resource-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resource-folder-browser .resource-row > small { margin-left: auto; }
