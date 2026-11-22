@@ -899,9 +899,11 @@ async fn inspect_prototype_parents(
     state: State<'_, WorkspaceState>,
 ) -> Result<ParentInspection, StudioError> {
     let project = current_project(&state)?;
-    tauri::async_runtime::spawn_blocking(move || project.inspect_prototype_parents(&locator, &source))
-        .await
-        .map_err(interrupted)?
+    tauri::async_runtime::spawn_blocking(move || {
+        project.inspect_prototype_parents(&locator, &source)
+    })
+    .await
+    .map_err(interrupted)?
 }
 
 #[tauri::command]
