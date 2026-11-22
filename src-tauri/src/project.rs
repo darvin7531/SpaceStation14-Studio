@@ -16,7 +16,7 @@ use crate::prototype_components::{self, ComponentInspection, ComponentOperation}
 use crate::prototype_create::{self, CreatedPrototype, PrototypeDraft, PrototypePreview};
 use crate::prototype_fields::{self, FieldInspection, FieldLocator, FieldPatch, PrototypeFields};
 use crate::prototype_localization::{self, EntityLocalizationSource};
-use crate::prototype_merge::{self, PrototypeInheritancePreview, PrototypePartialPreview};
+use crate::prototype_merge::{self, LinkedPrototypeReport, PrototypeInheritancePreview, PrototypePartialPreview};
 use crate::prototype_parents::{self, ParentInspection};
 use crate::prototype_sources::{self, PrototypeSourceReport};
 use crate::prototypes::{self, PrototypeCatalog, SourceOutline};
@@ -638,6 +638,26 @@ impl ProjectIndex {
                 .get(rsi)
                 .and_then(|index| self.resources.get(*index))
                 .is_some_and(|entry| entry.kind == "rsi")
+        })
+    }
+
+    /// Restore Electron Inspector's navigable links from referenced prototype
+    /// IDs inside resolved source fields/components. Read-only and indexed.
+    pub fn prototype_linked_references(
+        &self,
+        kind: &str,
+        id: &str,
+    ) -> Result<LinkedPrototypeReport, StudioError> {
+        let catalog = self.prototypes()?;
+        prototype_merge::linked_prototypes(&catalog, kind, id, |path| {
+            if !self.is_yaml_indexed(path) {
+                return Err(StudioError::new(
+                    "PROTOTYPE_LINKS_NOT_INDEXED",
+                    "YAML-источник отсутствует в индексе проекта.",
+                    "Обновите каталог перед поиском связанных прототипов.",
+                ));
+            }
+            self.read_resource(path).map(|document| document.content)
         })
     }
 
@@ -1694,6 +1714,36 @@ mod tests {
             .iter()
             .any(|warning| warning.contains("MissingParent")));
         assert_eq!(missing.fields[0].preview, "M");
+    }
+
+    #[test]
+    fn linked_prototypes_matches_electron_inspector_fields_and_deduplicates_ids() {
+        let fx = Fixture::new();
+        fx.write("Resources/Prototypes/targets.yml",
+            "- type: entity\n  id: Other\n  name: Other\n- type: entity\n  id: Third\n  name: Third\n");
+        fx.write("Resources/Prototypes/source.yml",
+            "- type: entity\n  id: Sample\n  components:\n  - type: Spawn\n    prototype: Other\n    possible: [Other, Third]\n    sprite: Objects/Other.rsi\n  description: Some text with spaces\n");
+        let project = ProjectIndex::open(fx.root_str()).unwrap();
+        let result = project.prototype_linked_references("entity", "Sample").unwrap();
+        assert!(result.source_complete, "{:?}", result.warnings);
+        assert!(!result.limited);
+        assert_eq!(result.items.len(), 2);
+        assert_eq!(result.items[0].id, "Other");
+        assert_eq!(result.items[0].field, "components[0].prototype");
+        assert_eq!(result.items[1].id, "Third");
+        assert_eq!(result.items[1].field, "components[0].possible[1]");
+    }
+
+    #[test]
+    fn linked_prototypes_can_find_references_from_parent_components() {
+        let fx = Fixture::new();
+        fx.write("Resources/Prototypes/prototypes.yml",
+            "- type: entity\n  id: Target\n- type: entity\n  id: Base\n  components:\n  - type: Spawn\n    prototype: Target\n- type: entity\n  id: Child\n  parent: Base\n");
+        let project = ProjectIndex::open(fx.root_str()).unwrap();
+        let result = project.prototype_linked_references("entity", "Child").unwrap();
+        assert!(result.source_complete, "{:?}", result.warnings);
+        assert!(result.items.iter().any(|ref_item|
+            ref_item.id == "Target" && ref_item.field == "components[0].prototype"));
     }
 
     #[test]
