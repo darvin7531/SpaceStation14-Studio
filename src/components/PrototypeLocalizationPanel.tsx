@@ -11,7 +11,7 @@ interface Props {
   busy: boolean;
   requiredLocales: readonly string[];
   onCreateMissing: (draft: NewFluentDraft) => void;
-  onApply: (file: string, original: ResourceDocument, content: string, keepSource?: boolean) => Promise<boolean>;
+  onApply: (file: string, original: ResourceDocument, content: string, keepSource?: boolean, sourceSnapshot?: string) => Promise<boolean>;
   onClose: () => void;
 }
 
@@ -189,7 +189,7 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, requ
     try {
       for (const entry of batchPreview.entries) {
         // Every file keeps its preview SHA-256 revision and the normal unsaved-draft guard.
-        const success = await onApply(entry.baseline.path, entry.baseline, entry.patch.content, true);
+        const success = await onApply(entry.baseline.path, entry.baseline, entry.patch.content, true, source);
         if (!success) throw new Error('Запись не подтверждена: ' + entry.baseline.path);
         saved++;
         setBatchPreview((current) => current ? {
