@@ -49,11 +49,21 @@ export interface CSharpPart {
   parse_uncertain: boolean;
 }
 
+export interface CSharpInheritedCandidate {
+  base_type: string;
+  qualified_name: string;
+  file: string;
+  line: number;
+  fields: CSharpField[];
+  parse_uncertain: boolean;
+}
+
 export interface ComponentSchema {
   type_name: string;
   status: 'unique' | 'ambiguous' | 'partial' | 'uncertain' | 'not_indexed';
   declarations: CSharpDefinition[];
   parts: CSharpPart[];
+  inherited_candidates: CSharpInheritedCandidate[];
 }
 
 export interface ComponentSchemaBatch {

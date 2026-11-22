@@ -79,6 +79,19 @@ pub struct CSharpPart {
     pub parse_uncertain: bool,
 }
 
+/// Direct-base field candidate resolved only by exact lexical namespace + type.
+/// Not a Roslyn result: assemblies, using-aliases and preprocessor symbols
+/// remain unknown. The UI must not use these for automatic YAML edits.
+#[derive(Debug, Clone, Serialize)]
+pub struct CSharpInheritedCandidate {
+    pub base_type: String,
+    pub qualified_name: String,
+    pub file: String,
+    pub line: usize,
+    pub fields: Vec<CSharpField>,
+    pub parse_uncertain: bool,
+}
+
 /// A conservative lookup for a YAML component type. "unique" only means
 /// one complete direct declaration was found, not a Roslyn-resolved schema.
 #[derive(Debug, Serialize)]
@@ -90,6 +103,7 @@ pub struct ComponentSchema {
     /// Related partial C# fragments under an identical namespace + type.
     /// Informational only: no assembly/preprocessor semantics are inferred.
     pub parts: Vec<CSharpPart>,
+    pub inherited_candidates: Vec<CSharpInheritedCandidate>,
 }
 
 #[derive(Debug, Serialize)]
@@ -364,7 +378,7 @@ fn parse_class(
         .unwrap_or_default();
     let line = node.start_position().row + 1;
     let qualified_name = qualified_name(node, source, file_scoped);
-    let fragment = if partial && (!fields.is_empty() || component || prototype.is_some()) {
+    let fragment = if !fields.is_empty() || (partial && (component || prototype.is_some())) {
         Some(CSharpPart {
             qualified_name: qualified_name.clone(),
             file: file.into(),
@@ -473,6 +487,23 @@ fn is_skipped_dir(name: &str) -> bool {
             | ".cache"
             | "vendor"
     )
+}
+
+/// A base can be resolved without imports only if it is qualified or in the
+/// same lexical namespace. Generics, aliases and unusual type syntax are
+/// intentionally omitted: speculative matches must not become YAML hints.
+fn lexical_base(derived: &str, candidate: &str) -> Option<String> {
+    let base = candidate.trim();
+    if base.is_empty() || !base.chars().all(|ch| {
+        ch.is_ascii_alphanumeric() || ch == '_' || ch == '.'
+    }) || base.split('.').any(str::is_empty) {
+        return None;
+    }
+    if base.contains('.') {
+        return Some(base.to_owned());
+    }
+    let (scope, _) = derived.rsplit_once('.')?;
+    Some(format!("{scope}.{base}"))
 }
 
 impl CSharpCatalog {
@@ -622,7 +653,7 @@ impl CSharpCatalog {
                         // a syntax tree for unrelated source code.
                         if !source.contains("RegisterComponent")
                             && !source.contains("Prototype")
-                            && !(source.contains("partial") && source.contains("DataField"))
+                            && !source.contains("DataField")
                         {
                             continue;
                         }
@@ -706,11 +737,33 @@ impl CSharpCatalog {
                 } else {
                     Vec::new()
                 };
+                let inherited_candidates = if status == "unique" {
+                    declarations.iter().flat_map(|definition| {
+                        definition.base_types.split(',').take(8).filter_map(|base_name| {
+                            let base_full = lexical_base(&definition.qualified_name, base_name)?;
+                            let parts = fragments_by_type.get(base_full.as_str())?;
+                            // Duplicate source declarations may come from different
+                            // assemblies. Show every candidate and never auto-merge.
+                            Some(parts.iter().take(16).filter(|part| !part.fields.is_empty())
+                                .map(|part| CSharpInheritedCandidate {
+                                    base_type: base_name.trim().to_owned(),
+                                    qualified_name: base_full.clone(),
+                                    file: part.file.clone(),
+                                    line: part.line,
+                                    fields: part.fields.clone(),
+                                    parse_uncertain: part.parse_uncertain,
+                                }).collect::<Vec<_>>())
+                        }).flatten()
+                    }).take(64).collect()
+                } else {
+                    Vec::new()
+                };
                 ComponentSchema {
                     type_name: type_name.clone(),
                     status,
                     declarations,
                     parts,
+                    inherited_candidates,
                 }
             })
             .collect();
@@ -770,6 +823,54 @@ mod tests {
         let (defs, _, failed) = parse_source(&mut parser, "Content.Shared/Test.cs", input);
         assert!(!failed, "Syntax error in test fixture");
         defs
+    }
+
+    #[test]
+    fn direct_base_fields_are_read_only_candidates_with_source_location() {
+        let mut parser = Parser::new();
+        parser.set_language(&tree_sitter_c_sharp::LANGUAGE.into()).unwrap();
+        let text = r#"
+            namespace Content.Shared.Equipment;
+            public class SharedItemBase {
+                [DataField("base_speed")] public float BaseSpeed = 1f;
+            }
+            [RegisterComponent]
+            public class ItemComponent : SharedItemBase {
+                [DataField("own")] public bool Own;
+            }
+        "#;
+        let (definitions, parts, invalid) = parse_source(
+            &mut parser, "Content.Shared/Equipment/ItemComponent.cs", text
+        );
+        assert!(!invalid);
+        assert!(parts.iter().any(|part| part.qualified_name.ends_with("SharedItemBase")));
+        let index = CSharpCatalog {
+            definitions, parts, warnings: Vec::new(), complete: true,
+            files_scanned: 1, files_parsed: 1, bytes_scanned: text.len() as u64,
+        };
+        let schema = index.component_schemas(&["Item".into()]);
+        let item = &schema.components[0];
+        assert_eq!(item.status, "unique");
+        assert_eq!(item.declarations[0].fields[0].name, "own");
+        assert_eq!(item.inherited_candidates.len(), 1);
+        assert_eq!(item.inherited_candidates[0].fields[0].name, "base_speed");
+        assert_eq!(item.inherited_candidates[0].base_type, "SharedItemBase");
+        assert!(item.inherited_candidates[0].file.ends_with("ItemComponent.cs"));
+    }
+
+    #[test]
+    fn base_candidate_resolver_rejects_inference_across_namespaces_and_generics() {
+        assert_eq!(
+            lexical_base("Content.Shared.ItemComponent", "SharedItemBase").as_deref(),
+            Some("Content.Shared.SharedItemBase")
+        );
+        assert_eq!(
+            lexical_base("Content.Shared.ItemComponent", "Content.Other.Base").as_deref(),
+            Some("Content.Other.Base")
+        );
+        assert_eq!(lexical_base("Content.Shared.ItemComponent", "Base<T>"), None);
+        assert_eq!(lexical_base("Content.Shared.ItemComponent", "global::Base"), None);
+        assert_eq!(lexical_base("Content.Shared.ItemComponent", "../Base"), None);
     }
 
     #[test]

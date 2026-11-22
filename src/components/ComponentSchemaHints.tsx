@@ -92,6 +92,21 @@ export default function ComponentSchemaHints({
         })}
       </div>}
     </>}
+    {schema.inherited_candidates.length > 0 && <div className="component-schema-partials">
+      <small>Поля непосредственного базового C#-типа (только для просмотра).
+        Сопоставление выполнено по namespace и имени: сборка, using, generic-типы и
+        условная компиляция не разрешены. Автоматические правки YAML отключены.</small>
+      {schema.inherited_candidates.map((candidate, index) =>
+        <div className="component-schema-part"
+          key={candidate.file + ':' + candidate.line + ':' + index}>
+          <strong>{candidate.base_type} · {candidate.file}:{candidate.line}</strong>
+          {candidate.parse_uncertain && <span>Синтаксис исходника неоднозначен.</span>}
+          {candidate.fields.map((field, fieldIndex) =>
+            <span key={field.member + ':' + fieldIndex}>
+              <code>{field.name}</code> · {field.field_type} · строка {field.line}
+            </span>)}
+        </div>)}
+    </div>}
     {schema.status === 'not_indexed' && <small>
       Отсутствие схемы не означает, что компонент недопустим:
       регистрация может находиться в другом проекте или сгенерированном коде.
