@@ -717,6 +717,9 @@ export const studio = {
   searchPrototypes(query: string, kind: string, offset: number, limit = 100): Promise<PrototypePage> {
     return invoke('search_prototypes', { query, kind: kind || null, offset, limit });
   },
+  listPrototypeKinds(): Promise<string[]> {
+    return invoke('list_prototype_kinds');
+  },
   inspectYamlOutline(path: string, source: string): Promise<SourceOutline> {
     return invoke('inspect_yaml_outline', { path, source });
   },

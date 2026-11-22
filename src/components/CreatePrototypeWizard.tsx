@@ -50,6 +50,7 @@ export default function CreatePrototypeWizard({
   const [mode, setMode] = useState<PrototypeDestinationMode>('new');
   const [destination, setDestination] = useState<'project' | 'external'>('project');
   const [availableFiles, setAvailableFiles] = useState<string[]>([]);
+  const [availableKinds, setAvailableKinds] = useState<string[]>([]);
   const [draft, setDraft] = useState<NewPrototypeDraft>(INITIAL);
   const [preview, setPreview] = useState<NewPrototypePreview | AppendPrototypePreview | null>(null);
   const targetIsDirty = mode === 'append' && dirtyPaths.includes(draft.file);
@@ -77,6 +78,11 @@ export default function CreatePrototypeWizard({
       if (active) setAvailableFiles(page.items.map((entry) => entry.path));
     }).catch(() => {
       if (active) setAvailableFiles([]);
+    });
+    void studio.listPrototypeKinds().then((kinds) => {
+      if (active) setAvailableKinds(kinds);
+    }).catch(() => {
+      if (active) setAvailableKinds([]);
     });
     return () => { active = false; };
   }, []);
@@ -229,9 +235,10 @@ export default function CreatePrototypeWizard({
               <input required list="new-prototype-kinds" value={draft.kind}
                 onChange={(event) => update('kind', event.target.value)}/>
               <datalist id="new-prototype-kinds">
-                <option value="entity"/><option value="reagent"/><option value="tile"/>
-                <option value="construction"/><option value="recipe"/>
+                {[...new Set([...availableKinds, 'entity', 'reagent', 'tile', 'construction', 'recipe'])]
+                  .map((kind) => <option key={kind} value={kind}/>)}
               </datalist>
+              <small>Типы взяты из открытого игрового проекта. Допускается ввод собственного типа форка.</small>
             </label>
             <label>ID
               <input required maxLength={128} value={draft.id}

@@ -461,6 +461,16 @@ async fn search_prototypes(
 }
 
 #[tauri::command]
+async fn list_prototype_kinds(
+    state: State<'_, WorkspaceState>,
+) -> Result<Vec<String>, StudioError> {
+    let index = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || Ok(index.prototypes()?.kinds()))
+        .await
+        .map_err(interrupted)?
+}
+
+#[tauri::command]
 async fn list_prototype_diagnostics(
     offset: Option<usize>,
     limit: Option<usize>,
@@ -1207,6 +1217,7 @@ pub fn run() -> Result<(), tauri::Error> {
             read_csharp_source,
             inspect_component_schemas,
             search_prototypes,
+            list_prototype_kinds,
             prototype_relations,
             prototype_sources,
             prototype_partial_preview,

@@ -3,7 +3,7 @@
 //! This is a *source catalog*, NOT RobustToolbox's resolved prototype graph.
 //! Every declaration is preserved, including configured partials and tagged
 //! partials, with separate provenance and no guessed merge semantics.
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
@@ -294,7 +294,21 @@ pub struct PrototypeCatalog {
     graph: PrototypeGraph,
 }
 
+fn unique_kinds(declarations: &[PrototypeDeclaration]) -> Vec<String> {
+    let kinds: BTreeSet<String> = declarations
+        .iter()
+        .map(|declaration| declaration.kind.clone())
+        .collect();
+    kinds.into_iter().collect()
+}
+
 impl PrototypeCatalog {
+    /// Electron create-prototype wizard: all kinds in the native index,
+    /// not just the first page of prototype search results.
+    pub fn kinds(&self) -> Vec<String> {
+        unique_kinds(&self.declarations)
+    }
+
     /// Original YAML declarations for a particular kind/ID. No merge or
     /// inherited property resolution is implied by their order.
     pub fn source_declarations(&self, kind: &str, id: &str) -> Vec<PrototypeDeclaration> {
@@ -1488,6 +1502,16 @@ mod tests {
             .code,
             "OUTLINE_TOO_LARGE"
         );
+    }
+
+    #[test]
+    fn wizard_kinds_include_all_project_specific_types_without_duplicates() {
+        let (entries, issues) = parse(
+            "- type: entity\n  id: One\n- type: reagent\n  id: Acid\n- type: entity\n  id: Two\n- type: customPrototype\n  id: Extra\n",
+            None,
+        );
+        assert!(issues.is_empty());
+        assert_eq!(unique_kinds(&entries), ["customPrototype", "entity", "reagent"]);
     }
 
     #[test]
