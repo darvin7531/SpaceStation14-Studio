@@ -765,6 +765,13 @@ const MAX_INHERIT_DEPTH: usize = 32;
 const MAX_INHERIT_BYTES: usize = 24 * 1024 * 1024;
 const MAX_INHERIT_WARNINGS: usize = 48;
 
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum PrototypeWarning {
+    Raw(String),
+    Structured { code: &'static str, message: String, params: serde_json::Value },
+}
+
 /// Structural source projection only. Unlike engine deserialization, this does
 /// not know C# DataField custom serializers, AlwaysPushInheritance or defaults.
 #[derive(Debug, Serialize)]
@@ -782,7 +789,7 @@ pub struct PrototypeInheritancePreview {
     pub fields: Vec<MergeField>,
     pub components: Vec<MergeComponent>,
     pub total_partials: usize,
-    pub warnings: Vec<String>,
+    pub warnings: Vec<PrototypeWarning>,
 }
 
 #[derive(Clone)]
@@ -804,13 +811,19 @@ struct InheritanceSolver<'a, F> {
     bytes: usize,
     stack: Vec<String>,
     calculated: HashMap<String, InheritedSnapshot>,
-    warnings: Vec<String>,
+    warnings: Vec<PrototypeWarning>,
 }
 
 impl<F: FnMut(&str) -> Result<String, StudioError>> InheritanceSolver<'_, F> {
     fn warn(&mut self, message: String) {
         if self.warnings.len() < MAX_INHERIT_WARNINGS {
-            self.warnings.push(message);
+            self.warnings.push(PrototypeWarning::Raw(message));
+        }
+    }
+
+    fn warn_structured(&mut self, code: &'static str, message: String, params: serde_json::Value) {
+        if self.warnings.len() < MAX_INHERIT_WARNINGS {
+            self.warnings.push(PrototypeWarning::Structured { code, message, params });
         }
     }
 
@@ -867,10 +880,11 @@ impl<F: FnMut(&str) -> Result<String, StudioError>> InheritanceSolver<'_, F> {
             let parents = partial.parents.clone();
             if parents.len() > 1 {
                 complete = false;
-                self.warn(format!(
-                    "{id}: {} родителя; порядок и DataField-семантика конфликтующих полей движка не подтверждены.",
-                    parents.len()
-                ));
+                self.warn_structured(
+                    "INHERIT_MULTIPLE_PARENTS",
+                    format!("{id}: {} родителя; порядок и DataField-семантика конфликтующих полей движка не подтверждены.", parents.len()),
+                    serde_json::json!({"id": id, "count": parents.len()}),
+                );
             }
             let mut seen_parents = std::collections::HashSet::new();
             let mut projected = Node {
@@ -884,9 +898,11 @@ impl<F: FnMut(&str) -> Result<String, StudioError>> InheritanceSolver<'_, F> {
             for parent_id in &parents {
                 if parent_id.trim().is_empty() || !seen_parents.insert(parent_id.clone()) {
                     complete = false;
-                    self.warn(format!(
-                        "{id}: пустой или повторяющийся parent «{parent_id}»."
-                    ));
+                    self.warn_structured(
+                        "INHERIT_INVALID_PARENT",
+                        format!("{id}: пустой или повторяющийся parent «{parent_id}»."),
+                        serde_json::json!({"id": id, "parent": parent_id}),
+                    );
                     continue;
                 }
                 match self.resolve(parent_id) {
@@ -1100,11 +1116,11 @@ pub fn preview_inheritance(
         .is_some_and(|relations| relations.index_complete);
     let mut structural_complete = result.complete && index_complete;
     if !index_complete {
-        solver.warn("Каталог прототипов неполон: часть YAML, ID или partial-конфигураций не удалось индексировать.".into());
+        solver.warn_structured("INHERIT_INDEX_INCOMPLETE", "Каталог прототипов неполон: часть YAML, ID или partial-конфигураций не удалось индексировать.".into(), serde_json::json!({}));
     }
     if fields.len() >= MAX_PREVIEW_FIELDS || components.len() >= MAX_PREVIEW_COMPONENTS {
         structural_complete = false;
-        solver.warn("Вывод ограничен 96 полями и 128 компонентами.".into());
+        solver.warn_structured("INHERIT_OUTPUT_LIMIT", "Вывод ограничен 96 полями и 128 компонентами.".into(), serde_json::json!({"fields": MAX_PREVIEW_FIELDS, "components": MAX_PREVIEW_COMPONENTS}));
     }
     Ok(PrototypeInheritancePreview {
         kind: kind.to_owned(),
@@ -1138,7 +1154,7 @@ pub struct LinkedPrototypeReport {
     pub total: usize,
     pub limited: bool,
     pub source_complete: bool,
-    pub warnings: Vec<String>,
+    pub warnings: Vec<PrototypeWarning>,
 }
 
 const MAX_LINKED_ROWS: usize = 24;
@@ -1278,12 +1294,10 @@ pub fn linked_prototypes(
         .is_some_and(|value| value.index_complete);
     let source_complete = snapshot.complete && index_complete && !collector.limited;
     if !index_complete {
-        solver.warn(
-            "Часть YAML-файлов не вошла в индекс: некоторые ссылки могут отсутствовать.".into(),
-        );
+        solver.warn_structured("LINKS_INDEX_INCOMPLETE", "Часть YAML-файлов не вошла в индекс: некоторые ссылки могут отсутствовать.".into(), serde_json::json!({}));
     }
     if collector.limited {
-        solver.warn("В Electron показывались первые 24 ссылки; просмотр ограничен 24 результатами и 8192 YAML-узлами.".into());
+        solver.warn_structured("LINKS_OUTPUT_LIMIT", "В Electron показывались первые 24 ссылки; просмотр ограничен 24 результатами и 8192 YAML-узлами.".into(), serde_json::json!({"rows": MAX_LINKED_ROWS, "nodes": MAX_LINKED_VISITS}));
     }
     Ok(LinkedPrototypeReport {
         kind: kind.into(),
@@ -1299,6 +1313,20 @@ pub fn linked_prototypes(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn warning_wire_format_keeps_codes_parameters_and_raw_fallbacks() {
+        let warning = PrototypeWarning::Structured {
+            code: "INHERIT_MULTIPLE_PARENTS",
+            message: "original".into(),
+            params: serde_json::json!({"id": "A", "count": 2}),
+        };
+        let value = serde_json::to_value(warning).unwrap();
+        assert_eq!(value["code"], "INHERIT_MULTIPLE_PARENTS");
+        assert_eq!(value["params"]["count"], 2);
+        assert_eq!(value["message"], "original");
+        assert_eq!(serde_json::to_value(PrototypeWarning::Raw("unknown".into())).unwrap(), "unknown");
+    }
 
     fn node(src: &str) -> Node {
         parse(src).unwrap().remove(0)

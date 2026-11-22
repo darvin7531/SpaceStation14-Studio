@@ -219,9 +219,11 @@ export interface EntityLocalizationAnalysis {
   warnings: string[];
 }
 
+export type PrototypeNotice = string | { code: string; message: string; params: Record<string, string | number> };
+
 export interface ParentInspection {
   parents: string[];
-  notice: string;
+  notice: PrototypeNotice;
 }
 
 export interface PrototypeFields {
@@ -329,7 +331,7 @@ export interface LinkedPrototypeReport {
   total: number;
   limited: boolean;
   source_complete: boolean;
-  warnings: string[];
+  warnings: PrototypeNotice[];
 }
 
 export interface PrototypeInheritancePreview {
@@ -342,7 +344,7 @@ export interface PrototypeInheritancePreview {
   fields: { key: string; preview: string; source_file: string }[];
   components: { type_name: string; keys: string[]; source_file: string }[];
   total_partials: number;
-  warnings: string[];
+  warnings: PrototypeNotice[];
 }
 
 export interface PrototypePartialPreview {

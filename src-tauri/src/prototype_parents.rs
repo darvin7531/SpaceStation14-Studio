@@ -17,7 +17,14 @@ const MAX_PARENTS: usize = 64;
 #[derive(Debug, Serialize)]
 pub struct ParentInspection {
     pub parents: Vec<String>,
-    pub notice: String,
+    pub notice: ParentNotice,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ParentNotice {
+    pub code: &'static str,
+    pub message: String,
+    pub params: serde_json::Value,
 }
 
 fn issue(code: &'static str, message: &str) -> StudioError {
@@ -205,7 +212,11 @@ pub fn inspect(source: &str, locator: &FieldLocator) -> Result<ParentInspection,
     let parsed = snapshot(source, locator)?;
     Ok(ParentInspection {
         parents: parsed.parents,
-        notice: "Поддерживаются обычные объявления, одиночный parent и списки parent. Изменения попадут в черновик YAML; сохраните их Ctrl+S.".into(),
+        notice: ParentNotice {
+            code: "PARENT_INSPECTION_NOTICE",
+            message: "Поддерживаются обычные объявления, одиночный parent и списки parent. Изменения попадут в черновик YAML; сохраните их Ctrl+S.".into(),
+            params: serde_json::json!({}),
+        },
     })
 }
 
@@ -352,6 +363,15 @@ mod tests {
             item_index,
             mode: "normal".into(),
         }
+    }
+
+    #[test]
+    fn inspection_notice_has_stable_code_and_fallback() {
+        let result = inspect("- type: entity\n  id: Child\n  parent: Base\n", &locator(1, "Child")).unwrap();
+        let notice = serde_json::to_value(result.notice).unwrap();
+        assert_eq!(notice["code"], "PARENT_INSPECTION_NOTICE");
+        assert!(notice["message"].as_str().unwrap().contains("Ctrl+S"));
+        assert_eq!(notice["params"], serde_json::json!({}));
     }
 
     fn ids(items: &[&str]) -> Vec<String> {

@@ -1,7 +1,8 @@
+import { prototypeNotice } from '../lib/prototype-notices';
 import { useEffect, useState, type FormEvent } from 'react';
 import { useI18n } from '../i18n';
 import { AlertTriangle, GitBranch, RefreshCw, X } from 'lucide-react';
-import { studio, type PrototypeFieldLocator } from '../lib/api';
+import { studio, type PrototypeNotice, type PrototypeFieldLocator } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 
 interface Props {
@@ -14,13 +15,13 @@ interface Props {
 
 /** One line per explicit parent ID; never resolves or guesses inherited content. */
 export default function PrototypeParentsPanel({ locator, source, busy, onApply, onClose }: Props) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [original, setOriginal] = useState<string[] | null>(null);
   const [text, setText] = useState('');
   const [reading, setReading] = useState(true);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<StudioError | null>(null);
-  const [notice, setNotice] = useState('');
+  const [notice, setNotice] = useState<PrototypeNotice>('');
   const [noticeKey, setNoticeKey] = useState<'parents.unchanged' | 'parents.applied' | null>(null);
   const [refresh, setRefresh] = useState(0);
 
@@ -111,7 +112,7 @@ export default function PrototypeParentsPanel({ locator, source, busy, onApply, 
         {t('parents.help')}
       </p>
       <div className="prototype-field-actions">
-        <small>{noticeKey ? t(noticeKey) : notice}</small>
+        <small>{noticeKey ? t(noticeKey) : prototypeNotice(language, notice)}</small>
         <button type="button" disabled={disabled} onClick={() => setRefresh((current) => current + 1)}>
           <RefreshCw size={14}/> {t('parents.reset')}
         </button>

@@ -1,3 +1,4 @@
+import { prototypeNotice } from '../lib/prototype-notices';
 import { useEffect, useState } from 'react';
 import { useI18n } from '../i18n';
 import { studio, type LinkedPrototypeReport } from '../lib/api';
@@ -15,7 +16,7 @@ interface Props {
 export default function LinkedPrototypePanel({
   kind, id, workspaceKey, onNavigate,
 }: Props) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [report, setReport] = useState<LinkedPrototypeReport | null>(null);
   const [error, setError] = useState<StudioError | null>(null);
   const [loading, setLoading] = useState(true);
@@ -45,7 +46,7 @@ export default function LinkedPrototypePanel({
       {!report.source_complete && <p className="proto-relations-caveat">
         {t('linked.incomplete')}
       </p>}
-      {report.warnings.map((warning, i) => <p key={i} className="proto-relations-caveat">{warning}</p>)}
+      {report.warnings.map((warning, i) => <p key={i} className="proto-relations-caveat">{prototypeNotice(language, warning)}</p>)}
       {report.items.map((link) => <button type="button"
         key={link.kind + ':' + link.id} className="proto-linked-reference"
         onClick={() => onNavigate(link.kind, link.id)}

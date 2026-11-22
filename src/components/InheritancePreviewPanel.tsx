@@ -1,3 +1,4 @@
+import { prototypeNotice } from '../lib/prototype-notices';
 import { useEffect, useState } from 'react';
 import { useI18n } from '../i18n';
 import { AlertCircle, GitMerge } from 'lucide-react';
@@ -19,7 +20,7 @@ interface Props {
 export default function InheritancePreviewPanel({
   kind, id, workspaceKey, onNavigate, onOpen,
 }: Props) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [report, setReport] = useState<PrototypeInheritancePreview | null>(null);
   const [failure, setFailure] = useState<StudioError | null>(null);
   const [busy, setBusy] = useState(true);
@@ -56,7 +57,7 @@ export default function InheritancePreviewPanel({
         {' '}{t('inheritance.caveat')}
       </p>
       {report.warnings.map((warning, index) =>
-        <p key={index} className="proto-source-warning">{warning}</p>)}
+        <p key={index} className="proto-source-warning">{prototypeNotice(language, warning)}</p>)}
       <div className="proto-source-tags">
         <strong>{t('inheritance.parents')}</strong>
         {report.direct_parents.length
