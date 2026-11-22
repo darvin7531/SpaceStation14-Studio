@@ -251,6 +251,10 @@ pub struct PrototypePartialPreview {
     pub components: Vec<MergeComponent>,
     pub applied_partials: usize,
     pub warnings: Vec<String>,
+    #[serde(skip)]
+    composed: Option<Node>,
+    #[serde(skip)]
+    sources: HashMap<String, String>,
 }
 
 fn index_from(tag: &str, prefix: &str, len: usize, insertion: bool) -> Result<usize, String> {
@@ -751,6 +755,8 @@ pub fn preview(
         components,
         applied_partials,
         warnings,
+        composed,
+        sources,
     })
 }
 
