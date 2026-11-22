@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, FileCode2, GitBranch, Layers, Search } from 'lucide-react';
 import {
-  studio, type PrototypeDeclaration, type SourceOutline,
+  studio, type EntityLocalizationAnalysis, type PrototypeDeclaration, type SourceOutline,
 } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 import SpriteLayerInspector from './SpriteLayerInspector';
@@ -15,11 +15,70 @@ interface Props {
   onJump: (line: number) => void;
   onEdit: (declaration: PrototypeDeclaration, panel: EditorPanel) => void;
   onOpenRsi: (path: string, state: string | null) => void;
+  requiredLocales: readonly string[];
+  liveValidation: boolean;
+  validationDelay: number;
+}
+
+/** Electron parity: live missing-locale diagnostics for the selected normal entity.
+ * Never infers a runtime fallback and never writes without an explicit user action.
+ */
+function SelectedEntityLocaleStatus({
+  declaration, source, requiredLocales, enabled, delayMs, busy, onRepair,
+}: {
+  declaration: PrototypeDeclaration;
+  source: string;
+  requiredLocales: readonly string[];
+  enabled: boolean;
+  delayMs: number;
+  busy: boolean;
+  onRepair: () => void;
+}) {
+  const [report, setReport] = useState<EntityLocalizationAnalysis | null>(null);
+  const [failure, setFailure] = useState<StudioError | null>(null);
+  const [requested, setRequested] = useState(0);
+  const localesKey = requiredLocales.join('\u0000');
+  const shouldRun = enabled || requested > 0;
+  useEffect(() => {
+    if (!shouldRun) return;
+    let live = true;
+    setReport(null);
+    setFailure(null);
+    const timer = window.setTimeout(() => {
+      void studio.analyzeEntityLocalization(declaration, source, [...requiredLocales])
+        .then((value) => {
+          if (live) setReport(value);
+        }).catch((reason) => {
+          if (live) setFailure(normalizeStudioError(reason));
+        });
+    }, enabled ? delayMs : 0);
+    return () => { live = false; window.clearTimeout(timer); };
+  }, [
+    declaration.file, declaration.kind, declaration.id,
+    declaration.document_index, declaration.item_index, declaration.mode,
+    source, localesKey, enabled, delayMs, requested, shouldRun,
+  ]);
+  return <div className="prototype-entity-locale-status" aria-live="polite">
+    <strong>Игровые локализации ({requiredLocales.join(', ')})</strong>
+    {!enabled && <button type="button" disabled={busy}
+      onClick={() => setRequested((count) => count + 1)}>Проверить переводы</button>}
+    {!shouldRun ? <small>Автоматическая проверка отключена в настройках редактора.</small>
+      : failure ? <small role="alert">Не удалось проверить: {failure.message} [{failure.code}]</small>
+        : !report ? <small>Проверяю существующие FTL…</small>
+          : !report.complete ? <small role="alert">Неполный индекс локалей: {report.warnings.join(' ')}</small>
+            : report.diagnostics.length === 0 ? <small>Пропущенных переводов явных полей не найдено.</small>
+              : <div>
+                <small>Отсутствуют: {report.diagnostics.map((issue) =>
+                  issue.field + ' (' + issue.missing_locales.join(', ') + ')').join('; ')}</small>
+                <button type="button" disabled={busy} onClick={onRepair}>Исправить локализацию</button>
+              </div>}
+  </div>;
 }
 
 /** Parses the currently visible YAML draft, not the last saved catalog copy. */
 export default function PrototypeOutlinePanel({
   path, source, busy, onJump, onEdit, onOpenRsi,
+  requiredLocales, liveValidation, validationDelay,
 }: Props) {
   const [snapshot, setSnapshot] = useState<{ path: string; source: string; outline: SourceOutline } | null>(null);
   const [failure, setFailure] = useState<StudioError | null>(null);
@@ -132,6 +191,10 @@ export default function PrototypeOutlinePanel({
             </>}
           </> : <small>Сложные, partial и генерируемые объявления доступны для навигации, но не для автоматических форм.</small>}
         </div>
+        {editable && selected.declaration.kind === 'entity' && <SelectedEntityLocaleStatus
+          declaration={selected.declaration} source={source} requiredLocales={requiredLocales}
+          enabled={liveValidation} delayMs={validationDelay} busy={busy}
+          onRepair={() => onEdit(selected.declaration, 'localization')}/>}
         <small className="prototype-outline-footnote">Показаны только прямые поля исходного YAML, не итоговое наследование RobustToolbox.</small>
       </div>}
     </>}

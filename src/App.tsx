@@ -1476,6 +1476,9 @@ export default function App() {
             && <PrototypeOutlinePanel key={overview.project_root + ':' + workspaceRevision + ':' + selected.path}
               path={selected.path} source={activeText}
               busy={saving || refreshing || transitioning}
+              requiredLocales={localizationSettings.requiredLocales}
+              liveValidation={editorSettings.liveValidation}
+              validationDelay={editorSettings.validationDelay}
               onJump={(line) => setJumpTarget({
                 path: selected.path, line, token: ++jumpCounter.current,
               })}

@@ -119,3 +119,8 @@
 .proto-linked-reference strong { font-size: 12px; overflow-wrap: anywhere; }
 .proto-linked-reference small { font-size: 10px; color: #9ab6d2; overflow-wrap: anywhere; }
 .proto-linked-reference > span:last-child { font-size: 12px; color: #85b9ed; }
+
+.prototype-entity-locale-status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border-top: 1px solid #40546e; margin-top: 10px; padding: 10px 0; font-size: 12px; }
+.prototype-entity-locale-status strong { color: #b6d7f5; }
+.prototype-entity-locale-status small { color: #c8d8ea; }
+.prototype-entity-locale-status button { border: 1px solid #587898; background: #243d5b; color: #f0f5fb; padding: 5px 8px; border-radius: 5px; margin-left: 6px; }
