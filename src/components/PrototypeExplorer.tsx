@@ -103,7 +103,7 @@ export default function PrototypeExplorer({ workspaceKey, onOpen, onEdit }: Prop
             : 'По запросу нет объявлений прототипов.'}
         </p>}
         {result.items.map((entry: PrototypeDeclaration) => <div
-          className="prototype-entry" key={entry.file + ':' + entry.document_index + ':' + entry.item_index}>
+          className="prototype-entry" key={entry.file + ':' + entry.document_index + ':' + entry.item_index + ':' + (entry.variant_index ?? 'base')}>
           <button type="button" className="prototype-open" onClick={() => onOpen(entry.file, entry.line)}
             title={'Открыть ' + entry.file + ':' + entry.line}>
             <span className="prototype-id"><GitBranch size={14}/>{entry.id}</span>
@@ -113,12 +113,12 @@ export default function PrototypeExplorer({ workspaceKey, onOpen, onEdit }: Prop
             </span>
             <span className="prototype-path">{entry.file.split('/').at(-1)}:{entry.line}</span>
           </button>
-          {entry.mode === 'normal' && <button type="button" className="prototype-relations-trigger"
+          {entry.mode === 'normal' && entry.variant_index === null && <button type="button" className="prototype-relations-trigger"
             title="Редактировать простые поля через форму"
             onClick={() => onEdit(entry, 'fields')}>
             Поля
           </button>}
-          {entry.kind === 'entity' && entry.mode === 'normal' && <button
+          {entry.kind === 'entity' && entry.mode === 'normal' && entry.variant_index === null && <button
             type="button" className="prototype-relations-trigger"
             title="Просмотр, добавление и удаление явно объявленных компонентов"
             onClick={() => onEdit(entry, 'components')}>
@@ -131,6 +131,8 @@ export default function PrototypeExplorer({ workspaceKey, onOpen, onEdit }: Prop
               ? null : { kind: entry.kind, id: entry.id })}>
             Связи и потомки
           </button>
+          {entry.variant_index !== null && <span className="prototype-partial">Вариант {entry.variant_index + 1}</span>}
+          {entry.partial_order !== null && <span className="prototype-partial">Порядок partial: {entry.partial_order}</span>}
           {entry.mode !== 'normal' && <span className="prototype-partial">{{
             configured_partial: 'Partial-каталог', tagged_partial: 'Tagged Partial',
             partial_only: 'Partial Only', normal: '',

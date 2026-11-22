@@ -98,6 +98,7 @@ export interface PrototypeDeclaration {
   line: number;
   document_index: number;
   item_index: number;
+  variant_index: number | null;
   mode: 'normal' | 'configured_partial' | 'tagged_partial' | 'partial_only';
   partial_order: number | null;
   parent_tag: string | null;

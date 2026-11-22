@@ -65,6 +65,14 @@ fn index_is_complete(issues: &[PrototypeDiagnostic]) -> bool {
                 | "PARTIAL_CONFIG_OUTSIDE_PROJECT"
                 | "PARTIAL_CONFIG_PATH_INVALID"
                 | "PARTIAL_CONFIG_MISSING"
+                | "PARTIAL_CONFIG_PATH_INVALID"
+                | "PARTIAL_CONFIG_LIMIT"
+                | "PARTIAL_CONFIG_SYMLINK"
+                | "PARTIAL_TAG_INVALID"
+                | "PROTOTYPE_IDENTITY_MISSING"
+                | "PROTOTYPE_VARIANTS_INVALID"
+                | "PROTOTYPE_ALIAS_ID_UNSUPPORTED"
+                | "PARENT_ALIAS_UNRESOLVED"
         )
     })
 }
@@ -342,6 +350,7 @@ mod tests {
             line: 1,
             document_index: 1,
             item_index: 1,
+            variant_index: None,
             mode,
             partial_order: None,
             parent_tag: None,

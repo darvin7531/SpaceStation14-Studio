@@ -17,6 +17,9 @@ use crate::project::ResourceEntry;
 use crate::prototype_graph::{PrototypeGraph, PrototypeRelations};
 
 const MAX_YAML_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_PARTIAL_CONFIG_FILES: usize = 128;
+const MAX_PARTIAL_CONFIG_ENTRIES: usize = 4096;
+const MAX_PARTIAL_CONFIG_BYTES: usize = 16 * 1024 * 1024;
 const MAX_PAGE: usize = 200;
 
 #[derive(Debug, Clone, Serialize)]
@@ -29,6 +32,8 @@ pub struct PrototypeDeclaration {
     pub line: usize,
     pub document_index: usize,
     pub item_index: usize,
+    /// Index of a generated prototype variant; None for a literal YAML declaration.
+    pub variant_index: Option<usize>,
     /// "normal" | "configured_partial" | "tagged_partial" | "partial_only".
     /// This is provenance, not a resolution or merge guarantee.
     pub mode: &'static str,
@@ -98,17 +103,7 @@ impl PrototypeCatalog {
 
             let candidate = root.join(&resource.path);
             let path = resource.path.as_str();
-            let mode = scopes
-                .iter()
-                .find(|scope| {
-                    if scope.is_file {
-                        path == scope.relative
-                    } else {
-                        path.strip_prefix(scope.relative.as_str())
-                            .is_some_and(|remainder| remainder.starts_with('/'))
-                    }
-                })
-                .map(|scope| scope.order);
+            let mode = partial_order_for(path, &scopes);
 
             // File index ignored symlinks, but protect against external changes since scanning.
             let resolved = match fs::canonicalize(&candidate) {
@@ -311,119 +306,329 @@ fn read_bounded(path: &Path) -> Result<Vec<u8>, String> {
 }
 
 fn configured_partials(root: &Path, issues: &mut Vec<PrototypeDiagnostic>) -> Vec<PartialScope> {
-    let config_rel = "Resources/PartialPrototypes/partialPrototypes.yml";
-    let config = root.join(config_rel);
-    if !config.exists() {
+    let directory = root.join("Resources/PartialPrototypes");
+    let metadata = match fs::symlink_metadata(&directory) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+        Err(error) => {
+            issues.push(PrototypeDiagnostic {
+                code: "PARTIAL_CONFIG_UNREADABLE",
+                file: "Resources/PartialPrototypes".into(),
+                line: 0,
+                message: error.to_string(),
+            });
+            return Vec::new();
+        }
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        issues.push(PrototypeDiagnostic {
+            code: "PARTIAL_CONFIG_SYMLINK",
+            file: "Resources/PartialPrototypes".into(),
+            line: 0,
+            message: "Каталог PartialPrototypes должен быть обычной папкой, не символической ссылкой.".into(),
+        });
         return Vec::new();
     }
-    let canonical = match fs::canonicalize(&config) {
-        Ok(path) if path.starts_with(root) => path,
-        Ok(_) => {
-            issues.push(PrototypeDiagnostic {
-                code: "PARTIAL_CONFIG_OUTSIDE_PROJECT",
-                file: config_rel.into(),
-                line: 0,
-                message: "Конфигурация partial-каталогов ссылается за пределы проекта.".into(),
-            });
-            return Vec::new();
+
+    // The engine enumerates every config file in this directory in canonical
+    // path order. Nested directories are included, and only the first YAML
+    // document in each file is used by EntryPoint.TryReadFilesPaths.
+    let mut pending = vec![directory];
+    let mut config_files: Vec<(String, PathBuf)> = Vec::new();
+    let mut visited = 0usize;
+    let mut limited = false;
+    while let Some(folder) = pending.pop() {
+        let entries = match fs::read_dir(&folder) {
+            Ok(entries) => entries,
+            Err(error) => {
+                issues.push(PrototypeDiagnostic {
+                    code: "PARTIAL_CONFIG_UNREADABLE",
+                    file: folder.strip_prefix(root).unwrap_or(&folder).to_string_lossy().replace('\\', "/"),
+                    line: 0,
+                    message: error.to_string(),
+                });
+                continue;
+            }
+        };
+        let mut entries = entries
+            .filter_map(|entry| match entry {
+                Ok(entry) => Some(entry),
+                Err(error) => {
+                    issues.push(PrototypeDiagnostic {
+                        code: "PARTIAL_CONFIG_UNREADABLE",
+                        file: "Resources/PartialPrototypes".into(),
+                        line: 0,
+                        message: error.to_string(),
+                    });
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        entries.sort_by_key(|entry| entry.file_name());
+
+        for entry in entries {
+            visited += 1;
+            if visited > MAX_PARTIAL_CONFIG_ENTRIES {
+                limited = true;
+                break;
+            }
+            let path = entry.path();
+            let relative = path
+                .strip_prefix(root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            let kind = match entry.file_type() {
+                Ok(kind) => kind,
+                Err(error) => {
+                    issues.push(PrototypeDiagnostic {
+                        code: "PARTIAL_CONFIG_UNREADABLE",
+                        file: relative,
+                        line: 0,
+                        message: error.to_string(),
+                    });
+                    continue;
+                }
+            };
+            if kind.is_symlink() {
+                issues.push(PrototypeDiagnostic {
+                    code: "PARTIAL_CONFIG_SYMLINK",
+                    file: relative,
+                    line: 0,
+                    message: "Символические ссылки в PartialPrototypes не индексируются.".into(),
+                });
+            } else if kind.is_dir() {
+                pending.push(path);
+            } else if kind.is_file()
+                && path.extension().and_then(|extension| extension.to_str()).is_some_and(
+                    |extension| extension.eq_ignore_ascii_case("yml") || extension.eq_ignore_ascii_case("yaml")
+                )
+            {
+                config_files.push((relative, path));
+            }
         }
-        Err(error) => {
-            issues.push(PrototypeDiagnostic {
-                code: "PARTIAL_CONFIG_UNREADABLE",
-                file: config_rel.into(),
-                line: 0,
-                message: error.to_string(),
-            });
-            return Vec::new();
+        if limited {
+            break;
         }
-    };
-    let content = match read_bounded(&canonical)
-        .and_then(|bytes| String::from_utf8(bytes).map_err(|error| error.to_string()))
-    {
-        Ok(content) => content,
-        Err(message) => {
-            issues.push(PrototypeDiagnostic {
-                code: "PARTIAL_CONFIG_UNREADABLE",
-                file: config_rel.into(),
-                line: 0,
-                message,
-            });
-            return Vec::new();
-        }
-    };
-    let parsed = match YamlLoader::load_from_str(&content) {
-        Ok(parsed) => parsed,
-        Err(error) => {
-            issues.push(PrototypeDiagnostic {
-                code: "PARTIAL_CONFIG_INVALID",
-                file: config_rel.into(),
-                line: 0,
-                message: error.to_string(),
-            });
-            return Vec::new();
-        }
-    };
+    }
+    if limited {
+        issues.push(PrototypeDiagnostic {
+            code: "PARTIAL_CONFIG_LIMIT",
+            file: "Resources/PartialPrototypes".into(),
+            line: 0,
+            message: format!(
+                "Обход конфигураций partial-прототипов остановлен после {MAX_PARTIAL_CONFIG_ENTRIES} элементов."
+            ),
+        });
+    }
+
+    config_files.sort_by(|left, right| left.0.cmp(&right.0));
+    if config_files.len() > MAX_PARTIAL_CONFIG_FILES {
+        config_files.truncate(MAX_PARTIAL_CONFIG_FILES);
+        issues.push(PrototypeDiagnostic {
+            code: "PARTIAL_CONFIG_LIMIT",
+            file: "Resources/PartialPrototypes".into(),
+            line: 0,
+            message: format!(
+                "Найдено больше {MAX_PARTIAL_CONFIG_FILES} конфигурационных YAML-файлов; обработана только отсортированная часть."
+            ),
+        });
+    }
+
     let mut scopes = Vec::new();
-    for document in parsed {
+    let mut total_bytes = 0usize;
+    for (config_rel, config) in config_files {
+        let canonical = match fs::canonicalize(&config) {
+            Ok(path) if path.starts_with(root) => path,
+            Ok(_) => {
+                issues.push(PrototypeDiagnostic {
+                    code: "PARTIAL_CONFIG_OUTSIDE_PROJECT",
+                    file: config_rel,
+                    line: 0,
+                    message: "Конфигурация partial-каталогов оказалась за пределами проекта.".into(),
+                });
+                continue;
+            }
+            Err(error) => {
+                issues.push(PrototypeDiagnostic {
+                    code: "PARTIAL_CONFIG_UNREADABLE",
+                    file: config_rel,
+                    line: 0,
+                    message: error.to_string(),
+                });
+                continue;
+            }
+        };
+        let content_bytes = match read_bounded(&canonical) {
+            Ok(bytes) => bytes,
+            Err(message) => {
+                issues.push(PrototypeDiagnostic {
+                    code: "PARTIAL_CONFIG_UNREADABLE",
+                    file: config_rel,
+                    line: 0,
+                    message,
+                });
+                continue;
+            }
+        };
+        if content_bytes.len() > MAX_PARTIAL_CONFIG_BYTES.saturating_sub(total_bytes) {
+            issues.push(PrototypeDiagnostic {
+                code: "PARTIAL_CONFIG_LIMIT",
+                file: config_rel,
+                line: 0,
+                message: format!(
+                    "Суммарный размер конфигураций PartialPrototypes превышает лимит {MAX_PARTIAL_CONFIG_BYTES} байт."
+                ),
+            });
+            break;
+        }
+        total_bytes += content_bytes.len();
+        let content = match String::from_utf8(content_bytes) {
+            Ok(content) => content,
+            Err(error) => {
+                issues.push(PrototypeDiagnostic {
+                    code: "PARTIAL_CONFIG_INVALID",
+                    file: config_rel,
+                    line: 0,
+                    message: format!("Конфигурация должна быть UTF-8: {error}"),
+                });
+                continue;
+            }
+        };
+        let parsed = match YamlLoader::load_from_str(&content) {
+            Ok(parsed) => parsed,
+            Err(error) => {
+                issues.push(PrototypeDiagnostic {
+                    code: "PARTIAL_CONFIG_INVALID",
+                    file: config_rel,
+                    line: 0,
+                    message: error.to_string(),
+                });
+                continue;
+            }
+        };
+        let Some(document) = parsed.first() else {
+            continue;
+        };
         let Some(paths) = document.as_vec() else {
             issues.push(PrototypeDiagnostic {
                 code: "PARTIAL_CONFIG_INVALID",
-                file: config_rel.into(),
+                file: config_rel,
                 line: 0,
-                message: "Ожидается YAML-список путей к partial-каталогам или файлам.".into(),
+                message: "Первый YAML-документ должен быть списком путей к partial-файлам или каталогам.".into(),
             });
             continue;
         };
         for item in paths {
-            let order = scopes.len();
             let Yaml::String(raw) = item else {
                 issues.push(PrototypeDiagnostic {
                     code: "PARTIAL_CONFIG_PATH_INVALID",
-                    file: config_rel.into(),
+                    file: config_rel.clone(),
                     line: 0,
                     message: "Путь partial-ресурса должен быть строкой.".into(),
                 });
                 continue;
             };
             let trimmed = raw.trim().replace('\\', "/");
-            let rel = trimmed.trim_start_matches('/');
-            let path = if rel.starts_with("Resources/") {
-                rel.to_string()
+            let relative = trimmed.trim_start_matches('/');
+            let path = if relative.starts_with("Resources/") {
+                relative.to_owned()
             } else {
-                format!("Resources/{rel}")
+                format!("Resources/{relative}")
             };
-
-            let absolute = Path::new(&path);
-            if !path.starts_with("Resources/Prototypes/")
-                || absolute
-                    .components()
-                    .any(|component| !matches!(component, Component::Normal(_)))
+            let normalized = Path::new(&path);
+            let inside_prototypes = path == "Resources/Prototypes"
+                || path.starts_with("Resources/Prototypes/");
+            if !inside_prototypes
+                || normalized.components().any(|component| !matches!(component, Component::Normal(_)))
             {
                 issues.push(PrototypeDiagnostic {
                     code: "PARTIAL_CONFIG_PATH_INVALID",
-                    file: config_rel.into(),
+                    file: config_rel.clone(),
                     line: 0,
                     message: format!("Недопустимый путь partial-ресурса: {raw}"),
                 });
                 continue;
             }
+
             let full = root.join(&path);
-            if !full.exists() {
-                issues.push(PrototypeDiagnostic {
-                    code: "PARTIAL_CONFIG_MISSING",
-                    file: config_rel.into(),
-                    line: 0,
-                    message: format!("Указанный partial-путь не существует: {path}"),
-                });
+            match fs::symlink_metadata(&full) {
+                Ok(metadata) if metadata.file_type().is_symlink() => {
+                    issues.push(PrototypeDiagnostic {
+                        code: "PARTIAL_CONFIG_SYMLINK",
+                        file: config_rel.clone(),
+                        line: 0,
+                        message: format!("Partial-путь указывает на символическую ссылку: {path}"),
+                    });
+                    continue;
+                }
+                Ok(_) => match fs::canonicalize(&full) {
+                    Ok(canonical) if canonical.starts_with(root) => {}
+                    Ok(_) => {
+                        issues.push(PrototypeDiagnostic {
+                            code: "PARTIAL_CONFIG_OUTSIDE_PROJECT",
+                            file: config_rel.clone(),
+                            line: 0,
+                            message: format!("Partial-путь выходит за пределы проекта: {path}"),
+                        });
+                        continue;
+                    }
+                    Err(error) => {
+                        issues.push(PrototypeDiagnostic {
+                            code: "PARTIAL_CONFIG_UNREADABLE",
+                            file: config_rel.clone(),
+                            line: 0,
+                            message: format!("Не удалось проверить partial-путь {path}: {error}"),
+                        });
+                        continue;
+                    }
+                },
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    issues.push(PrototypeDiagnostic {
+                        code: "PARTIAL_CONFIG_MISSING",
+                        file: config_rel.clone(),
+                        line: 0,
+                        message: format!("Указанный partial-путь не существует: {path}"),
+                    });
+                }
+                Err(error) => {
+                    issues.push(PrototypeDiagnostic {
+                        code: "PARTIAL_CONFIG_UNREADABLE",
+                        file: config_rel.clone(),
+                        line: 0,
+                        message: format!("Не удалось проверить partial-путь {path}: {error}"),
+                    });
+                    continue;
+                }
             }
+
+            // RobustToolbox classifies a partial path as a file whenever it
+            // has an extension; otherwise it is treated as a directory.
             scopes.push(PartialScope {
-                is_file: full.is_file() || path.ends_with(".yml") || path.ends_with(".yaml"),
+                is_file: normalized.extension().is_some(),
                 relative: path.trim_end_matches('/').into(),
-                order,
+                order: scopes.len(),
             });
         }
     }
     scopes
+}
+
+fn partial_order_for(path: &str, scopes: &[PartialScope]) -> Option<usize> {
+    // RobustToolbox checks registered files before directories, regardless
+    // of the order in which those scopes were registered.
+    scopes
+        .iter()
+        .find(|scope| scope.is_file && path == scope.relative)
+        .or_else(|| {
+            scopes.iter().find(|scope| {
+                !scope.is_file
+                    && path
+                        .strip_prefix(scope.relative.as_str())
+                        .is_some_and(|remainder| remainder.starts_with('/'))
+            })
+        })
+        .map(|scope| scope.order)
 }
 
 #[derive(Debug)]
@@ -434,7 +639,10 @@ struct Draft {
     abstract_prototype: bool,
     type_tag: Option<String>,
     id_tag: Option<String>,
-    mapping_tag: Option<String>,
+    id_is_mapping: bool,
+    id_alias: bool,
+    variant_ids: Vec<String>,
+    variant_alias: bool,
     parent_tag: Option<String>,
     expected_key: bool,
     pending_key: Option<String>,
@@ -447,6 +655,11 @@ enum Frame {
     RootSequence,
     Prototype(Box<Draft>),
     ParentSequence,
+    VariantMapping {
+        expected_key: bool,
+        pending_key: Option<String>,
+    },
+    VariantValuesSequence,
     OtherSequence,
     OtherMapping,
 }
@@ -484,62 +697,116 @@ impl DeclarationCollector {
     }
 
     fn finalize(&mut self, draft: Draft) {
-        if draft.id_tag.is_some() {
-            // A tagged ID may represent multiple generated prototypes or a non-scalar value.
-            self.note(
-                "PROTOTYPE_DYNAMIC_ID",
-                draft.line,
-                "ID создаётся YAML-тегом динамически. Индексировать как один обычный прототип нельзя.",
-            );
-            return;
-        }
-        let (Some(kind), Some(id)) = (draft.kind, draft.id) else {
+        let (mode, explicit_order) = match draft.type_tag.as_deref() {
+            Some(tag) if tag == "PartialOnly" || tag.starts_with("PartialOnly:") => {
+                match partial_tag_index(tag, "PartialOnly", false) {
+                    Ok(index) => ("partial_only", index),
+                    Err(message) => {
+                        self.note("PARTIAL_TAG_INVALID", draft.line, message);
+                        return;
+                    }
+                }
+            }
+            Some(tag) if tag == "Partial" || tag.starts_with("Partial:") => {
+                match partial_tag_index(tag, "Partial", true) {
+                    Ok(index) => ("tagged_partial", index),
+                    Err(message) => {
+                        self.note("PARTIAL_TAG_INVALID", draft.line, message);
+                        return;
+                    }
+                }
+            }
+            _ if self.configured_order.is_some() => ("configured_partial", None),
+            _ => ("normal", None),
+        };
+        let partial_order = explicit_order.or(self.configured_order);
+
+        let Some(kind) = draft.kind else {
             self.note(
                 "PROTOTYPE_IDENTITY_MISSING",
                 draft.line,
-                "Пропущено объявление без строковых полей type и id.",
+                "Пропущено объявление без строкового поля type.",
             );
             return;
         };
-        if kind.trim().is_empty() || id.trim().is_empty() {
+        if kind.trim().is_empty() {
             self.note(
                 "PROTOTYPE_IDENTITY_MISSING",
                 draft.line,
-                "Пропущено объявление с пустыми type или id.",
+                "Пропущено объявление с пустым type.",
             );
             return;
         }
-        let mode = if draft.type_tag.as_deref() == Some("PartialOnly") {
-            "partial_only"
-        } else if draft
-            .mapping_tag
-            .as_ref()
-            .is_some_and(|tag| tag.starts_with("Partial:"))
-            || draft
-                .type_tag
-                .as_ref()
-                .is_some_and(|tag| tag.starts_with("Partial:"))
-        {
-            "tagged_partial"
-        } else if self.configured_order.is_some() {
-            "configured_partial"
-        } else {
-            "normal"
-        };
-        self.declarations.push(PrototypeDeclaration {
-            kind,
-            id,
-            parents: draft.parents,
-            abstract_prototype: draft.abstract_prototype,
-            file: self.file.clone(),
-            line: draft.line,
-            document_index: draft.document_index,
-            item_index: draft.item_index,
-            mode,
-            partial_order: self.configured_order,
-            parent_tag: draft.parent_tag,
-            source_count: 1,
-        });
+
+        let identifiers: Vec<(String, Option<usize>)> =
+            if draft.id_is_mapping && draft.id_tag.as_deref() == Some("type:CreateVariants") {
+                if draft.variant_alias || draft.variant_ids.is_empty() {
+                    self.note(
+                        "PROTOTYPE_VARIANTS_INVALID",
+                        draft.line,
+                        "CreateVariants должен содержать обычный список строковых values без YAML aliases.",
+                    );
+                    return;
+                }
+                draft
+                    .variant_ids
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, id)| (id, Some(index)))
+                    .collect()
+            } else {
+                if draft.id_alias {
+                    self.note(
+                        "PROTOTYPE_ALIAS_ID_UNSUPPORTED",
+                        draft.line,
+                        "ID задан YAML alias. Каталог пока не разрешает aliases и не будет угадывать итоговый ID.",
+                    );
+                    return;
+                }
+                if draft.id_is_mapping || draft.id_tag.is_some() {
+                    self.note(
+                        "PROTOTYPE_DYNAMIC_ID",
+                        draft.line,
+                        "ID задан YAML-тегом или mapping, который каталог не может безопасно разрешить.",
+                    );
+                    return;
+                }
+                let Some(id) = draft.id else {
+                    self.note(
+                        "PROTOTYPE_IDENTITY_MISSING",
+                        draft.line,
+                        "Пропущено объявление без строковых полей type и id.",
+                    );
+                    return;
+                };
+                vec![(id, None)]
+            };
+
+        for (id, variant_index) in identifiers {
+            if id.trim().is_empty() {
+                self.note(
+                    "PROTOTYPE_VARIANTS_INVALID",
+                    draft.line,
+                    "ID прототипа или одного из CreateVariants пуст.",
+                );
+                continue;
+            }
+            self.declarations.push(PrototypeDeclaration {
+                kind: kind.clone(),
+                id,
+                parents: draft.parents.clone(),
+                abstract_prototype: draft.abstract_prototype,
+                file: self.file.clone(),
+                line: draft.line,
+                document_index: draft.document_index,
+                item_index: draft.item_index,
+                variant_index,
+                mode,
+                partial_order,
+                parent_tag: draft.parent_tag.clone(),
+                source_count: 1,
+            });
+        }
     }
 }
 
@@ -547,6 +814,29 @@ fn tag_name(tag: &Tag) -> String {
     format!("{}{}", tag.handle, tag.suffix)
         .trim_start_matches('!')
         .into()
+}
+
+fn partial_tag_index(
+    tag: &str,
+    name: &str,
+    require_index: bool,
+) -> Result<Option<usize>, String> {
+    if tag == name {
+        return if require_index {
+            Err(format!("Тег !{name} должен содержать числовой индекс, например !{name}:0."))
+        } else {
+            Ok(None)
+        };
+    }
+    let Some(raw) = tag.strip_prefix(&format!("{name}:")) else {
+        return Ok(None);
+    };
+    if raw.is_empty() {
+        return Err(format!("После тега !{name}: не указан индекс."));
+    }
+    raw.parse::<usize>()
+        .map(Some)
+        .map_err(|_| format!("Тег !{name} содержит некорректный индекс: {raw}."))
 }
 
 impl MarkedEventReceiver for DeclarationCollector {
@@ -558,21 +848,36 @@ impl MarkedEventReceiver for DeclarationCollector {
                 self.frames.clear();
             }
             Event::DocumentEnd => self.frames.clear(),
-            Event::SequenceStart(_, tag) => {
+            Event::SequenceStart(_, _) => {
                 if self.frames.is_empty() {
                     self.frames.push(Frame::RootSequence);
-                } else if let Some(Frame::Prototype(draft)) = self.frames.last_mut() {
-                    let key = draft.pending_key.take();
-                    draft.expected_key = true;
-                    if key.as_deref() == Some("parent") {
-                        draft.parent_tag = tag.as_ref().map(tag_name);
-                        self.frames.push(Frame::ParentSequence);
-                    } else {
-                        self.frames.push(Frame::OtherSequence);
-                    }
-                } else {
-                    self.frames.push(Frame::OtherSequence);
+                    return;
                 }
+                let next = match self.frames.last_mut() {
+                    Some(Frame::Prototype(draft)) => {
+                        let key = draft.pending_key.take();
+                        draft.expected_key = true;
+                        if key.as_deref() == Some("parent") {
+                            Frame::ParentSequence
+                        } else {
+                            Frame::OtherSequence
+                        }
+                    }
+                    Some(Frame::VariantMapping {
+                        expected_key,
+                        pending_key,
+                    }) => {
+                        let key = pending_key.take();
+                        *expected_key = true;
+                        if key.as_deref() == Some("values") {
+                            Frame::VariantValuesSequence
+                        } else {
+                            Frame::OtherSequence
+                        }
+                    }
+                    _ => Frame::OtherSequence,
+                };
+                self.frames.push(next);
             }
             Event::SequenceEnd => {
                 self.frames.pop();
@@ -587,7 +892,10 @@ impl MarkedEventReceiver for DeclarationCollector {
                         abstract_prototype: false,
                         type_tag: None,
                         id_tag: None,
-                        mapping_tag: tag.as_ref().map(tag_name),
+                        id_is_mapping: false,
+                        id_alias: false,
+                        variant_ids: Vec::new(),
+                        variant_alias: false,
                         parent_tag: None,
                         expected_key: true,
                         pending_key: None,
@@ -596,11 +904,31 @@ impl MarkedEventReceiver for DeclarationCollector {
                         item_index: self.item_index,
                     })));
                 } else {
+                    let mut create_variants = false;
                     if let Some(Frame::Prototype(draft)) = self.frames.last_mut() {
-                        draft.pending_key = None;
+                        let key = draft.pending_key.take();
                         draft.expected_key = true;
+                        if key.as_deref() == Some("id") {
+                            draft.id_is_mapping = true;
+                            draft.id_tag = tag.as_ref().map(tag_name);
+                            create_variants = draft.id_tag.as_deref() == Some("type:CreateVariants");
+                        }
+                    } else if let Some(Frame::VariantMapping {
+                        expected_key,
+                        pending_key,
+                    }) = self.frames.last_mut()
+                    {
+                        pending_key.take();
+                        *expected_key = true;
                     }
-                    self.frames.push(Frame::OtherMapping);
+                    if create_variants {
+                        self.frames.push(Frame::VariantMapping {
+                            expected_key: true,
+                            pending_key: None,
+                        });
+                    } else {
+                        self.frames.push(Frame::OtherMapping);
+                    }
                 }
             }
             Event::MappingEnd => {
@@ -609,7 +937,28 @@ impl MarkedEventReceiver for DeclarationCollector {
                 }
             }
             Event::Scalar(value, _, _, tag) => {
-                if let Some(Frame::Prototype(draft)) = self.frames.last_mut() {
+                if matches!(self.frames.last(), Some(Frame::VariantValuesSequence)) {
+                    if let Some(Frame::Prototype(draft)) = self
+                        .frames
+                        .iter_mut()
+                        .rev()
+                        .find(|frame| matches!(frame, Frame::Prototype(_)))
+                    {
+                        draft.variant_ids.push(value);
+                    }
+                } else if let Some(Frame::VariantMapping {
+                    expected_key,
+                    pending_key,
+                }) = self.frames.last_mut()
+                {
+                    if *expected_key {
+                        *pending_key = Some(value);
+                        *expected_key = false;
+                    } else {
+                        pending_key.take();
+                        *expected_key = true;
+                    }
+                } else if let Some(Frame::Prototype(draft)) = self.frames.last_mut() {
                     if draft.expected_key {
                         draft.pending_key = Some(value);
                         draft.expected_key = false;
@@ -643,10 +992,43 @@ impl MarkedEventReceiver for DeclarationCollector {
                         .find(|frame| matches!(frame, Frame::Prototype(_)))
                     {
                         draft.parents.push(value);
+                        if tag.is_some() {
+                            draft.parent_tag = tag.as_ref().map(tag_name);
+                        }
                     }
                 }
             }
-            Event::Alias(_) | Event::StreamStart | Event::StreamEnd | Event::Nothing => {}
+            Event::Alias(_) => {
+                if matches!(self.frames.last(), Some(Frame::VariantValuesSequence)) {
+                    if let Some(Frame::Prototype(draft)) = self
+                        .frames
+                        .iter_mut()
+                        .rev()
+                        .find(|frame| matches!(frame, Frame::Prototype(_)))
+                    {
+                        draft.variant_alias = true;
+                    }
+                } else if let Some(Frame::Prototype(draft)) = self.frames.last_mut() {
+                    if !draft.expected_key && draft.pending_key.as_deref() == Some("id") {
+                        draft.id_alias = true;
+                    } else if !draft.expected_key
+                        && draft.pending_key.as_deref() == Some("parent")
+                    {
+                        self.note(
+                            "PARENT_ALIAS_UNRESOLVED",
+                            mark.line(),
+                            "Ссылка parent задана YAML alias; исходный граф не разрешает anchors и aliases.",
+                        );
+                    }
+                } else if matches!(self.frames.last(), Some(Frame::ParentSequence)) {
+                    self.note(
+                        "PARENT_ALIAS_UNRESOLVED",
+                        mark.line(),
+                        "Список parent содержит YAML alias; исходный граф не разрешает anchors и aliases.",
+                    );
+                }
+            }
+            Event::StreamStart | Event::StreamEnd | Event::Nothing => {}
         }
     }
 }
@@ -740,23 +1122,111 @@ mod tests {
     }
 
     #[test]
-    fn partial_config_paths_are_ordered_without_code_execution() {
-        let root = std::env::temp_dir().join(format!("ss14-partials-test-{}", std::process::id()));
+    fn partial_config_files_follow_lexical_order_and_only_first_document() {
+        let root = std::env::temp_dir().join(format!("ss14-partials-order-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("Resources/PartialPrototypes")).unwrap();
+        fs::create_dir_all(root.join("Resources/Prototypes/_First")).unwrap();
+        fs::create_dir_all(root.join("Resources/Prototypes/_Second")).unwrap();
+        fs::write(
+            root.join("Resources/PartialPrototypes/z-last.yml"),
+            "- /Prototypes/_Second\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("Resources/PartialPrototypes/a-first.yml"),
+            "- /Prototypes/_First\n---\n- /Prototypes/_IgnoredSecondDocument\n",
+        )
+        .unwrap();
+
+        let mut issues = Vec::new();
+        let scopes = configured_partials(&root, &mut issues);
+        assert_eq!(scopes.len(), 2);
+        assert_eq!(scopes[0].relative, "Resources/Prototypes/_First");
+        assert_eq!(scopes[0].order, 0);
+        assert_eq!(scopes[1].relative, "Resources/Prototypes/_Second");
+        assert_eq!(scopes[1].order, 1);
+        assert!(!issues.iter().any(|issue| issue.code == "PARTIAL_CONFIG_INVALID"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn explicitly_registered_files_take_precedence_over_directories() {
+        let root = std::env::temp_dir().join(format!("ss14-partials-precedence-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join("Resources/PartialPrototypes")).unwrap();
         fs::create_dir_all(root.join("Resources/Prototypes/_Fork/Partials")).unwrap();
         fs::write(
-            root.join("Resources/PartialPrototypes/partialPrototypes.yml"),
-            "- /Prototypes/_Fork/Partials\n- /Prototypes/_Fork/Partials/example.yml\n",
+            root.join("Resources/PartialPrototypes/a-directories.yml"),
+            "- /Prototypes/_Fork/Partials\n",
         )
         .unwrap();
+        fs::write(
+            root.join("Resources/PartialPrototypes/b-file.yml"),
+            "- /Prototypes/_Fork/Partials/example.yml\n",
+        )
+        .unwrap();
+
         let mut issues = Vec::new();
         let scopes = configured_partials(&root, &mut issues);
-        assert_eq!(scopes.len(), 2);
-        assert_eq!(scopes[0].order, 0);
-        assert!(!scopes[0].is_file);
-        assert!(scopes[1].is_file);
+        assert_eq!(partial_order_for(
+            "Resources/Prototypes/_Fork/Partials/example.yml", &scopes
+        ), Some(1));
+        assert_eq!(partial_order_for(
+            "Resources/Prototypes/_Fork/Partials/another.yml", &scopes
+        ), Some(0));
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn partial_tags_preserve_explicit_order_and_reject_invalid_indices() {
+        let (items, issues) = parse(
+            "- type: !Partial:3 entity\n  id: Tagged\n- type: !PartialOnly:7 entity\n  id: Only\n- !Partial:99\n  type: entity\n  id: MappingTagIgnored\n",
+            None,
+        );
+        assert_eq!(items.len(), 3);
+        let tagged = items.iter().find(|item| item.id == "Tagged").unwrap();
+        assert_eq!(tagged.mode, "tagged_partial");
+        assert_eq!(tagged.partial_order, Some(3));
+        let only = items.iter().find(|item| item.id == "Only").unwrap();
+        assert_eq!(only.mode, "partial_only");
+        assert_eq!(only.partial_order, Some(7));
+        let mapping_tagged = items.iter().find(|item| item.id == "MappingTagIgnored").unwrap();
+        assert_eq!(mapping_tagged.mode, "normal");
+        assert_eq!(mapping_tagged.partial_order, None);
+
+        let (invalid, diagnostics) = parse(
+            "- type: !Partial entity\n  id: MissingIndex\n- type: !Partial:abc entity\n  id: InvalidIndex\n- type: !PartialOnly:nope entity\n  id: InvalidOnly\n",
+            None,
+        );
+        assert!(invalid.is_empty());
+        assert_eq!(
+            diagnostics.iter().filter(|issue| issue.code == "PARTIAL_TAG_INVALID").count(),
+            3
+        );
+    }
+
+    #[test]
+    fn create_variants_indexes_generated_ids_without_scanning_nested_component_data() {
+        let (items, issues) = parse(
+            "- type: entity\n  id: !type:CreateVariants\n    values: [Human, Moth, Vulp]\n  components:\n  - type: Sprite\n    state: !type:CreateVariants\n      values: [human, moth, vulp]\n",
+            None,
+        );
+        assert!(issues.is_empty(), "{issues:?}");
+        assert_eq!(items.len(), 3);
+        assert_eq!(items.iter().map(|item| item.id.as_str()).collect::<Vec<_>>(), ["Human", "Moth", "Vulp"]);
+        assert_eq!(items.iter().map(|item| item.variant_index).collect::<Vec<_>>(), [Some(0), Some(1), Some(2)]);
+    }
+
+    #[test]
+    fn unresolved_aliases_and_invalid_variant_lists_make_catalog_incomplete() {
+        let (items, issues) = parse(
+            "- type: entity\n  id: !type:CreateVariants\n    values: [One, *Second]\n- type: entity\n  id: *ExternalId\n",
+            None,
+        );
+        assert!(items.is_empty());
+        assert!(issues.iter().any(|issue| issue.code == "PROTOTYPE_VARIANTS_INVALID"));
+        assert!(issues.iter().any(|issue| issue.code == "PROTOTYPE_ALIAS_ID_UNSUPPORTED"));
     }
 
     #[test]
