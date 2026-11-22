@@ -161,7 +161,7 @@ fn recovery_error(
         None => issue(
             "RSI_REPLACE_ROLLED_BACK",
             "Новая PNG не установлена. Исходное состояние восстановлено из архива.",
-            "Проверьте PNG и повторите замену. Резервная копия исходной версии сохранена.",
+            "Перечитайте RSI после отката и повторите замену. Резервная копия исходной версии сохранена.",
         )
         .with_details(format!(
             "Причина замены: {} [{}]. Архив: {}",
@@ -272,6 +272,7 @@ mod tests {
 
     static NEXT: AtomicU64 = AtomicU64::new(0);
     const NEW_PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAQAAAABCAYAAAD5PA/NAAAAFElEQVR4nGP4z8DwHwwZ/gMBw38AQ80I+GhaO24AAAAASUVORK5CYII=";
+    const ONE_PIXEL_PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
 
     struct Fixture {
         root: PathBuf,
@@ -331,7 +332,7 @@ mod tests {
         let request = fixture.request();
         let replaced = replace(&fixture.root, &request).unwrap();
         assert_eq!(replaced.name, "idle");
-        assert_eq!(replaced.archive_path.as_deref().is_some(), true);
+        assert!(replaced.archive_path.is_some());
         let metadata: Value = serde_json::from_str(&replaced.content).unwrap();
         assert_eq!(metadata["custom"]["keep"], true);
         assert_eq!(metadata["states"][0]["name"], "idle");
@@ -393,6 +394,21 @@ mod tests {
                 .unwrap()["customState"],
             "preserve"
         );
+    }
+
+    #[test]
+    fn replacement_preserves_per_frame_delays_when_the_grid_is_unchanged() {
+        let fixture = Fixture::new();
+        let mut request = fixture.request();
+        request.directions = 1;
+        request.frames_per_direction = 1;
+        request.data_url = format!("data:image/png;base64,{ONE_PIXEL_PNG}");
+        request.delays = Some(vec![vec![0.25]]);
+
+        let replaced = replace(&fixture.root, &request).unwrap();
+        let metadata: Value = serde_json::from_str(&replaced.content).unwrap();
+        assert_eq!(metadata["states"][0]["delays"][0][0], 0.25);
+        assert_eq!(metadata["states"][0]["customState"], "preserve");
     }
 
     #[test]
