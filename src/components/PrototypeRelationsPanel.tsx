@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, GitBranch, X } from 'lucide-react';
-import { studio, type PrototypeAncestor, type PrototypeRelationLink, type PrototypeRelations, type PrototypeSourceReport } from '../lib/api';
+import { studio, type PrototypeAncestor, type PrototypePartialPreview, type PrototypeRelationLink, type PrototypeRelations, type PrototypeSourceReport } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 
 interface PrototypeIdentity {
@@ -115,6 +115,73 @@ function AncestorItems({
   </section>;
 }
 
+/** Partial overlay is not the final RobustToolbox inheritance result: parents
+ * and C# DataField defaults remain deliberately outside this preview. */
+function PartialOverlayPreview({
+  selected, workspaceKey, onOpen,
+}: {
+  selected: PrototypeIdentity;
+  workspaceKey: string;
+  onOpen: Props['onOpen'];
+}) {
+  const [report, setReport] = useState<PrototypePartialPreview | null>(null);
+  const [failure, setFailure] = useState<StudioError | null>(null);
+  const [busy, setBusy] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    setBusy(true);
+    setFailure(null);
+    setReport(null);
+    void studio.prototypePartialPreview(selected.kind, selected.id).then((result) => {
+      if (active) setReport(result);
+    }).catch((reason: unknown) => {
+      if (active) setFailure(normalizeStudioError(reason));
+    }).finally(() => { if (active) setBusy(false); });
+    return () => { active = false; };
+  }, [selected.kind, selected.id, workspaceKey]);
+
+  return <section className="proto-source-report" aria-label="Предпросмотр PartialPrototypes">
+    {busy && <p className="muted" role="status">Вычисляю partial-операции без записи на диск…</p>}
+    {failure && <div role="alert" className="proto-error">
+      <strong>{failure.message}</strong><p>{failure.hint}</p><code>{failure.code}</code>
+    </div>}
+    {report && <>
+      <p className="proto-relations-caveat">
+        {report.exact
+          ? 'Статические partial-операции исходного прототипа применены; наследование от parent и C# DataField ещё не вычислены.'
+          : 'Неполный расчёт. Часть правил, исходников или порядка применения не подтверждена. Не считайте показанные значения финальными.'}
+        {' '}Применено partial-объявлений: {report.applied_partials}.
+      </p>
+      {report.warnings.map((warning, i) => <p key={i} className="proto-source-warning">{warning}</p>)}
+      <div className="proto-source-tags">
+        <strong>Parent после partial:</strong>
+        {report.parents.length ? report.parents.map((parent, index) => <code key={index}>{parent}</code>)
+          : <small>Не задан</small>}
+      </div>
+      <strong className="proto-source-label">Поля после partial ({report.fields.length})</strong>
+      {!report.fields.length && <p className="muted">Нет доступных статических полей.</p>}
+      {report.fields.map((item) => <div className="proto-merged-row" key={item.key}>
+        <strong>{item.key}</strong>
+        <span>{item.preview}</span>
+        {item.source_file && <button className="proto-relation-source" type="button"
+          title="Открыть последний источник изменения ключа" onClick={() => onOpen(item.source_file, 1)}>
+          {item.source_file.split('/').at(-1)}
+        </button>}
+      </div>)}
+      <strong className="proto-source-label">Компоненты после partial ({report.components.length})</strong>
+      {report.components.map((item) => <div className="proto-merged-row" key={item.type_name}>
+        <strong>{item.type_name}</strong>
+        <span>{item.keys.length ? item.keys.join(', ') : 'Без явных полей'}</span>
+        {item.source_file && <button className="proto-relation-source" type="button"
+          title="Открыть последний источник изменения компонента" onClick={() => onOpen(item.source_file, 1)}>
+          {item.source_file.split('/').at(-1)}
+        </button>}
+      </div>)}
+    </>}
+  </section>;
+}
+
 /** Loads source YAML only when explicitly expanded, avoiding expensive reads
  * for every catalogue selection. Displays declarations, not a final merged value. */
 function SourceContributions({
@@ -189,6 +256,7 @@ export default function PrototypeRelationsPanel({
   const [error, setError] = useState<StudioError | null>(null);
   const [loading, setLoading] = useState(false);
   const [showSources, setShowSources] = useState(false);
+  const [showPartial, setShowPartial] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -238,6 +306,14 @@ export default function PrototypeRelationsPanel({
         onNavigate={onNavigate} onOpen={onOpen}/>
       <AncestorItems items={details.ancestors} complete={details.ancestry_complete}
         truncated={details.ancestry_truncated} onNavigate={onNavigate} onOpen={onOpen}/>
+      <section className="proto-relation-group">
+        <button type="button" className="prototype-relations-trigger"
+          aria-expanded={showPartial} onClick={() => setShowPartial((value) => !value)}>
+          {showPartial ? 'Скрыть PartialPrototypes' : 'Вычислить PartialPrototypes'}
+        </button>
+        {showPartial && <PartialOverlayPreview selected={selected}
+          workspaceKey={workspaceKey} onOpen={onOpen}/>}
+      </section>
       <section className="proto-relation-group">
         <button type="button" className="prototype-relations-trigger"
           aria-expanded={showSources} onClick={() => setShowSources((value) => !value)}>
