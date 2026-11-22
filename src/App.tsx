@@ -107,6 +107,8 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [autoRefreshTick, setAutoRefreshTick] = useState(0);
   const autoRefreshHandled = useRef(0);
+  const pendingAutoPaths = useRef(new Set<string>());
+  const pendingAutoFull = useRef(false);
   const [driftReport, setDriftReport] = useState<ResourceDriftReport | null>(null);
   const [driftChecking, setDriftChecking] = useState(false);
   const [driftError, setDriftError] = useState<StudioError | null>(null);
@@ -255,8 +257,16 @@ export default function App() {
     let active = true;
     let unlisten: (() => void) | undefined;
     let debounce: number | undefined;
-    void listen<{ project_root: string }>('studio:project-changed', (event) => {
+    void listen<{ project_root: string; paths: string[]; full: boolean }>('studio:project-changed', (event) => {
       if (!active || event.payload.project_root !== overview.project_root) return;
+      if (event.payload.full || !Array.isArray(event.payload.paths)) {
+        pendingAutoFull.current = true;
+      } else {
+        for (const changed of event.payload.paths) {
+          pendingAutoPaths.current.add(changed);
+          if (pendingAutoPaths.current.size > 256) pendingAutoFull.current = true;
+        }
+      }
       if (debounce !== undefined) window.clearTimeout(debounce);
       debounce = window.setTimeout(() => {
         if (active) setAutoRefreshTick((value) => value + 1);
@@ -343,6 +353,8 @@ export default function App() {
       setTabState(restored);
       setDriftReport(null);
       autoRefreshHandled.current = 0;
+      pendingAutoPaths.current.clear();
+      pendingAutoFull.current = false;
       setAutoRefreshTick(0);
       setDriftError(null);
       setDocument(null);
@@ -391,7 +403,13 @@ export default function App() {
         }
         journalSignatures.current.set(key, JSON.stringify([base, content]));
       }
-      const changed = await studio.refreshProject();
+      // Snapshot only after draft persistence. Events arriving during IPC are
+      // collected separately and trigger the next refresh, never silently lost.
+      const changedPaths = automatic && !pendingAutoFull.current
+        ? [...pendingAutoPaths.current] : undefined;
+      pendingAutoPaths.current.clear();
+      pendingAutoFull.current = false;
+      const changed = await studio.refreshProject(changedPaths);
       // Any old read that finishes now belongs to the replaced index.
       readVersion.current += 1;
       const reads = await Promise.all(tabState.tabs.map(async (tab) => {
