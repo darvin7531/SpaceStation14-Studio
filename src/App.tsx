@@ -1091,12 +1091,22 @@ export default function App() {
   /** Explicit localization write: never clobber an open FTL draft or stale file. */
   async function applyEntityLocalization(
     file: string, baseline: ResourceDocument, content: string, keepSource = false,
+    sourceSnapshot?: string,
   ): Promise<boolean> {
     if (!overview || !file.startsWith('Resources/Locale/') || !file.endsWith('.ftl')
         || baseline.path !== file || saving || opening || refreshing || transitioning) {
       throw new Error('Невозможно записать FTL во время другой операции.');
     }
     const root = overview.project_root;
+    if (keepSource) {
+      const yamlFile = fieldTarget?.file;
+      const currentYaml = yamlFile
+        ? (draftsRef.current[yamlFile] ?? documents.current.get(yamlFile)?.content) : null;
+      if (!yamlFile || selectedPathRef.current !== yamlFile
+          || sourceSnapshot === undefined || currentYaml !== sourceSnapshot) {
+        throw new Error('Исходный YAML изменился во время массовой записи. Следующие FTL не сохранены.');
+      }
+    }
     const opened = documents.current.get(file);
     if (opened && (draftsRef.current[file] ?? opened.content) !== opened.content) {
       throw new Error('У выбранного FTL уже есть несохранённый черновик. Сохраните или закройте его перед генерацией локализации.');
