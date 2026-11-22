@@ -15,7 +15,7 @@ const PAGE_SIZE = 80;
 interface Props {
   workspaceKey: string;
   onOpen: (path: string, line: number) => void;
-  onEdit: (entry: PrototypeDeclaration, panel: 'fields' | 'components' | 'localization') => void;
+  onEdit: (entry: PrototypeDeclaration, panel: 'fields' | 'components' | 'localization' | 'parents') => void;
 }
 
 export default function PrototypeExplorer({ workspaceKey, onOpen, onEdit }: Props) {
@@ -117,6 +117,12 @@ export default function PrototypeExplorer({ workspaceKey, onOpen, onEdit }: Prop
             title="Редактировать простые поля через форму"
             onClick={() => onEdit(entry, 'fields')}>
             Поля
+          </button>}
+          {entry.mode === 'normal' && entry.variant_index === null && <button
+            type="button" className="prototype-relations-trigger"
+            title="Редактировать упорядоченный список прямых родителей (parent)"
+            onClick={() => onEdit(entry, 'parents')}>
+            Родители
           </button>}
           {entry.kind === 'entity' && entry.mode === 'normal' && entry.variant_index === null && <button
             type="button" className="prototype-relations-trigger"
