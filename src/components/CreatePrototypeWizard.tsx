@@ -50,6 +50,7 @@ export default function CreatePrototypeWizard({
   const [mode, setMode] = useState<PrototypeDestinationMode>('new');
   const [destination, setDestination] = useState<'project' | 'external'>('project');
   const [availableFiles, setAvailableFiles] = useState<string[]>([]);
+  const [matchingFileCount, setMatchingFileCount] = useState(0);
   const [availableKinds, setAvailableKinds] = useState<string[]>([]);
   const [draft, setDraft] = useState<NewPrototypeDraft>(INITIAL);
   const [preview, setPreview] = useState<NewPrototypePreview | AppendPrototypePreview | null>(null);
@@ -74,11 +75,6 @@ export default function CreatePrototypeWizard({
 
   useEffect(() => {
     let active = true;
-    void studio.searchResources('', 'yaml', 0, 250).then((page) => {
-      if (active) setAvailableFiles(page.items.map((entry) => entry.path));
-    }).catch(() => {
-      if (active) setAvailableFiles([]);
-    });
     void studio.listPrototypeKinds().then((kinds) => {
       if (active) setAvailableKinds(kinds);
     }).catch(() => {
@@ -86,6 +82,26 @@ export default function CreatePrototypeWizard({
     });
     return () => { active = false; };
   }, []);
+
+  // Electron allowed choosing any indexed YAML, including files past the
+  // first search page. Query the native index as the user narrows the path.
+  useEffect(() => {
+    if (mode !== 'append') return;
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void studio.searchResources(draft.file, 'yaml', 0, 200).then((page) => {
+        if (!active) return;
+        setAvailableFiles(page.items.map((entry) => entry.path));
+        setMatchingFileCount(page.total);
+      }).catch(() => {
+        if (active) {
+          setAvailableFiles([]);
+          setMatchingFileCount(0);
+        }
+      });
+    }, 160);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [mode, draft.file]);
 
   function update<K extends keyof NewPrototypeDraft>(field: K, value: NewPrototypeDraft[K]) {
     // Do not leave an old valid preview enabled during the debounce window.
@@ -305,9 +321,14 @@ export default function CreatePrototypeWizard({
                 list={mode === 'append' ? 'append-prototype-files' : undefined}
                 placeholder={mode === 'append' ? 'Resources/Prototypes/Entities/items.yml' : ''}
                 onChange={(event) => update('file', event.target.value)}/>
-              {mode === 'append' && <datalist id="append-prototype-files">
-                {availableFiles.map((file) => <option key={file} value={file}/>)}
-              </datalist>}
+              {mode === 'append' && <>
+                <datalist id="append-prototype-files">
+                  {availableFiles.map((file) => <option key={file} value={file}/>)}
+                </datalist>
+                {matchingFileCount > availableFiles.length && <small>
+                  Показано {availableFiles.length} из {matchingFileCount} файлов — уточните путь для поиска.
+                </small>}
+              </>}
             </label>
             {mode === 'new' && destination === 'project' && <button type="button"
               disabled={creating || pickingFolder} onClick={() => void pickProjectFolder()}>
