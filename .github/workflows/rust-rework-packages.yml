@@ -13,6 +13,7 @@ on:
     paths:
       - '.github/workflows/rust-rework-packages.yml'
       - 'src-tauri/tauri.bundle.conf.json'
+      - 'src-tauri/tauri.windows.bundle.conf.json'
 
 permissions:
   contents: read
@@ -89,6 +90,23 @@ jobs:
         run: npx tauri icon src-tauri/icons/icon.png
       - name: Build Windows installation packages
         run: npm run build -- --config src-tauri/tauri.windows.bundle.conf.json --bundles nsis,msi
+      - name: Verify portable Windows executable exists
+        shell: pwsh
+        run: |
+          $binary = "src-tauri/target/release/ss14-studio.exe"
+          if (-not (Test-Path $binary -PathType Leaf)) {
+            throw "Portable app executable is missing: $binary"
+          }
+          if ((Get-Item $binary).Length -lt 1MB) {
+            throw "Portable executable is unexpectedly small: $binary"
+          }
+      - name: Publish portable Windows executable (unsigned)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ss14-studio-rust-windows-portable-x64
+          path: src-tauri/target/release/ss14-studio.exe
+          if-no-files-found: error
+          retention-days: 14
       - name: Publish Windows package artifacts (unsigned)
         uses: actions/upload-artifact@v4
         with:
