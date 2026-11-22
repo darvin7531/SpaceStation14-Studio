@@ -110,3 +110,12 @@
 .proto-merged-row strong { color: #c7e4ff; font-size: 11px; overflow-wrap: anywhere; }
 .proto-merged-row span { color: #a8bfd9; font-size: 11px; overflow-wrap: anywhere; }
 .proto-merged-row button { color: #80bdeb; font-size: 10px; word-break: break-all; }
+
+
+/* Parity with main Inspector's "Linked prototypes" navigation section. */
+.proto-linked-reference { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; text-align: left; border: 1px solid #35516d; background: #142638; color: #cee1f5; padding: 8px 10px; border-radius: 5px; cursor: pointer; }
+.proto-linked-reference:hover { background: #1e3a52; }
+.proto-linked-reference > span:first-child { display: grid; gap: 2px; min-width: 0; }
+.proto-linked-reference strong { font-size: 12px; overflow-wrap: anywhere; }
+.proto-linked-reference small { font-size: 10px; color: #9ab6d2; overflow-wrap: anywhere; }
+.proto-linked-reference > span:last-child { font-size: 12px; color: #85b9ed; }
