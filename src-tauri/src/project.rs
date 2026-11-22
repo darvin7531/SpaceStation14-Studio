@@ -1636,19 +1636,35 @@ mod tests {
         fx.write("Resources/Prototypes/child.yml",
             "- type: entity\n  id: Child\n  parent: Parent\n  name: Child\n  components:\n  - type: Sprite\n    state: child\n");
         let project = ProjectIndex::open(fx.root_str()).unwrap();
-        let report = project.prototype_inheritance_preview("entity", "Child").unwrap();
+        let report = project
+            .prototype_inheritance_preview("entity", "Child")
+            .unwrap();
         assert!(report.structural_complete, "{:?}", report.warnings);
         assert!(!report.runtime_exact);
         assert_eq!(report.lineage, ["Root", "Parent", "Child"]);
         assert_eq!(report.direct_parents, ["Parent"]);
         assert_eq!(report.components.len(), 2);
-        let sprite = report.components.iter().find(|component|
-            component.type_name == "Sprite").unwrap();
+        let sprite = report
+            .components
+            .iter()
+            .find(|component| component.type_name == "Sprite")
+            .unwrap();
         assert_eq!(sprite.keys, ["state", "shader"]);
         assert_eq!(sprite.source_file, "Resources/Prototypes/child.yml");
-        assert_eq!(report.fields.iter().find(|field| field.key == "name")
-            .unwrap().preview, "Child");
-        assert!(project.read_resource("Resources/Prototypes/root.yml").unwrap().content.contains("grand"));
+        assert_eq!(
+            report
+                .fields
+                .iter()
+                .find(|field| field.key == "name")
+                .unwrap()
+                .preview,
+            "Child"
+        );
+        assert!(project
+            .read_resource("Resources/Prototypes/root.yml")
+            .unwrap()
+            .content
+            .contains("grand"));
     }
 
     #[test]
@@ -1656,15 +1672,27 @@ mod tests {
         let fx = Fixture::new();
         fx.write("Resources/Prototypes/cycle.yml",
             "- type: entity\n  id: A\n  parent: B\n  name: A\n- type: entity\n  id: B\n  parent: A\n  description: B\n");
-        fx.write("Resources/Prototypes/missing.yml",
-            "- type: entity\n  id: M\n  parent: MissingParent\n  name: M\n");
+        fx.write(
+            "Resources/Prototypes/missing.yml",
+            "- type: entity\n  id: M\n  parent: MissingParent\n  name: M\n",
+        );
         let project = ProjectIndex::open(fx.root_str()).unwrap();
-        let cycle = project.prototype_inheritance_preview("entity", "A").unwrap();
+        let cycle = project
+            .prototype_inheritance_preview("entity", "A")
+            .unwrap();
         assert!(!cycle.structural_complete);
-        assert!(cycle.warnings.iter().any(|warning| warning.contains("Цикл")));
-        let missing = project.prototype_inheritance_preview("entity", "M").unwrap();
+        assert!(cycle
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("Цикл")));
+        let missing = project
+            .prototype_inheritance_preview("entity", "M")
+            .unwrap();
         assert!(!missing.structural_complete);
-        assert!(missing.warnings.iter().any(|warning| warning.contains("MissingParent")));
+        assert!(missing
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("MissingParent")));
         assert_eq!(missing.fields[0].preview, "M");
     }
 
@@ -1673,20 +1701,34 @@ mod tests {
         let fx = Fixture::new();
         fx.write("Resources/Prototypes/base.yml",
             "- type: entity\n  id: First\n  name: First\n  components:\n  - type: Sprite\n    state: old\n- type: entity\n  id: Second\n  name: Second\n");
-        fx.write("Resources/PartialPrototypes/partialPrototypes.yml", "- /Prototypes/patches\n");
-        fx.write("Resources/Prototypes/patches/patch.yml",
-            "- type: entity\n  id: First\n  components:\n  - type: Sprite\n    state: new\n");
+        fx.write(
+            "Resources/PartialPrototypes/partialPrototypes.yml",
+            "- /Prototypes/patches\n",
+        );
+        fx.write(
+            "Resources/Prototypes/patches/patch.yml",
+            "- type: entity\n  id: First\n  components:\n  - type: Sprite\n    state: new\n",
+        );
         fx.write("Resources/Prototypes/child.yml",
             "- type: entity\n  id: Child\n  parent: First\n  name: Child\n- type: entity\n  id: Multi\n  parent: [First, Second]\n");
         let project = ProjectIndex::open(fx.root_str()).unwrap();
-        let single = project.prototype_inheritance_preview("entity", "Child").unwrap();
+        let single = project
+            .prototype_inheritance_preview("entity", "Child")
+            .unwrap();
         assert!(single.structural_complete, "{:?}", single.warnings);
         assert_eq!(single.total_partials, 1);
-        assert_eq!(single.components[0].source_file,
-            "Resources/Prototypes/patches/patch.yml");
-        let multiple = project.prototype_inheritance_preview("entity", "Multi").unwrap();
+        assert_eq!(
+            single.components[0].source_file,
+            "Resources/Prototypes/patches/patch.yml"
+        );
+        let multiple = project
+            .prototype_inheritance_preview("entity", "Multi")
+            .unwrap();
         assert!(!multiple.structural_complete);
-        assert!(multiple.warnings.iter().any(|warning| warning.contains("2 родителя")));
+        assert!(multiple
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("2 родителя")));
     }
 
     #[test]
