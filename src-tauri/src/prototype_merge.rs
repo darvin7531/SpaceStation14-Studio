@@ -792,7 +792,8 @@ struct InheritedSnapshot {
     parents: Vec<String>,
     lineage: Vec<String>,
     complete: bool,
-    partials: usize,
+    /// Own applied partial counts, deduplicated by ancestor ID across diamonds.
+    partials_by_identity: HashMap<String, usize>,
 }
 
 struct InheritanceSolver<'a, F> {
@@ -878,7 +879,8 @@ impl<F: FnMut(&str) -> Result<String, StudioError>> InheritanceSolver<'_, F> {
             };
             let mut sources = HashMap::new();
             let mut lineage = Vec::new();
-            let mut total_partials = partial.applied_partials;
+            let mut partials_by_identity = HashMap::new();
+            partials_by_identity.insert(id.to_owned(), partial.applied_partials);
             for parent_id in &parents {
                 if parent_id.trim().is_empty() || !seen_parents.insert(parent_id.clone()) {
                     complete = false;
@@ -892,7 +894,7 @@ impl<F: FnMut(&str) -> Result<String, StudioError>> InheritanceSolver<'_, F> {
                         if !parent.complete {
                             complete = false;
                         }
-                        total_partials += parent.partials;
+                        partials_by_identity.extend(parent.partials_by_identity);
                         for ancestor in parent.lineage {
                             if !lineage.contains(&ancestor) {
                                 lineage.push(ancestor);
@@ -950,7 +952,7 @@ impl<F: FnMut(&str) -> Result<String, StudioError>> InheritanceSolver<'_, F> {
                 parents,
                 lineage,
                 complete,
-                partials: total_partials,
+                partials_by_identity,
             })
         })();
         self.stack.pop();
@@ -1112,7 +1114,7 @@ pub fn preview_inheritance(
         lineage: result.lineage,
         fields,
         components,
-        total_partials: result.partials,
+        total_partials: result.partials_by_identity.values().sum(),
         warnings: solver.warnings,
     })
 }
