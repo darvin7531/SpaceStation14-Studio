@@ -72,6 +72,7 @@ try {
     await until('saved file', async () => (await readFile(file, 'utf8')) === saved);
   } catch (error) {
     console.error('Saved file contents:', JSON.stringify(await readFile(file, 'utf8')));
+    console.error('UI state:', await script('return document.body.innerText;'));
     throw error;
   }
   await until('save completion', () => script(`
