@@ -20,6 +20,7 @@ interface Props {
   onNavigateIdentifier?: (identifier: string) => void;
   onNavigateRsi?: (indexedPath: string) => void;
   onNavigateLocalization?: (line: number, source: string) => void;
+  onCursorLineChange?: (line: number) => void;
   gameLocales?: readonly string[];
 }
 
@@ -27,7 +28,7 @@ interface Props {
  * Lazy-loads Monaco only when a resource is opened, and disposes the model,
  * workers' consumers and editor on tab switch/unmount.
  */
-export default function MonacoPreview({ resource, document, revealLine, jumpToken, value, editable, onChange, onNavigateIdentifier, onNavigateRsi, onNavigateLocalization, gameLocales = [], settings }: Props) {
+export default function MonacoPreview({ resource, document, revealLine, jumpToken, value, editable, onChange, onNavigateIdentifier, onNavigateRsi, onNavigateLocalization, onCursorLineChange, gameLocales = [], settings }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<{ revealLineInCenter(line: number): void; setPosition(position: { lineNumber: number; column: number }): void } | null>(null);
   const latestJump = useRef(revealLine);
@@ -47,6 +48,8 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
   onNavigateRsiRef.current = onNavigateRsi;
   const onNavigateLocalizationRef = useRef(onNavigateLocalization);
   onNavigateLocalizationRef.current = onNavigateLocalization;
+  const onCursorLineChangeRef = useRef(onCursorLineChange);
+  onCursorLineChangeRef.current = onCursorLineChange;
   const gameLocaleKey = gameLocales.join('\u0000');
   const localeValidationRef = useRef({
     enabled: settings.liveValidation,
@@ -337,10 +340,16 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
             }, Math.max(100, Math.min(config.delayMs, 1500)));
           }
           scheduleLocaleDiagnostics.current = scheduleLocaleCheck;
-          const cursorSubscription = editor.onDidChangeCursorPosition(scheduleLocaleCheck);
+          const cursorSubscription = editor.onDidChangeCursorPosition((event) => {
+            scheduleLocaleCheck();
+            if (resource.kind === 'yaml') onCursorLineChangeRef.current?.(event.position.lineNumber);
+          });
           if (latestJump.current) {
             editor.revealLineInCenter(latestJump.current);
             editor.setPosition({ lineNumber: latestJump.current, column: 1 });
+          }
+          if (resource.kind === 'yaml') {
+            onCursorLineChangeRef.current?.(editor.getPosition()?.lineNumber ?? 1);
           }
           scheduleLocaleCheck();
           dispose = () => {
