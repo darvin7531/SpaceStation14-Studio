@@ -81,7 +81,7 @@ export function buildEntityLocalePatch(
     const out = [...lines];
     if (added.includes('name')) {
       // Fill an empty message value without replacing its existing attributes.
-      out[start] = out[start].replace(/[ \\t]*$/, '') + ' ' + safeValue(values.name);
+      out[start] = out[start].trimEnd() + ' ' + safeValue(values.name);
     }
     out.splice(end, 0, ...insert);
     next = out.join(eol);
