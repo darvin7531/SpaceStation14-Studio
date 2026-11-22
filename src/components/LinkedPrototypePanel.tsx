@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useI18n } from '../i18n';
 import { studio, type LinkedPrototypeReport } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 
@@ -14,6 +15,7 @@ interface Props {
 export default function LinkedPrototypePanel({
   kind, id, workspaceKey, onNavigate,
 }: Props) {
+  const { t } = useI18n();
   const [report, setReport] = useState<LinkedPrototypeReport | null>(null);
   const [error, setError] = useState<StudioError | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,26 +35,26 @@ export default function LinkedPrototypePanel({
     return () => { live = false; };
   }, [kind, id, workspaceKey]);
 
-  return <section className="proto-source-report" aria-label="Связанные прототипы">
-    {loading && <p role="status" className="muted">Ищу ссылки в полях и компонентах…</p>}
+  return <section className="proto-source-report" aria-label={t('linked.label')}>
+    {loading && <p role="status" className="muted">{t('linked.loading')}</p>}
     {error && <div className="proto-error" role="alert">
       <strong>{error.message}</strong><p>{error.hint}</p><code>{error.code}</code>
     </div>}
     {report && <>
-      {!report.items.length && <p className="muted">Нет связанных прототипов.</p>}
+      {!report.items.length && <p className="muted">{t('linked.empty')}</p>}
       {!report.source_complete && <p className="proto-relations-caveat">
-        Не все ссылки могут быть найдены: часть исходников или наследования неоднозначна.
+        {t('linked.incomplete')}
       </p>}
       {report.warnings.map((warning, i) => <p key={i} className="proto-relations-caveat">{warning}</p>)}
       {report.items.map((link) => <button type="button"
         key={link.kind + ':' + link.id} className="proto-linked-reference"
         onClick={() => onNavigate(link.kind, link.id)}
-        title={'Перейти к ' + link.kind + ':' + link.id}>
+        title={t('linked.navigate', { kind: link.kind, id: link.id })}>
         <span><strong>{link.id}</strong><small>{link.kind} / {link.field}</small></span>
         <span aria-hidden="true">↗</span>
       </button>)}
       {report.limited && <small className="muted">
-        Показаны первые {report.items.length} совпадений.
+        {t('linked.limited', { count: report.items.length })}
       </small>}
     </>}
   </section>;

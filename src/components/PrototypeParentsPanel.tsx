@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useI18n } from '../i18n';
 import { AlertTriangle, GitBranch, RefreshCw, X } from 'lucide-react';
 import { studio, type PrototypeFieldLocator } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
@@ -13,12 +14,14 @@ interface Props {
 
 /** One line per explicit parent ID; never resolves or guesses inherited content. */
 export default function PrototypeParentsPanel({ locator, source, busy, onApply, onClose }: Props) {
+  const { t } = useI18n();
   const [original, setOriginal] = useState<string[] | null>(null);
   const [text, setText] = useState('');
   const [reading, setReading] = useState(true);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<StudioError | null>(null);
   const [notice, setNotice] = useState('');
+  const [noticeKey, setNoticeKey] = useState<'parents.unchanged' | 'parents.applied' | null>(null);
   const [refresh, setRefresh] = useState(0);
 
   useEffect(() => {
@@ -33,6 +36,7 @@ export default function PrototypeParentsPanel({ locator, source, busy, onApply, 
           setOriginal(result.parents);
           setText(result.parents.join('\n'));
           setNotice(result.notice);
+          setNoticeKey(null);
         })
         .catch((failure) => {
           if (live) setError(normalizeStudioError(failure));
@@ -61,17 +65,17 @@ export default function PrototypeParentsPanel({ locator, source, busy, onApply, 
     try {
       const patch = await studio.patchPrototypeParents(locator, snapshot, requested);
       if (!patch.changed) {
-        setNotice('Список родителей не изменился.');
+        setNoticeKey('parents.unchanged');
         return;
       }
       if (onApply(locator, snapshot, patch.content)) {
-        setNotice('Список родителей изменён в черновике YAML. Сохраните файл Ctrl+S.');
+        setNoticeKey('parents.applied');
         setRefresh((current) => current + 1);
       } else {
         setError({
           code: 'PARENT_DRAFT_CHANGED',
-          message: 'Исходный YAML изменился во время подготовки правки.',
-          hint: 'Повторно откройте список родителей. Результат не применён.',
+          message: t('parents.changed'),
+          hint: t('parents.retry'),
         });
       }
     } catch (failure) {
@@ -81,39 +85,38 @@ export default function PrototypeParentsPanel({ locator, source, busy, onApply, 
     }
   }
 
-  return <section className="prototype-field-editor" aria-label={'Родители ' + locator.kind + ':' + locator.id}>
+  return <section className="prototype-field-editor" aria-label={t('parents.label', { kind: locator.kind, id: locator.id })}>
     <header>
       <div>
-        <strong><GitBranch size={15}/> Родители {locator.kind}:{locator.id}</strong>
-        <small>{locator.file} · прямые связи, без наследуемых значений</small>
+        <strong><GitBranch size={15}/> {t('parents.label', { kind: locator.kind, id: locator.id })}</strong>
+        <small>{t('parents.description', { file: locator.file })}</small>
       </div>
-      <button type="button" disabled={applying} onClick={onClose} aria-label="Закрыть редактор родителей">
+      <button type="button" disabled={applying} onClick={onClose} aria-label={t('parents.close')}>
         <X size={16}/>
       </button>
     </header>
-    {reading && <p className="prototype-field-notice"><RefreshCw size={14}/> Проверяю YAML-объявление…</p>}
+    {reading && <p className="prototype-field-notice"><RefreshCw size={14}/> {t('parents.loading')}</p>}
     {error && <div className="prototype-field-error" role="alert">
       <AlertTriangle size={15}/><span>{error.message} {error.hint} <code>{error.code}</code></span>
     </div>}
     <form onSubmit={(event) => void apply(event)}>
       <div className="prototype-field-grid">
-        <label className="prototype-field-wide">Прямые родители (по одному ID на строку)
+        <label className="prototype-field-wide">{t('parents.input')}
           <textarea rows={Math.min(10, Math.max(3, requested.length + 1))}
             spellCheck={false} value={text} disabled={disabled} placeholder={'BaseItem\nBaseStructure'}
             onChange={(event) => { setText(event.target.value); setError(null); }}/>
         </label>
       </div>
       <p className="prototype-field-notice">
-        Один ID станет обычным parent. Несколько ID будут записаны YAML-списком.
-        Пустой список удалит поле parent. Порядок родителей сохраняется.
+        {t('parents.help')}
       </p>
       <div className="prototype-field-actions">
-        <small>{notice}</small>
+        <small>{noticeKey ? t(noticeKey) : notice}</small>
         <button type="button" disabled={disabled} onClick={() => setRefresh((current) => current + 1)}>
-          <RefreshCw size={14}/> Сбросить
+          <RefreshCw size={14}/> {t('parents.reset')}
         </button>
         <button type="submit" disabled={disabled || !changed}>
-          <GitBranch size={14}/>{applying ? 'Применение…' : 'Применить к черновику'}
+          <GitBranch size={14}/>{applying ? t('parents.applying') : t('parents.apply')}
         </button>
       </div>
     </form>
