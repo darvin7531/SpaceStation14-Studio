@@ -39,3 +39,10 @@ test('invalid names and Fluent special syntax are rejected', () => {
 test('duplicate message ids are refused rather than silently patched', () => {
   assert.throws(() => buildEntityLocalePatch('ent-TestEntity = a\nent-TestEntity = b\n', entity, ['suffix']));
 });
+
+test('checkbox order cannot place attributes before the message', () => {
+  assert.equal(
+    buildEntityLocalePatch('', entity, ['suffix', 'description', 'name']).content,
+    'ent-TestEntity = Test entity\n    .desc = A description\n    .suffix = Suffix\n',
+  );
+});
