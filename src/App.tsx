@@ -21,6 +21,7 @@ import RsiPreview from './components/RsiPreview';
 import CreateRsiWizard from './components/CreateRsiWizard';
 import PrototypeExplorer from './components/PrototypeExplorer';
 import PrototypeFieldsPanel from './components/PrototypeFieldsPanel';
+import PrototypeParentsPanel from './components/PrototypeParentsPanel';
 import PrototypeLocalizationPanel from './components/PrototypeLocalizationPanel';
 import PrototypeComponentsPanel from './components/PrototypeComponentsPanel';
 import RecoveryPanel from './components/RecoveryPanel';
@@ -116,7 +117,7 @@ export default function App() {
   const [showingCSharp, setShowingCSharp] = useState(false);
   const [showingUiSources, setShowingUiSources] = useState(false);
   const [fieldTarget, setFieldTarget] = useState<PrototypeFieldLocator | null>(null);
-  const [prototypePanel, setPrototypePanel] = useState<'fields' | 'components' | 'localization'>('fields');
+  const [prototypePanel, setPrototypePanel] = useState<'fields' | 'components' | 'localization' | 'parents'>('fields');
   const [picking, setPicking] = useState(false);
   const [explorerMode, setExplorerMode] = useState<'files' | 'prototypes'>('files');
   const [workspaceRevision, setWorkspaceRevision] = useState(0);
@@ -899,7 +900,7 @@ export default function App() {
     openResource({ path: file, kind: 'yaml' });
   }
 
-  function editPrototypeFields(entry: PrototypeDeclaration, panel: 'fields' | 'components' | 'localization') {
+  function editPrototypeFields(entry: PrototypeDeclaration, panel: 'fields' | 'components' | 'localization' | 'parents') {
     if (saving || opening || transitioning || refreshing) return;
     openPrototypeSource(entry.file, entry.line);
     setPrototypePanel(panel);
@@ -1427,6 +1428,11 @@ export default function App() {
                   key={fieldTarget.file + ':' + fieldTarget.document_index + ':' + fieldTarget.item_index}
                   locator={fieldTarget} source={activeText} busy={saving || transitioning || refreshing}
                   onApply={applyPrototypeFields} onClose={() => setFieldTarget(null)}/>
+              : prototypePanel === 'parents'
+                ? <PrototypeParentsPanel
+                    key={fieldTarget.file + ':' + fieldTarget.document_index + ':' + fieldTarget.item_index}
+                    locator={fieldTarget} source={activeText} busy={saving || transitioning || refreshing}
+                    onApply={applyPrototypeFields} onClose={() => setFieldTarget(null)}/>
               : prototypePanel === 'localization'
                 ? <PrototypeLocalizationPanel
                     key={fieldTarget.file + ':' + fieldTarget.document_index + ':' + fieldTarget.item_index}
