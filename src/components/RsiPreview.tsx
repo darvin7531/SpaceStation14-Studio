@@ -5,6 +5,7 @@ import { normalizeStudioError, type StudioError } from '../lib/errors';
 import { buildRsiFrameLayout, isRsiLayoutError, parseRsiMetadata } from '../lib/rsi-layout';
 import RsiStatePlayer from './RsiStatePlayer';
 import RsiImportPanel from './RsiImportPanel';
+import RsiBulkImportPanel from './RsiBulkImportPanel';
 import RsiTimingPanel from './RsiTimingPanel';
 import RsiDeletePanel from './RsiDeletePanel';
 import RsiRestorePanel from './RsiRestorePanel';
@@ -20,13 +21,14 @@ function Failure({ error }: { error: StudioError }) {
 
 /** Load one PNG at a time; do not expose project paths to the webview filesystem. */
 export default function RsiPreview({
-  path, metadata, revision, initialState, onImported, onTimingUpdated, onCreditsUpdated, onDeleted, onRestored, onRenamed,
+  path, metadata, revision, initialState, onImported, onBatchOutcome, onTimingUpdated, onCreditsUpdated, onDeleted, onRestored, onRenamed,
 }: {
   path: string;
   metadata: string;
   revision: string;
   initialState?: string | null;
   onImported: (updated: ImportedRsiState) => void;
+  onBatchOutcome: (message: string) => void;
   onTimingUpdated: (updated: ImportedRsiState) => void;
   onCreditsUpdated: (updated: ImportedRsiState) => void;
   onDeleted: (result: DeletedRsiState) => void;
@@ -135,6 +137,8 @@ export default function RsiPreview({
     <RsiCreditsPanel key={'credits:' + path + ':' + revision}
       path={path} revision={revision} metadata={metadata} onSaved={onCreditsUpdated}/>
     <RsiImportPanel path={path} revision={revision} onImported={onImported}/>
+    <RsiBulkImportPanel path={path} revision={revision} metadata={metadata}
+      onImported={onImported} onBatchOutcome={onBatchOutcome}/>
     {selectedState && image?.revision && list?.sheets.some((sheet) => sheet.name === selectedState.name + '.png')
       && <RsiImportPanel key={'replace:' + path + ':' + selectedState.name + ':' + revision}
         path={path} revision={revision} replaceState={selectedState}
