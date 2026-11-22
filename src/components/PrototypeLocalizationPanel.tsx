@@ -136,6 +136,7 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, requ
     setError(null);
     setBatchPreview(null);
     try {
+      await studio.refreshProject();
       const fresh = await studio.analyzeEntityLocalization(locator, source, [...requiredLocales]);
       setAnalysis(fresh);
       if (!fresh.complete) throw new Error('Индекс игровых локалей неполон. Массовое исправление заблокировано.');
@@ -203,6 +204,7 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, requ
       }
       for (const item of batchPreview.missingFiles) {
         // Recheck the indexed locale and search before each exclusive create.
+        await studio.refreshProject();
         const fresh = await studio.analyzeEntityLocalization(locator, source, [...requiredLocales]);
         const plan = planMissingEntityTranslations(fresh, chosen);
         const candidate = plan.find((entry) => entry.locale === item.locale && entry.path === item.path && !entry.fileExists);

@@ -22,7 +22,7 @@ const KEY = /^[A-Za-z][A-Za-z0-9_-]{0,127}$/;
 
 function safeValue(value: string): string {
   const trimmed = value.trim();
-  if (!trimmed || trimmed.length > 4096 || /[{}\r\n\x00-\x1f\x7f]/.test(trimmed)) {
+  if (!trimmed || trimmed.length > 4096 || new TextEncoder().encode(trimmed).length > 8192 || /[{}\r\n\x00-\x1f\x7f]/.test(trimmed)) {
     throw new Error('Значение Fluent должно быть однострочным текстом до 4096 символов без { } и управляющих символов.');
   }
   return trimmed;

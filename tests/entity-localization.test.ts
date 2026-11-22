@@ -94,3 +94,11 @@ test('missing FTL draft contains only selected fields, including attribute-only 
     starter_value: '', starter_description: entity.description, starter_suffix: undefined, allow_empty_value: true });
   assert.throws(() => buildMissingFluentDraft('Resources/Locale/en-US/entities.ftl', { ...entity, description: '{ $bad }' }, ['description']));
 });
+
+
+test('batch draft enforces the native UTF-8 byte limit for every field', () => {
+  for (const field of ['name', 'description', 'suffix'] as const) {
+    assert.doesNotThrow(() => buildMissingFluentDraft('Resources/Locale/en-US/a.ftl', { ...entity, [field]: '界'.repeat(2730) }, [field]));
+    assert.throws(() => buildMissingFluentDraft('Resources/Locale/en-US/a.ftl', { ...entity, [field]: '界'.repeat(2731) }, [field]));
+  }
+});

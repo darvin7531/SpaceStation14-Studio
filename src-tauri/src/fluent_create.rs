@@ -187,8 +187,20 @@ pub fn create(root: &Path, draft: &FluentDraft) -> Result<CreatedFluent, StudioE
         )
     })?;
     let mut cursor = PathBuf::from(root);
-    for part in relative.components() {
+    for (index, part) in relative.components().enumerate() {
         cursor.push(part);
+        // Resources/Locale must already exist; create only descendants, one at a time.
+        if index >= 2 {
+            match fs::create_dir(&cursor) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(error) => return Err(problem(
+                    "FTL_FOLDER_MISSING",
+                    "Не удалось создать папку назначения.",
+                    "Проверьте права записи и структуру каталогов.",
+                ).with_details(error.to_string())),
+            }
+        }
         let meta = fs::symlink_metadata(&cursor).map_err(|error| {
             problem(
                 "FTL_FOLDER_MISSING",
@@ -576,17 +588,38 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_parent_without_creating_anything() {
+    fn creates_missing_parent_directories() {
         let fx = Fixture::new();
         let draft = FluentDraft {
-            file: "Resources/Locale/ru-RU/new.ftl".into(),
+            file: "Resources/Locale/ru-RU/nested/new.ftl".into(),
             ..fx.draft()
         };
-        assert_eq!(
-            create(&fx.root, &draft).unwrap_err().code,
-            "FTL_FOLDER_MISSING"
-        );
-        assert!(!fx.root.join(&draft.file).exists());
+        create(&fx.root, &draft).unwrap();
+        assert!(fx.root.join(&draft.file).is_file());
+    }
+
+    #[test]
+    fn later_failure_preserves_successful_creation() {
+        let fx = Fixture::new();
+        let first = fx.draft();
+        create(&fx.root, &first).unwrap();
+        let second = FluentDraft { starter_value: "{invalid}".into(), file: "Resources/Locale/en-US/other.ftl".into(), ..fx.draft() };
+        assert_eq!(create(&fx.root, &second).unwrap_err().code, "FTL_VALUE_INVALID");
+        assert_eq!(fs::read_to_string(fx.root.join(&first.file)).unwrap(), "item-example = Example item\n");
+        assert!(!fx.root.join(&second.file).exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_symlink_before_creating_nested_directories() {
+        use std::os::unix::fs::symlink;
+        let fx = Fixture::new();
+        let outside = fx.root.join("outside");
+        fs::create_dir(&outside).unwrap();
+        symlink(&outside, fx.root.join("Resources/Locale/link")).unwrap();
+        let draft = FluentDraft { file: "Resources/Locale/link/nested/new.ftl".into(), ..fx.draft() };
+        assert_eq!(create(&fx.root, &draft).unwrap_err().code, "FTL_FOLDER_INVALID");
+        assert!(!outside.join("nested").exists());
     }
 
     #[cfg(unix)]
