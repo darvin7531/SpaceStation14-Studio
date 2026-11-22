@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useI18n } from '../i18n';
 import { AlertTriangle, ChevronLeft, ChevronRight, Folder, FolderOpen, FileCode2, FileText, Image as ImageIcon } from 'lucide-react';
 import { studio, type ResourceBrowserPage, type ResourceEntry } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
@@ -12,6 +13,7 @@ interface Props {
 const PAGE_SIZE = 100;
 
 export default function ResourceFolderBrowser({ selectedPath, onOpen }: Props) {
+  const { t } = useI18n();
   const [directory, setDirectory] = useState('Resources');
   const [page, setPage] = useState(0);
   const [result, setResult] = useState<ResourceBrowserPage | null>(null);
@@ -40,7 +42,7 @@ export default function ResourceFolderBrowser({ selectedPath, onOpen }: Props) {
 
   const breadcrumbs = resourceBreadcrumbs(directory);
   return <div className="resource-folder-browser">
-    <nav className="resource-folder-breadcrumbs" aria-label="Путь к ресурсам">
+    <nav className="resource-folder-breadcrumbs" aria-label={t('browser.path')}>
       {breadcrumbs.map((segment, index) => <span key={segment.path}>
         {index > 0 && <span aria-hidden="true"> / </span>}
         <button type="button" disabled={segment.path === directory}
@@ -51,10 +53,10 @@ export default function ResourceFolderBrowser({ selectedPath, onOpen }: Props) {
       {error.message} {error.hint}</p>}
     <div className="resource-list" aria-busy={loading}>
       {result?.parent && <button type="button" className="resource-row" onClick={() => navigate(result.parent!)}>
-        <FolderOpen size={15}/><span>..</span><small>Назад</small>
+        <FolderOpen size={15}/><span>..</span><small>{t('browser.back')}</small>
       </button>}
-      {!loading && result?.total === 0 && <p className="muted">В этой папке нет индексированных ресурсов.</p>}
-      {loading && <p className="muted" role="status">Открываю папку…</p>}
+      {!loading && result?.total === 0 && <p className="muted">{t('browser.empty')}</p>}
+      {loading && <p className="muted" role="status">{t('browser.loading')}</p>}
       {result?.items.map((entry) =>
         <button key={entry.path} type="button" title={entry.path}
           className={'resource-row' + (selectedPath === entry.path ? ' active' : '')}
@@ -69,12 +71,15 @@ export default function ResourceFolderBrowser({ selectedPath, onOpen }: Props) {
         </button>)}
     </div>
     <div className="pagination">
-      <button type="button" aria-label="Предыдущая страница папки" disabled={page === 0 || loading}
+      <button type="button" aria-label={t('browser.prev')} disabled={page === 0 || loading}
         onClick={() => setPage((value) => value - 1)}><ChevronLeft size={17}/></button>
       <span>{result?.total
-        ? (page * PAGE_SIZE + 1) + '–' + Math.min((page + 1) * PAGE_SIZE, result.total) + ' из ' + result.total
-        : '0 элементов'}</span>
-      <button type="button" aria-label="Следующая страница папки"
+        ? t('common.countRange', {
+            from: page * PAGE_SIZE + 1, to: Math.min((page + 1) * PAGE_SIZE, result.total),
+            total: result.total,
+          })
+        : t('common.totalItems', { count: 0 })}</span>
+      <button type="button" aria-label={t('browser.next')}
         disabled={loading || !result || (page + 1) * PAGE_SIZE >= result.total}
         onClick={() => setPage((value) => value + 1)}><ChevronRight size={17}/></button>
     </div>

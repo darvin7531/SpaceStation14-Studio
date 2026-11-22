@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Settings2, X } from 'lucide-react';
+import { useI18n } from '../i18n';
 import { DEFAULT_EDITOR_SETTINGS, type EditorSettings } from '../lib/editor-settings';
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
 }
 export default function EditorSettingsDialog({ value, onChange, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
+  const { language, setLanguage, t } = useI18n();
   useEffect(() => {
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     ref.current?.focus();
@@ -29,27 +31,34 @@ export default function EditorSettingsDialog({ value, onChange, onClose }: Props
     if (event.target === event.currentTarget) onClose();
   }}>
     <div className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-heading" tabIndex={-1} ref={ref}>
-      <header><h2 id="settings-heading"><Settings2 size={18}/> Настройки редактора</h2>
-        <button type="button" onClick={onClose} aria-label="Закрыть настройки"><X size={18}/></button></header>
-      <p>Параметры применяются сразу и сохраняются для следующих запусков. Файлы проекта не меняются.</p>
+      <header><h2 id="settings-heading"><Settings2 size={18}/> {t('settings.title')}</h2>
+        <button type="button" onClick={onClose} aria-label="{t('settings.close')}"><X size={18}/></button></header>
+      <p>{t('settings.description')}</p>
       <div className="settings-fields">
-        <label>Размер шрифта (10–28)
+        <label>{t('settings.language')}
+          <select value={language} onChange={(event) => setLanguage(event.target.value === 'en' ? 'en' : 'ru')}>
+            <option value="ru">Русский</option>
+            <option value="en">English</option>
+          </select>
+          <small>{t('settings.languageHint')}</small>
+        </label>
+        <label>{t('settings.fontSize')}
           <input type="number" min={10} max={28} step={1} value={value.fontSize}
             onChange={(event) => { const n = Number(event.target.value); if (Number.isFinite(n) && n >= 10 && n <= 28) patch({ fontSize: Math.round(n) }); }}/></label>
-        <label>Отступы<select value={value.tabSize} onChange={(event) => patch({ tabSize: Number(event.target.value) === 4 ? 4 : 2 })}>
-          <option value={2}>2 пробела</option><option value={4}>4 пробела</option></select></label>
-        <label>Перенос строк<select value={value.wordWrap} onChange={(event) => patch({ wordWrap: event.target.value === 'off' ? 'off' : 'on' })}>
-          <option value="on">Включён</option><option value="off">Выключен</option></select></label>
-        <label>Номера строк<select value={value.lineNumbers} onChange={(event) => patch({ lineNumbers: event.target.value as EditorSettings['lineNumbers'] })}>
-          <option value="on">Обычные</option><option value="relative">Относительные</option><option value="off">Скрыть</option></select></label>
-        <label className="settings-check"><input type="checkbox" checked={value.minimap} onChange={(event) => patch({ minimap: event.target.checked })}/>Миникарта</label>
+        <label>{t('settings.tabs')}<select value={value.tabSize} onChange={(event) => patch({ tabSize: Number(event.target.value) === 4 ? 4 : 2 })}>
+          <option value={2}>{t('settings.spaces2')}</option><option value={4}>{t('settings.spaces4')}</option></select></label>
+        <label>{t('settings.wordWrap')}<select value={value.wordWrap} onChange={(event) => patch({ wordWrap: event.target.value === 'off' ? 'off' : 'on' })}>
+          <option value="on">{t('settings.enabled')}</option><option value="off">{t('settings.disabled')}</option></select></label>
+        <label>{t('settings.lineNumbers')}<select value={value.lineNumbers} onChange={(event) => patch({ lineNumbers: event.target.value as EditorSettings['lineNumbers'] })}>
+          <option value="on">{t('settings.normal')}</option><option value="relative">{t('settings.relative')}</option><option value="off">{t('settings.hidden')}</option></select></label>
+        <label className="settings-check"><input type="checkbox" checked={value.minimap} onChange={(event) => patch({ minimap: event.target.checked })}/>{t('settings.minimap')}</label>
         <label className="settings-check"><input type="checkbox"
           checked={value.ctrlClickNavigation} onChange={(event) => patch({ ctrlClickNavigation: event.target.checked })}/>
-          Ctrl+Click — перейти к определению прототипа
+          {t('settings.navigate')}
         </label>
         <label className="settings-check"><input type="checkbox" checked={value.liveValidation}
-          onChange={(event) => patch({ liveValidation: event.target.checked })}/>Автоматическая проверка YAML и Fluent</label>
-        <label>Задержка проверки YAML/Fluent (100–1500 мс)
+          onChange={(event) => patch({ liveValidation: event.target.checked })}/>{t('settings.validate')}</label>
+        <label>{t('settings.validationDelay')}
           <input type="number" min={100} max={1500} step={50}
             disabled={!value.liveValidation} value={value.validationDelay}
             onChange={(event) => {
@@ -58,8 +67,8 @@ export default function EditorSettingsDialog({ value, onChange, onClose }: Props
             }}/>
         </label>
       </div>
-      <footer><button type="button" onClick={() => onChange({ ...DEFAULT_EDITOR_SETTINGS })}>Сбросить</button>
-      <button type="button" onClick={onClose}>Готово</button></footer>
+      <footer><button type="button" onClick={() => onChange({ ...DEFAULT_EDITOR_SETTINGS })}>{t('settings.reset')}</button>
+      <button type="button" onClick={onClose}>{t('settings.done')}</button></footer>
     </div>
   </div>;
 }
