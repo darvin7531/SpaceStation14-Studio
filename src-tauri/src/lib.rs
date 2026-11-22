@@ -48,7 +48,9 @@ use prototype_create::{PrototypeDraft, PrototypePreview};
 use prototype_fields::{FieldInspection, FieldLocator, FieldPatch, PrototypeFields};
 use prototype_graph::PrototypeRelations;
 use prototype_localization::EntityLocalizationSource;
-use prototype_merge::{LinkedPrototypeReport, PrototypeInheritancePreview, PrototypePartialPreview};
+use prototype_merge::{
+    LinkedPrototypeReport, PrototypeInheritancePreview, PrototypePartialPreview,
+};
 use prototype_parents::ParentInspection;
 use prototype_sources::PrototypeSourceReport;
 use prototypes::{DiagnosticPage, PrototypePage, SourceOutline};
