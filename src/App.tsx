@@ -13,6 +13,7 @@ import type { ProjectScanProgress } from './lib/api';
 import { closeTab, openTab, nextTabPath, reorderTab, type TabState } from './lib/tabs';
 import { readTabSession, retainAvailableTabs, writeTabSession } from './lib/tab-session';
 import { readRecentProjects, rememberRecentProject, writeRecentProjects } from './lib/recent-projects';
+import { LAST_PROJECT_KEY, readLastProject, readWorkspaceUi, writeWorkspaceUi } from './lib/workspace-ui';
 import { dirtyDocumentPaths, reconcileSavedDraft } from './lib/draft-state';
 import { DraftWriteQueue, journalKey } from './lib/draft-queue';
 import { persistExitRecovery } from './lib/exit-recovery';
@@ -48,7 +49,6 @@ import { readEditorSettings, sanitizeEditorSettings, SETTINGS_KEY } from './lib/
 import { readLocalizationSettings, sanitizeLocalizationSettings, LOCALIZATION_SETTINGS_KEY } from './lib/localization-settings';
 
 const PAGE_SIZE = 100;
-const LAST_PROJECT_KEY = 'ss14-studio-rust.last-project-root';
 const kinds: ResourceKind[] = ['all', 'yaml', 'rsi', 'ftl'];
 const isEditableText = (kind: ResourceEntry['kind']) => kind === 'yaml' || kind === 'ftl';
 type PendingAction =
@@ -83,24 +83,17 @@ function ErrorPanel({ error, close }: { error: StudioError; close: () => void })
 
 export default function App() {
   const { t } = useI18n();
-  const [path, setPath] = useState(() => {
-    try {
-      return window.localStorage.getItem(LAST_PROJECT_KEY) ?? '';
-    } catch {
-      return '';
-    }
-  });
+  const [path, setPath] = useState(() => readLastProject(window.localStorage) ?? '');
   const [recentProjects, setRecentProjects] = useState<string[]>(() => {
     const recent = readRecentProjects(window.localStorage);
-    try {
-      const last = window.localStorage.getItem(LAST_PROJECT_KEY);
-      return last ? rememberRecentProject(recent, last) : recent;
-    } catch { return recent; }
+    const last = readLastProject(window.localStorage);
+    return last ? rememberRecentProject(recent, last) : recent;
   });
   const [overview, setOverview] = useState<ProjectOverview | null>(null);
   const [opening, setOpening] = useState(false);
   const [scanProgress, setScanProgress] = useState<ProjectScanProgress | null>(null);
   const openingRequestPath = useRef<string | null>(null);
+  const startupRestoreAttempted = useRef(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [fileView, setFileView] = useState<'search' | 'folders'>('search');
   const [quickOpen, setQuickOpen] = useState(false);
@@ -355,6 +348,17 @@ export default function App() {
     } catch { /* Unavailable storage must not block the editor. */ }
   }, [overview?.project_root, opening, tabState]);
 
+  // Old Electron persisted the search/navigation workspace alongside its last
+  // project. Keep the UI state separate from the draft journal and game locales.
+  useEffect(() => {
+    if (!overview || opening) return;
+    try {
+      writeWorkspaceUi(window.localStorage, overview.project_root, {
+        query, kind, fileView, explorerMode,
+      });
+    } catch { /* local settings storage is optional */ }
+  }, [overview?.project_root, opening, query, kind, fileView, explorerMode]);
+
   async function loadProject(requestedPath: string) {
     setCreatingPrototype(false);
     setCreatingFluent(false);
@@ -385,8 +389,9 @@ export default function App() {
       } catch {
         // Saving a recent path is optional and must not block opening.
       }
-      // Old sessions are revalidated against the current immutable Rust index.
-      // Unavailable files remain recoverable through the separate draft journal.
+      // Restore both the navigation context and tab identities, always
+      // revalidating actual resource paths against the fresh native index.
+      const restoredUi = readWorkspaceUi(window.localStorage, next.project_root);
       const storedTabs = readTabSession(window.localStorage, next.project_root);
       const verifiedPaths = await Promise.all(storedTabs.tabs.map(async (tab) => {
         try {
@@ -423,8 +428,10 @@ export default function App() {
       setDriftError(null);
       setDocument(null);
       setReading(false);
-      setQuery('');
-      setKind('all');
+      setQuery(restoredUi.query);
+      setKind(restoredUi.kind);
+      setFileView(restoredUi.fileView);
+      setExplorerMode(restoredUi.explorerMode);
       setPage(0);
       // Trigger the restored file read only after resetting the previous
       // document. Otherwise a late setDocument(null) can hide that read.
@@ -437,6 +444,15 @@ export default function App() {
       setOpening(false);
     }
   }
+
+  // Electron restores the last workspace on startup. Do this exactly once,
+  // including under React StrictMode, and leave failed paths editable manually.
+  useEffect(() => {
+    if (startupRestoreAttempted.current) return;
+    startupRestoreAttempted.current = true;
+    const last = readLastProject(window.localStorage);
+    if (last && !openingRequestPath.current) void loadProject(last);
+  }, []);
 
   /** Manual full scan or bounded automatic refresh without discarding in-memory drafts
    * or silently taking a changed on-disk YAML revision as the draft baseline.
