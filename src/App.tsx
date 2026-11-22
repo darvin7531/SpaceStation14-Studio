@@ -1149,6 +1149,13 @@ export default function App() {
     );
   }
 
+  function onExternalRsiCreated(created: import('./lib/api').ExternalCreatedRsi) {
+    setCreatingRsi(false);
+    setNotice(created.warning
+      ? 'Внешний RSI создан: ' + created.path + '. ' + created.warning
+      : 'Внешний RSI создан: ' + created.path + '. Открытый проект не менялся.');
+  }
+
   function onRsiCreated(created: CreatedRsi) {
     setCreatingRsi(false);
     setFieldTarget(null);
@@ -1217,6 +1224,7 @@ export default function App() {
     {creatingRsi && overview && <CreateRsiWizard
       onClose={() => setCreatingRsi(false)}
       onCreated={onRsiCreated}
+      onExternalCreated={onExternalRsiCreated}
       preferredPath={selected?.kind === 'rsi' ? selected.path : undefined}/>}
     {creatingFluent && overview && <CreateFluentWizard
       onClose={() => { setCreatingFluent(false); setQuickFixFluentDraft(null); }}

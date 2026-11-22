@@ -34,6 +34,12 @@ pub struct CreatedRsi {
     pub warning: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct ExternalCreatedRsi {
+    pub path: String,
+    pub warning: Option<String>,
+}
+
 fn error(code: &'static str, message: &str, hint: &str) -> StudioError {
     StudioError::new(code, message, hint)
 }
@@ -277,6 +283,95 @@ pub fn create(root: &Path, draft: &RsiDraft) -> Result<CreatedRsi, StudioError> 
     })
 }
 
+/// Only called for the folder chosen in the native system directory picker.
+pub fn create_external_in(
+    selected_folder: &Path,
+    draft: &RsiDraft,
+) -> Result<ExternalCreatedRsi, StudioError> {
+    let rendered = preview(draft)?;
+    let parent = fs::canonicalize(selected_folder).map_err(|reason| {
+        error(
+            "RSI_EXTERNAL_PARENT_MISSING",
+            "Не удалось открыть выбранную внешнюю папку.",
+            "Выберите доступный каталог в системном диалоге.",
+        )
+        .with_details(reason.to_string())
+    })?;
+    if !parent.is_dir() {
+        return Err(error(
+            "RSI_EXTERNAL_PARENT_INVALID",
+            "Вместо папки выбран файл.",
+            "Укажите каталог для создания нового RSI.",
+        ));
+    }
+    let folder = parent.join(format!("{}.rsi", draft.name));
+    fs::create_dir(&folder).map_err(|reason| {
+        if reason.kind() == std::io::ErrorKind::AlreadyExists {
+            error(
+                "RSI_CREATE_EXISTS",
+                "Такой внешний RSI уже существует и не будет перезаписан.",
+                "Выберите другое имя спрайта.",
+            )
+        } else {
+            error(
+                "RSI_CREATE_DIR_FAILED",
+                "Не удалось создать каталог внешнего RSI.",
+                "Проверьте права и место на диске.",
+            )
+            .with_details(reason.to_string())
+        }
+    })?;
+    let meta = folder.join("meta.json");
+    let mut options = OpenOptions::new();
+    options.create_new(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o644);
+    }
+    let written = (|| -> Result<(), StudioError> {
+        let mut file = options.open(&meta).map_err(|reason| {
+            error(
+                "RSI_CREATE_META_FAILED",
+                "Не удалось создать meta.json внешнего RSI.",
+                "Проверьте права записи.",
+            )
+            .with_details(reason.to_string())
+        })?;
+        file.write_all(rendered.metadata.as_bytes())
+            .and_then(|_| file.sync_all())
+            .map_err(|reason| {
+                error(
+                    "RSI_CREATE_WRITE_FAILED",
+                    "Не удалось сохранить meta.json внешнего RSI.",
+                    "Проверьте свободное место и повторите.",
+                )
+                .with_details(reason.to_string())
+            })
+    })();
+    if let Err(cause) = written {
+        if meta.exists() {
+            let _ = fs::remove_file(&meta);
+        }
+        if let Err(cleanup) = fs::remove_dir(&folder) {
+            return Err(error(
+                "RSI_CREATE_CLEANUP_FAILED",
+                "После ошибки записи остался неполный внешний RSI.",
+                "Проверьте каталог вручную.",
+            )
+            .with_details(format!("{cause:?}; очистка: {cleanup}")));
+        }
+        return Err(cause);
+    }
+    let warning = sync_directory(&parent)
+        .err()
+        .map(|reason| format!("RSI создан, но синхронизация каталога не подтверждена: {reason}"));
+    Ok(ExternalCreatedRsi {
+        path: folder.to_string_lossy().into_owned(),
+        warning,
+    })
+}
+
 #[cfg(unix)]
 fn sync_directory(parent: &Path) -> std::io::Result<()> {
     fs::File::open(parent)?.sync_all()
@@ -322,6 +417,23 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+
+    #[test]
+    fn external_rsi_creation_preserves_an_existing_sprite() {
+        let fx = Fixture::new();
+        let selected = fx.root.join("Resources/Textures");
+        let mut draft = fx.draft();
+        draft.name = "external".into();
+        let created = create_external_in(&selected, &draft).unwrap();
+        let expected = selected.join("external.rsi");
+        assert_eq!(created.path, expected.to_string_lossy());
+        assert!(expected.join("meta.json").is_file());
+        assert_eq!(
+            create_external_in(&selected, &draft).unwrap_err().code,
+            "RSI_CREATE_EXISTS"
+        );
+        assert!(expected.join("meta.json").is_file());
     }
 
     #[test]

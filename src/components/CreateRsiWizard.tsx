@@ -1,11 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { AlertCircle, FolderPlus, X } from 'lucide-react';
-import { studio, type CreatedRsi, type NewRsiDraft, type NewRsiPreview } from '../lib/api';
+import { studio, type CreatedRsi, type ExternalCreatedRsi, type NewRsiDraft, type NewRsiPreview } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 
 interface Props {
   onClose: () => void;
   onCreated: (result: CreatedRsi) => void;
+  onExternalCreated: (result: ExternalCreatedRsi) => void;
   preferredPath?: string;
 }
 
@@ -14,7 +15,7 @@ function initialDirectory(path?: string): string {
   return parent?.startsWith('Resources/Textures') ? parent : 'Resources/Textures';
 }
 
-export default function CreateRsiWizard({ onClose, onCreated, preferredPath }: Props) {
+export default function CreateRsiWizard({ onClose, onCreated, onExternalCreated, preferredPath }: Props) {
   const [draft, setDraft] = useState<NewRsiDraft>(() => ({
     directory: initialDirectory(preferredPath),
     name: 'new-sprite',
@@ -23,6 +24,7 @@ export default function CreateRsiWizard({ onClose, onCreated, preferredPath }: P
     license: 'CC-BY-SA-3.0',
     copyright: '',
   }));
+  const [destination, setDestination] = useState<'project' | 'external'>('project');
   const [preview, setPreview] = useState<NewRsiPreview | null>(null);
   const [validationError, setValidationError] = useState<StudioError | null>(null);
   const [creationError, setCreationError] = useState<StudioError | null>(null);
@@ -61,8 +63,13 @@ export default function CreateRsiWizard({ onClose, onCreated, preferredPath }: P
     setCreating(true);
     setCreationError(null);
     try {
-      const result = await studio.createNewRsi(draft);
-      onCreated(result);
+      if (destination === 'external') {
+        const result = await studio.createExternalRsi(draft);
+        if (result) onExternalCreated(result);
+      } else {
+        const result = await studio.createNewRsi(draft);
+        onCreated(result);
+      }
     } catch (failure) {
       setCreationError(normalizeStudioError(failure));
     } finally {
@@ -87,11 +94,20 @@ export default function CreateRsiWizard({ onClose, onCreated, preferredPath }: P
           не перезаписываются. Родительская папка внутри Resources/Textures должна существовать.
           Изображения и состояния можно добавить позже.
         </p>
-        <label>Папка внутри Resources/Textures
+        <div className="create-proto-mode" role="group" aria-label="Размещение RSI">
+          <button type="button" className={destination === 'project' ? 'selected' : ''}
+            onClick={() => setDestination('project')}>В проекте</button>
+          <button type="button" className={destination === 'external' ? 'selected' : ''}
+            onClick={() => setDestination('external')}>Вне проекта</button>
+        </div>
+        {destination === 'external' && <p className="fluent-create-help">
+          Родительская папка будет выбрана в системном диалоге. Внешний RSI не входит в открытый проект.
+        </p>}
+        {destination === 'project' && <label>Папка внутри Resources/Textures
           <input value={draft.directory} required spellCheck={false} maxLength={512}
             onChange={(event) => change('directory', event.target.value)}
             placeholder="Resources/Textures/Objects"/>
-        </label>
+        </label>}}
         <label>Имя спрайта (без .rsi)
           <input value={draft.name} required spellCheck={false} maxLength={80}
             onChange={(event) => change('name', event.target.value)}
@@ -122,7 +138,8 @@ export default function CreateRsiWizard({ onClose, onCreated, preferredPath }: P
               <span>{validationError.message} {validationError.hint}</span>
             </div>
             : <>
-              <small>Будет создан: {preview?.path}</small>
+              <small>{destination === 'project' ? 'Будет создан: ' + (preview?.path ?? '')
+                : 'Будет создан: ' + draft.name + '.rsi в выбранной внешней папке'}</small>
               <pre className="rsi-create-metadata">{preview?.metadata ?? ''}</pre>
               {preview?.warnings.map((warning) => <small key={warning}>{warning}</small>)}
             </>}

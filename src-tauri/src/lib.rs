@@ -57,7 +57,7 @@ use prototypes::{DiagnosticPage, PrototypePage, SourceOutline};
 use resource_browser::ResourceBrowserPage;
 use resource_drift::{OpenRevision, ResourceDriftReport};
 use resource_edit::{SaveResult, YamlSyntaxReport};
-use rsi_create::{RsiCreationPreview, RsiDraft};
+use rsi_create::{ExternalCreatedRsi, RsiCreationPreview, RsiDraft};
 use rsi_credits::RsiCreditsUpdate;
 use rsi_delete::{DeletedRsiState, RsiDeleteRequest};
 use rsi_import::{ImportedRsiState, RsiStateImport};
@@ -770,6 +770,35 @@ async fn create_new_rsi(
     })
 }
 
+/// Legacy Electron workflow: native folder picker selects an external RSI parent.
+#[tauri::command]
+async fn create_external_rsi(
+    app: tauri::AppHandle,
+    draft: RsiDraft,
+) -> Result<Option<ExternalCreatedRsi>, StudioError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let selected = app
+            .dialog()
+            .file()
+            .set_title("Выбрать папку для внешнего RSI")
+            .blocking_pick_folder();
+        let Some(selected) = selected else {
+            return Ok(None);
+        };
+        let selected_path = selected.into_path().map_err(|reason| {
+            StudioError::new(
+                "RSI_EXTERNAL_DIALOG_PATH",
+                "Системный диалог вернул неподдерживаемую папку.",
+                "Выберите обычный локальный каталог.",
+            )
+            .with_details(reason.to_string())
+        })?;
+        rsi_create::create_external_in(&selected_path, &draft).map(Some)
+    })
+    .await
+    .map_err(interrupted)?
+}
+
 #[derive(Debug, Serialize)]
 struct CreateFluentResult {
     file: String,
@@ -1156,6 +1185,7 @@ pub fn run() -> Result<(), tauri::Error> {
             restore_rsi_state,
             preview_new_rsi,
             create_new_rsi,
+            create_external_rsi,
             analyze_yaml_resource,
             save_yaml_resource,
             analyze_fluent_resource,

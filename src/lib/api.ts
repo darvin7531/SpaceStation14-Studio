@@ -580,6 +580,10 @@ export interface CreatedRsi {
   overview: ProjectOverview | null;
 }
 
+export interface ExternalCreatedRsi {
+  path: string;
+  warning: string | null;
+}
 export interface NewFluentDraft {
   file: string;
   starter_key: string;
@@ -779,6 +783,9 @@ export const studio = {
   },
   createNewRsi(draft: NewRsiDraft): Promise<CreatedRsi> {
     return invoke('create_new_rsi', { draft });
+  },
+  createExternalRsi(draft: NewRsiDraft): Promise<ExternalCreatedRsi | null> {
+    return invoke('create_external_rsi', { draft });
   },
   previewNewFluent(draft: NewFluentDraft): Promise<NewFluentPreview> {
     return invoke('preview_new_fluent', { draft });
