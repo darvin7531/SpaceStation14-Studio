@@ -17,6 +17,7 @@ use crate::prototype_create::{self, CreatedPrototype, PrototypeDraft, PrototypeP
 use crate::prototype_fields::{self, FieldInspection, FieldLocator, FieldPatch, PrototypeFields};
 use crate::prototype_localization::{self, EntityLocalizationSource};
 use crate::prototype_parents::{self, ParentInspection};
+use crate::prototype_sources::{self, PrototypeSourceReport};
 use crate::prototypes::{self, PrototypeCatalog, SourceOutline};
 use crate::resource_browser::{self, ResourceBrowserPage};
 use crate::resource_edit::{self, SaveResult};
@@ -636,6 +637,26 @@ impl ProjectIndex {
                 .get(rsi)
                 .and_then(|index| self.resources.get(*index))
                 .is_some_and(|entry| entry.kind == "rsi")
+        })
+    }
+
+    /// Read-only, bounded YAML field/component provenance across source-level
+    /// ancestry. All source reads pass the indexed resource boundary.
+    pub fn prototype_sources(
+        &self,
+        kind: &str,
+        id: &str,
+    ) -> Result<PrototypeSourceReport, StudioError> {
+        let catalog = self.prototypes()?;
+        prototype_sources::inspect(&catalog, kind, id, |path| {
+            if !self.is_yaml_indexed(path) {
+                return Err(StudioError::new(
+                    "PROTOTYPE_SOURCE_NOT_INDEXED",
+                    "YAML-источник больше не находится в индексе проекта.",
+                    "Обновите индекс и повторите просмотр происхождения полей.",
+                ));
+            }
+            self.read_resource(path).map(|document| document.content)
         })
     }
 
@@ -1562,6 +1583,42 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+
+    #[test]
+    fn prototype_source_provenance_reads_declared_fields_from_parent_and_child() {
+        let fx = Fixture::new();
+        fx.write("Resources/Prototypes/base.yml",
+            "- type: entity\n  id: Base\n  name: Parent\n  components:\n  - type: Transform\n  - type: Sprite\n");
+        fx.write("Resources/Prototypes/child.yml",
+            "- type: entity\n  id: Child\n  parent: Base\n  description: Child\n  components:\n  - type: Physics\n");
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let report = index.prototype_sources("entity", "Child").unwrap();
+        assert_eq!(report.items.len(), 2);
+        assert_eq!(report.items[0].id, "Child");
+        assert_eq!(report.items[0].depth, 0);
+        assert_eq!(report.items[0].fields, ["parent", "description"]);
+        assert_eq!(report.items[0].components, ["Physics"]);
+        assert_eq!(report.items[1].id, "Base");
+        assert_eq!(report.items[1].depth, 1);
+        assert_eq!(report.items[1].components, ["Transform", "Sprite"]);
+        assert!(report.ancestry_complete);
+        assert!(!report.truncated);
+    }
+
+    #[test]
+    fn prototype_source_provenance_handles_deleted_files_without_fabricating_values() {
+        let fx = Fixture::new();
+        let file = "Resources/Prototypes/source.yml";
+        fx.write(file, "- type: entity\n  id: Source\n  name: Before\n");
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let _ = index.prototypes().unwrap();
+        fs::remove_file(fx.root.join(file)).unwrap();
+        let report = index.prototype_sources("entity", "Source").unwrap();
+        assert_eq!(report.items.len(), 1);
+        assert!(report.items[0].notice.is_some());
+        assert!(report.items[0].fields.is_empty());
+        assert!(!report.ancestry_complete);
     }
 
     #[test]
