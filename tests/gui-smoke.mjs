@@ -91,11 +91,17 @@ try {
   await until('save enabled after refresh', () => script("const button = document.querySelector('[data-testid=save-resource]'); return !!button && !button.disabled;"));
   await click('[data-testid=save-resource]');
   await until('conflict review', () => find('.conflict-review'));
-  await until('conflict diff', () => script(`
-    const text = (selector) => document.querySelector(selector)?.textContent;
-    return text('.conflict-review .original .view-lines')?.includes('SmokeExternal')
-      && text('.conflict-review .modified .view-lines')?.includes('SmokeDraft');
-  `));
+  try {
+    await until('conflict diff', () => script(`
+      const text = (selector) => document.querySelector(selector)?.textContent;
+      return text('.conflict-review .original .view-lines')?.includes('SmokeExternal')
+        && text('.conflict-review .modified .view-lines')?.includes('SmokeDraft');
+    `));
+  } catch (error) {
+    console.error('Conflict review DOM:', await script("return document.querySelector('.conflict-review')?.outerHTML;"));
+    console.error('UI state:', await script('return document.body.innerText;'));
+    throw error;
+  }
   assert.equal(await readFile(file, 'utf8'), external, 'conflict must not overwrite external disk contents');
   assert.ok(await script("return document.querySelector('.monaco-shell .view-lines')?.textContent?.includes('SmokeDraft');"), 'conflict must retain the editor draft');
   console.log('GUI smoke passed: project opened, YAML saved, conflicting disk and draft preserved');
