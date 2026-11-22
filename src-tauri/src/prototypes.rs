@@ -80,6 +80,9 @@ pub struct SourceOutline {
 pub struct SourceOutlineEntry {
     pub declaration: PrototypeDeclaration,
     pub sprite: Option<SourceSpriteLink>,
+    /// Only layers explicitly declared on this source prototype.
+    pub sprite_layers: Vec<SourceSpriteLayer>,
+    pub sprite_layers_total: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -88,6 +91,20 @@ pub struct SourceSpriteLink {
     pub state: Option<String>,
     pub indexed: bool,
 }
+
+#[derive(Debug, Serialize)]
+pub struct SourceSpriteLayer {
+    pub index: usize,
+    pub path: Option<String>,
+    pub state: Option<String>,
+    pub indexed: bool,
+    pub visible: Option<bool>,
+    pub shader: Option<String>,
+    /// True when Sprite.sprite supplies the path omitted by this layer.
+    pub default_path: bool,
+}
+
+const MAX_LIVE_SPRITE_LAYERS: usize = 32;
 
 /// Reuse the exact catalogue parser on unsaved text. Partial/tagged and
 /// CreateVariants declarations remain visible, but are never implicitly
@@ -131,24 +148,30 @@ pub fn inspect_source_outline(
         .into_iter()
         .take(MAX_LIVE_OUTLINE)
         .map(|declaration| {
-            let sprite = if declaration.kind == "entity" && declaration.variant_index.is_none() {
+            let source_item = if declaration.kind == "entity" && declaration.variant_index.is_none() {
                 parsed
                     .as_ref()
                     .and_then(|docs| docs.get(declaration.document_index.saturating_sub(1)))
                     .and_then(Yaml::as_vec)
                     .and_then(|items| items.get(declaration.item_index.saturating_sub(1)))
-                    .and_then(extract_sprite_source)
-                    .map(|(path, state)| SourceSpriteLink {
-                        indexed: is_rsi_indexed(&path),
-                        path,
-                        state,
-                    })
             } else {
                 None
             };
+            let sprite = source_item
+                .and_then(extract_sprite_source)
+                .map(|(path, state)| SourceSpriteLink {
+                    indexed: is_rsi_indexed(&path),
+                    path,
+                    state,
+                });
+            let (sprite_layers, sprite_layers_total) = source_item
+                .map(|item| extract_sprite_layers(item, sprite.as_ref(), &is_rsi_indexed))
+                .unwrap_or_default();
             SourceOutlineEntry {
                 declaration,
                 sprite,
+                sprite_layers,
+                sprite_layers_total,
             }
         })
         .collect();
@@ -160,29 +183,95 @@ pub fn inspect_source_outline(
     })
 }
 
-/// Only explicit, non-inherited Sprite.sprite references are navigable.
-/// Never construct an arbitrary disk path from untrusted YAML input.
-fn extract_sprite_source(item: &Yaml) -> Option<(String, Option<String>)> {
-    let components = item["components"].as_vec()?;
-    let sprite = components
-        .iter()
-        .find(|component| component["type"].as_str() == Some("Sprite"))?;
-    let raw = sprite["sprite"].as_str()?;
-    let relative = raw.strip_prefix("Resources/Textures/").unwrap_or(raw);
-    let path = Path::new(relative);
+/// Accept only source-constant texture paths, never canonicalize arbitrary
+/// YAML paths. Explicit Textures prefixes and optional .rsi suffixes are
+/// common across SS14 forks.
+fn normalize_sprite_path(raw: &str) -> Option<String> {
+    let relative = raw
+        .strip_prefix("Resources/Textures/")
+        .or_else(|| raw.strip_prefix("/Textures/"))
+        .or_else(|| raw.strip_prefix("Textures/"))
+        .unwrap_or(raw);
     if relative.is_empty()
         || relative.len() > 512
-        || !path
-            .components()
-            .all(|part| matches!(part, Component::Normal(_)))
-        || !path
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("rsi"))
+        || relative.contains('\\')
+        || relative.contains(':')
+        || relative.chars().any(char::is_control)
     {
         return None;
     }
+    let relative_path = Path::new(relative);
+    if !relative_path
+        .components()
+        .all(|part| matches!(part, Component::Normal(_)))
+    {
+        return None;
+    }
+    let normalized = if relative_path.extension().is_none() {
+        format!("{relative}.rsi")
+    } else if relative_path
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("rsi"))
+    {
+        relative.to_owned()
+    } else {
+        return None;
+    };
+    Some(format!("Resources/Textures/{normalized}"))
+}
+
+fn sprite_component(item: &Yaml) -> Option<&Yaml> {
+    item["components"].as_vec()?.iter()
+        .find(|component| component["type"].as_str() == Some("Sprite"))
+}
+
+/// Only direct Sprite.sprite + state; never read inherited component state.
+fn extract_sprite_source(item: &Yaml) -> Option<(String, Option<String>)> {
+    let sprite = sprite_component(item)?;
+    let path = normalize_sprite_path(sprite["sprite"].as_str()?)?;
     let state = sprite["state"].as_str().map(str::to_owned);
-    Some((format!("Resources/Textures/{relative}"), state))
+    Some((path, state))
+}
+
+/// Layers are read-only provenance. Missing Sprite.sprite is not an error if a
+/// layer provides its own path. Dynamic fields/tags require manual inspection.
+fn extract_sprite_layers(
+    item: &Yaml,
+    default: Option<&SourceSpriteLink>,
+    is_rsi_indexed: &impl Fn(&str) -> bool,
+) -> (Vec<SourceSpriteLayer>, usize) {
+    let Some(component) = sprite_component(item) else {
+        return (Vec::new(), 0);
+    };
+    let Some(layers) = component["layers"].as_vec() else {
+        return (Vec::new(), 0);
+    };
+    let total = layers.len();
+    let layers = layers
+        .iter()
+        .take(MAX_LIVE_SPRITE_LAYERS)
+        .enumerate()
+        .map(|(index, layer)| {
+            let explicit = layer["sprite"].as_str();
+            let path = match explicit {
+                Some(path) => normalize_sprite_path(path),
+                None => default.map(|link| link.path.clone()),
+            };
+            let indexed = path.as_deref().is_some_and(is_rsi_indexed);
+            SourceSpriteLayer {
+                index,
+                path,
+                indexed,
+                state: layer["state"].as_str().map(str::to_owned),
+                visible: layer["visible"].as_bool().or_else(|| {
+                    matches!(layer["visible"], Yaml::BadValue).then_some(true)
+                }),
+                shader: layer["shader"].as_str().map(str::to_owned),
+                default_path: explicit.is_none() && default.is_some(),
+            }
+        })
+        .collect();
+    (layers, total)
 }
 
 #[derive(Debug)]
@@ -1259,6 +1348,40 @@ mod tests {
         .unwrap();
         assert!(invalid.declarations.is_empty());
         assert_eq!(invalid.diagnostics[0].code, "OUTLINE_YAML_PARSE_ERROR");
+    }
+
+    #[test]
+    fn live_outline_lists_sprite_layers_with_default_and_explicit_paths() {
+        let source = "- type: entity\n  id: Layered\n  components:\n  - type: Sprite\n    sprite: Textures/Clothing/shirt\n    state: worn\n    layers:\n    - state: base\n    - state: overlay\n      sprite: /Textures/Effects/shine.rsi\n      visible: false\n      shader: unshaded\n    - state: missing\n      sprite: ../unsafe.rsi\n";
+        let report = inspect_source_outline(Path::new("/tmp"), "Resources/Prototypes/test.yml",
+            source, |path| path == "Resources/Textures/Clothing/shirt.rsi").unwrap();
+        let entry = &report.declarations[0];
+        assert_eq!(entry.sprite_layers_total, 3);
+        assert_eq!(entry.sprite.as_ref().unwrap().path, "Resources/Textures/Clothing/shirt.rsi");
+        assert_eq!(entry.sprite_layers[0].path.as_deref(), Some("Resources/Textures/Clothing/shirt.rsi"));
+        assert!(entry.sprite_layers[0].default_path);
+        assert!(entry.sprite_layers[0].indexed);
+        assert_eq!(entry.sprite_layers[1].path.as_deref(), Some("Resources/Textures/Effects/shine.rsi"));
+        assert_eq!(entry.sprite_layers[1].visible, Some(false));
+        assert_eq!(entry.sprite_layers[1].shader.as_deref(), Some("unshaded"));
+        assert!(!entry.sprite_layers[1].indexed);
+        assert!(entry.sprite_layers[2].path.is_none());
+    }
+
+    #[test]
+    fn live_outline_supports_layer_only_sprite_and_caps_large_layer_list() {
+        let mut source = "- type: entity\n  id: LayerOnly\n  components:\n  - type: Sprite\n    layers:\n".to_owned();
+        for _ in 0..40 {
+            source.push_str("    - state: icon\n      sprite: Objects/Tool.rsi\n");
+        }
+        let result = inspect_source_outline(Path::new("/tmp"), "Resources/Prototypes/test.yml",
+            &source, |_| true).unwrap();
+        let entry = &result.declarations[0];
+        assert!(entry.sprite.is_none());
+        assert_eq!(entry.sprite_layers_total, 40);
+        assert_eq!(entry.sprite_layers.len(), MAX_LIVE_SPRITE_LAYERS);
+        assert!(entry.sprite_layers[0].indexed);
+        assert!(!entry.sprite_layers[0].default_path);
     }
 
     #[test]
