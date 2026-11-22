@@ -186,10 +186,7 @@ fn source_span(
     )))
 }
 
-fn snapshot(
-    source: &str,
-    locator: &FieldLocator,
-) -> Result<ParentSnapshot, StudioError> {
+fn snapshot(source: &str, locator: &FieldLocator) -> Result<ParentSnapshot, StudioError> {
     let docs = parse_source(source)?;
     let (row, items) = item(&docs, locator)?;
     let values = parents(row)?;
