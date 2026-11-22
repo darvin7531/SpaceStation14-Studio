@@ -1438,7 +1438,8 @@ export default function App() {
             </div>
           </div>
           {showYamlOutline && selected.kind === 'yaml' && document?.path === selected.path && !reading
-            && <PrototypeOutlinePanel key={selected.path} path={selected.path} source={activeText}
+            && <PrototypeOutlinePanel key={overview.project_root + ':' + workspaceRevision + ':' + selected.path}
+              path={selected.path} source={activeText}
               busy={saving || refreshing || transitioning}
               onJump={(line) => setJumpTarget({
                 path: selected.path, line, token: ++jumpCounter.current,
