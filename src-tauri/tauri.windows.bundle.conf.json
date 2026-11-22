@@ -1,0 +1,13 @@
+{
+  "bundle": {
+    "active": true,
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico",
+      "icons/icon.icns"
+    ],
+    "shortDescription": "SS14 resource and prototype editor (Rust rework)",
+    "category": "DeveloperTool"
+  },
+  "version": "0.1.5-1"
+}
