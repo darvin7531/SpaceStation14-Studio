@@ -48,7 +48,7 @@ use prototype_create::{PrototypeDraft, PrototypePreview};
 use prototype_fields::{FieldInspection, FieldLocator, FieldPatch, PrototypeFields};
 use prototype_graph::PrototypeRelations;
 use prototype_localization::EntityLocalizationSource;
-use prototype_merge::{PrototypeInheritancePreview, PrototypePartialPreview};
+use prototype_merge::{LinkedPrototypeReport, PrototypeInheritancePreview, PrototypePartialPreview};
 use prototype_parents::ParentInspection;
 use prototype_sources::PrototypeSourceReport;
 use prototypes::{DiagnosticPage, PrototypePage, SourceOutline};
@@ -474,6 +474,19 @@ async fn list_prototype_diagnostics(
 }
 
 /// Source relationships are informational and do not perform YAML inheritance.
+/// Existing Electron Inspector 'Linked prototypes' section.
+#[tauri::command]
+async fn prototype_linked_references(
+    kind: String,
+    id: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<LinkedPrototypeReport, StudioError> {
+    let project = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || project.prototype_linked_references(&kind, &id))
+        .await
+        .map_err(interrupted)?
+}
+
 /// Bounded static parent projection over already-applied partial overlays.
 /// Does not claim runtime parity with RobustToolbox C# DataField semantics.
 #[tauri::command]
@@ -1079,6 +1092,7 @@ pub fn run() -> Result<(), tauri::Error> {
             prototype_sources,
             prototype_partial_preview,
             prototype_inheritance_preview,
+            prototype_linked_references,
             list_prototype_diagnostics,
             read_resource,
             list_rsi_sheets,
