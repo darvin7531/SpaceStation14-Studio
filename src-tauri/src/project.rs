@@ -16,7 +16,9 @@ use crate::prototype_components::{self, ComponentInspection, ComponentOperation}
 use crate::prototype_create::{self, CreatedPrototype, PrototypeDraft, PrototypePreview};
 use crate::prototype_fields::{self, FieldInspection, FieldLocator, FieldPatch, PrototypeFields};
 use crate::prototype_localization::{self, EntityLocalizationSource};
-use crate::prototype_merge::{self, LinkedPrototypeReport, PrototypeInheritancePreview, PrototypePartialPreview};
+use crate::prototype_merge::{
+    self, LinkedPrototypeReport, PrototypeInheritancePreview, PrototypePartialPreview,
+};
 use crate::prototype_parents::{self, ParentInspection};
 use crate::prototype_sources::{self, PrototypeSourceReport};
 use crate::prototypes::{self, PrototypeCatalog, SourceOutline};
@@ -1724,7 +1726,9 @@ mod tests {
         fx.write("Resources/Prototypes/source.yml",
             "- type: entity\n  id: Sample\n  components:\n  - type: Spawn\n    prototype: Other\n    possible: [Other, Third]\n    sprite: Objects/Other.rsi\n  description: Some text with spaces\n");
         let project = ProjectIndex::open(fx.root_str()).unwrap();
-        let result = project.prototype_linked_references("entity", "Sample").unwrap();
+        let result = project
+            .prototype_linked_references("entity", "Sample")
+            .unwrap();
         assert!(result.source_complete, "{:?}", result.warnings);
         assert!(!result.limited);
         assert_eq!(result.items.len(), 2);
@@ -1740,10 +1744,17 @@ mod tests {
         fx.write("Resources/Prototypes/prototypes.yml",
             "- type: entity\n  id: Target\n- type: entity\n  id: Base\n  components:\n  - type: Spawn\n    prototype: Target\n- type: entity\n  id: Child\n  parent: Base\n");
         let project = ProjectIndex::open(fx.root_str()).unwrap();
-        let result = project.prototype_linked_references("entity", "Child").unwrap();
+        let result = project
+            .prototype_linked_references("entity", "Child")
+            .unwrap();
         assert!(result.source_complete, "{:?}", result.warnings);
-        assert!(result.items.iter().any(|ref_item|
-            ref_item.id == "Target" && ref_item.field == "components[0].prototype"));
+        assert!(
+            result
+                .items
+                .iter()
+                .any(|ref_item| ref_item.id == "Target"
+                    && ref_item.field == "components[0].prototype")
+        );
     }
 
     #[test]
