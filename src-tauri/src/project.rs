@@ -15,6 +15,7 @@ use crate::prototype_append::{self, AppendPreview};
 use crate::prototype_components::{self, ComponentInspection, ComponentOperation};
 use crate::prototype_create::{self, CreatedPrototype, PrototypeDraft, PrototypePreview};
 use crate::prototype_fields::{self, FieldInspection, FieldLocator, FieldPatch, PrototypeFields};
+use crate::prototype_localization::{self, EntityLocalizationSource};
 use crate::prototypes::PrototypeCatalog;
 use crate::resource_browser::{self, ResourceBrowserPage};
 use crate::resource_edit::{self, SaveResult};
@@ -427,6 +428,21 @@ impl ProjectIndex {
             .get(path)
             .and_then(|index| self.resources.get(*index))
             .is_some_and(|entry| entry.kind == "yaml")
+    }
+
+    pub fn inspect_entity_localization(
+        &self,
+        locator: &FieldLocator,
+        source: &str,
+    ) -> Result<EntityLocalizationSource, StudioError> {
+        if !self.is_yaml_indexed(&locator.file) {
+            return Err(StudioError::new(
+                "YAML_NOT_INDEXED",
+                "Прототип отсутствует в индексе проекта.",
+                "Обновите индекс ресурсов и выберите объявление заново.",
+            ));
+        }
+        prototype_localization::inspect(locator, source)
     }
 
     pub fn is_editable_text_indexed(&self, path: &str) -> bool {
