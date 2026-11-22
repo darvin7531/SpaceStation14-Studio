@@ -1,4 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { open } from '@tauri-apps/plugin-dialog';
+import { projectFolderDefaultPath, relativeProjectFolder } from '../lib/project-folder-picker';
 import { AlertCircle, AlertTriangle, CheckCircle2, FilePlus2, X } from 'lucide-react';
 import {
   studio,
@@ -14,6 +16,7 @@ export type PrototypeDestinationMode = 'new' | 'append';
 
 interface Props {
   onClose: () => void;
+  projectRoot: string;
   onCreated: (result: CreatedPrototype, mode: PrototypeDestinationMode) => void;
   onExternalCreated: (result: ExternalCreatedPrototype) => void;
   dirtyPaths: readonly string[];
@@ -40,7 +43,7 @@ const INITIAL: NewPrototypeDraft = {
 };
 
 export default function CreatePrototypeWizard({
-  onClose, onCreated, onExternalCreated, dirtyPaths, preferredExistingFile,
+  onClose, onCreated, onExternalCreated, projectRoot, dirtyPaths, preferredExistingFile,
 }: Props) {
   const [mode, setMode] = useState<PrototypeDestinationMode>('new');
   const [destination, setDestination] = useState<'project' | 'external'>('project');
@@ -134,9 +137,40 @@ export default function CreatePrototypeWizard({
     };
   }, [draft, mode, targetIsDirty]);
 
+  const [pickingFolder, setPickingFolder] = useState(false);
+
+  async function pickProjectFolder() {
+    if (mode !== 'new' || destination !== 'project') return;
+    setPickingFolder(true);
+    setCreateError(null);
+    try {
+      const chosen = await open({
+        directory: true, multiple: false,
+        defaultPath: projectFolderDefaultPath(projectRoot, 'prototype'),
+        title: 'Выберите папку для YAML-прототипа',
+      });
+      if (typeof chosen !== 'string') return;
+      const folder = relativeProjectFolder(projectRoot, chosen, 'prototype');
+      if (!folder) {
+        setCreateError({
+          code: 'PROTOTYPE_FOLDER_NOT_IN_RESOURCES',
+          message: 'Выбранная папка находится вне прототипов открытого проекта.',
+          hint: 'Выберите существующую папку внутри Resources/Prototypes.',
+        });
+        return;
+      }
+      const filename = draft.file.split('/').pop() || (draft.id || 'NewPrototype') + '.yml';
+      update('file', folder + '/' + filename);
+    } catch (failure) {
+      setCreateError(normalizeStudioError(failure));
+    } finally {
+      setPickingFolder(false);
+    }
+  }
+
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (creating || checking || !preview || targetIsDirty) return;
+    if (creating || pickingFolder || checking || !preview || targetIsDirty) return;
     setCreating(true);
     setCreateError(null);
     try {
@@ -260,6 +294,10 @@ export default function CreatePrototypeWizard({
                 {availableFiles.map((file) => <option key={file} value={file}/>)}
               </datalist>}
             </label>
+            {mode === 'new' && destination === 'project' && <button type="button"
+              disabled={creating || pickingFolder} onClick={() => void pickProjectFolder()}>
+              {pickingFolder ? 'Выбираю папку…' : 'Выбрать папку YAML…'}
+            </button>}
             <small>{mode === 'new' && destination === 'external'
               ? 'Внешний файл выбирается через системный диалог. Он не добавляется в открытый игровой проект.'
               : mode === 'new'
@@ -296,7 +334,7 @@ export default function CreatePrototypeWizard({
           </div>}
           <footer className="create-proto-actions">
             <button type="button" onClick={onClose} disabled={creating}>Отмена</button>
-            <button type="submit" disabled={checking || creating || !preview || targetIsDirty}>
+            <button type="submit" disabled={checking || creating || pickingFolder || !preview || targetIsDirty}>
               <FilePlus2 size={14}/>{creating
                 ? 'Записываю…'
                 : mode === 'new' && destination === 'external' ? 'Выбрать внешний YAML'

@@ -1296,17 +1296,20 @@ export default function App() {
       projectKey={overview.project_root + ':' + workspaceRevision}
       onClose={() => setShowingCSharp(false)}/>}
     {creatingRsi && overview && <CreateRsiWizard
+      projectRoot={overview.project_root}
       onClose={() => setCreatingRsi(false)}
       onCreated={onRsiCreated}
       onExternalCreated={onExternalRsiCreated}
       preferredPath={selected?.kind === 'rsi' ? selected.path : undefined}/>}
     {creatingFluent && overview && <CreateFluentWizard
+      projectRoot={overview.project_root}
       onClose={() => { setCreatingFluent(false); setQuickFixFluentDraft(null); }}
       onCreated={onFluentCreated}
       onExternalCreated={onExternalFluentCreated}
       preferredDraft={quickFixFluentDraft ?? undefined}
       preferredFile={selected?.kind === 'ftl' ? selected.path : undefined}/>}
     {creatingPrototype && overview && <CreatePrototypeWizard
+      projectRoot={overview.project_root}
       onClose={() => setCreatingPrototype(false)} onCreated={onPrototypeCreated}
       onExternalCreated={onExternalPrototypeCreated}
       dirtyPaths={dirtyPaths}

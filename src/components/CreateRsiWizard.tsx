@@ -1,10 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { open } from '@tauri-apps/plugin-dialog';
+import { projectFolderDefaultPath, relativeProjectFolder } from '../lib/project-folder-picker';
 import { AlertCircle, FolderPlus, X } from 'lucide-react';
 import { studio, type CreatedRsi, type ExternalCreatedRsi, type NewRsiDraft, type NewRsiPreview } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 
 interface Props {
   onClose: () => void;
+  projectRoot: string;
   onCreated: (result: CreatedRsi) => void;
   onExternalCreated: (result: ExternalCreatedRsi) => void;
   preferredPath?: string;
@@ -15,7 +18,7 @@ function initialDirectory(path?: string): string {
   return parent?.startsWith('Resources/Textures') ? parent : 'Resources/Textures';
 }
 
-export default function CreateRsiWizard({ onClose, onCreated, onExternalCreated, preferredPath }: Props) {
+export default function CreateRsiWizard({ onClose, onCreated, onExternalCreated, projectRoot, preferredPath }: Props) {
   const [draft, setDraft] = useState<NewRsiDraft>(() => ({
     directory: initialDirectory(preferredPath),
     name: 'new-sprite',
@@ -57,9 +60,38 @@ export default function CreateRsiWizard({ onClose, onCreated, onExternalCreated,
     return () => { active = false; window.clearTimeout(timeout); };
   }, [draft]);
 
+  const [pickingFolder, setPickingFolder] = useState(false);
+
+  async function pickProjectFolder() {
+    setPickingFolder(true);
+    setCreationError(null);
+    try {
+      const chosen = await open({
+        directory: true, multiple: false,
+        defaultPath: projectFolderDefaultPath(projectRoot, 'rsi'),
+        title: 'Выберите папку для RSI в игровом проекте',
+      });
+      if (typeof chosen !== 'string') return;
+      const folder = relativeProjectFolder(projectRoot, chosen, 'rsi');
+      if (!folder) {
+        setCreationError({
+          code: 'RSI_FOLDER_NOT_IN_TEXTURES',
+          message: 'Выбранная папка находится вне текстур открытого проекта.',
+          hint: 'Выберите папку внутри Resources/Textures.',
+        });
+        return;
+      }
+      change('directory', folder);
+    } catch (failure) {
+      setCreationError(normalizeStudioError(failure));
+    } finally {
+      setPickingFolder(false);
+    }
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (checking || creating || !preview) return;
+    if (checking || creating || pickingFolder || !preview) return;
     setCreating(true);
     setCreationError(null);
     try {
@@ -108,6 +140,10 @@ export default function CreateRsiWizard({ onClose, onCreated, onExternalCreated,
             onChange={(event) => change('directory', event.target.value)}
             placeholder="Resources/Textures/Objects"/>
         </label>}
+        {destination === 'project' && <button type="button" disabled={creating || pickingFolder}
+          onClick={() => void pickProjectFolder()}>
+          {pickingFolder ? 'Выбираю папку…' : 'Выбрать папку RSI…'}
+        </button>}
         <label>Имя спрайта (без .rsi)
           <input value={draft.name} required spellCheck={false} maxLength={80}
             onChange={(event) => change('name', event.target.value)}
@@ -154,7 +190,7 @@ export default function CreateRsiWizard({ onClose, onCreated, onExternalCreated,
         <footer>
           <button type="button" disabled={creating} onClick={onClose}>Отмена</button>
           <button type="submit" className="fluent-create-submit"
-            disabled={creating || checking || !preview}>
+            disabled={creating || pickingFolder || checking || !preview}>
             <FolderPlus size={15}/>{creating ? 'Создаю…' : 'Создать RSI'}
           </button>
         </footer>

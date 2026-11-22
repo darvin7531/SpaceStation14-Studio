@@ -1,4 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { open } from '@tauri-apps/plugin-dialog';
+import { projectFolderDefaultPath, relativeProjectFolder } from '../lib/project-folder-picker';
 import { AlertCircle, FilePlus2, X } from 'lucide-react';
 import { studio, type CreatedFluent, type ExternalCreatedFluent, type NewFluentDraft, type NewFluentPreview } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
@@ -6,13 +8,14 @@ import { suggestedFluentDraft } from '../lib/fluent-create-defaults';
 
 interface Props {
   onClose: () => void;
+  projectRoot: string;
   onCreated: (created: CreatedFluent) => void;
   onExternalCreated: (created: ExternalCreatedFluent) => void;
   preferredFile?: string;
   preferredDraft?: NewFluentDraft;
 }
 
-export default function CreateFluentWizard({ onClose, onCreated, onExternalCreated, preferredFile, preferredDraft }: Props) {
+export default function CreateFluentWizard({ onClose, onCreated, onExternalCreated, projectRoot, preferredFile, preferredDraft }: Props) {
   const [draft, setDraft] = useState<NewFluentDraft>(() => suggestedFluentDraft(preferredFile, preferredDraft));
   const [destination, setDestination] = useState<'project' | 'external'>('project');
   const [preview, setPreview] = useState<NewFluentPreview | null>(null);
@@ -50,9 +53,39 @@ export default function CreateFluentWizard({ onClose, onCreated, onExternalCreat
     };
   }, [draft]);
 
+  const [pickingFolder, setPickingFolder] = useState(false);
+
+  async function pickProjectFolder() {
+    setPickingFolder(true);
+    setCreationError(null);
+    try {
+      const chosen = await open({
+        directory: true, multiple: false,
+        defaultPath: projectFolderDefaultPath(projectRoot, 'fluent'),
+        title: 'Выберите папку игровой локализации',
+      });
+      if (typeof chosen !== 'string') return;
+      const folder = relativeProjectFolder(projectRoot, chosen, 'fluent');
+      if (!folder) {
+        setCreationError({
+          code: 'FTL_FOLDER_NOT_IN_LOCALE',
+          message: 'Выбранная папка не принадлежит локализациям открытого проекта.',
+          hint: 'Выберите существующую папку внутри Resources/Locale/<локаль>.',
+        });
+        return;
+      }
+      const filename = draft.file.split('/').pop() || 'StudioNew.ftl';
+      change('file', folder + '/' + filename);
+    } catch (failure) {
+      setCreationError(normalizeStudioError(failure));
+    } finally {
+      setPickingFolder(false);
+    }
+  }
+
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (creating || checking || !preview) return;
+    if (creating || pickingFolder || checking || !preview) return;
     setCreating(true);
     setCreationError(null);
     try {
@@ -96,6 +129,10 @@ export default function CreateFluentWizard({ onClose, onCreated, onExternalCreat
             placeholder="Resources/Locale/en-US/my-messages.ftl"
             onChange={(event) => change('file', event.target.value)}/>
         </label>
+        {destination === 'project' && <button type="button" disabled={creating || pickingFolder}
+          onClick={() => void pickProjectFolder()}>
+          {pickingFolder ? 'Выбираю папку…' : 'Выбрать папку FTL…'}
+        </button>}
         <label>Начальный идентификатор
           <input value={draft.starter_key} required spellCheck={false} maxLength={128}
             placeholder="entity-example" onChange={(event) => change('starter_key', event.target.value)}/>
@@ -134,7 +171,7 @@ export default function CreateFluentWizard({ onClose, onCreated, onExternalCreat
         <footer>
           <button type="button" disabled={creating} onClick={onClose}>Отмена</button>
           <button type="submit" className="fluent-create-submit"
-            disabled={creating || checking || !preview}>
+            disabled={creating || pickingFolder || checking || !preview}>
             <FilePlus2 size={15}/>{creating ? 'Создаю…' : 'Создать FTL'}
           </button>
         </footer>
