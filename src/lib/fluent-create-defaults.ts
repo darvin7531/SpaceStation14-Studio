@@ -7,5 +7,9 @@ export function suggestedFluentDraft(preferredFile?: string, suggested?: NewFlue
     file: suggested?.file ?? directory + 'StudioNew.ftl',
     starter_key: suggested?.starter_key ?? 'new-message',
     starter_value: suggested?.starter_value ?? 'New message',
+    ...(suggested?.starter_description !== undefined
+      ? { starter_description: suggested.starter_description } : {}),
+    ...(suggested?.starter_suffix !== undefined
+      ? { starter_suffix: suggested.starter_suffix } : {}),
   };
 }
