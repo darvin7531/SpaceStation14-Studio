@@ -47,7 +47,7 @@ use prototype_fields::{FieldInspection, FieldLocator, FieldPatch, PrototypeField
 use prototype_graph::PrototypeRelations;
 use prototype_localization::EntityLocalizationSource;
 use prototype_parents::ParentInspection;
-use prototypes::{DiagnosticPage, PrototypePage};
+use prototypes::{DiagnosticPage, PrototypePage, SourceOutline};
 use resource_browser::ResourceBrowserPage;
 use resource_drift::{OpenRevision, ResourceDriftReport};
 use resource_edit::{SaveResult, YamlSyntaxReport};
@@ -928,6 +928,18 @@ async fn patch_prototype_parents(
 }
 
 #[tauri::command]
+async fn inspect_yaml_outline(
+    path: String,
+    source: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<SourceOutline, StudioError> {
+    let project = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || project.inspect_yaml_outline(&path, &source))
+        .await
+        .map_err(interrupted)?
+}
+
+#[tauri::command]
 async fn inspect_prototype_fields(
     locator: FieldLocator,
     source: String,
@@ -1044,6 +1056,7 @@ pub fn run() -> Result<(), tauri::Error> {
             preview_append_prototype,
             append_prototype,
             inspect_prototype_fields,
+            inspect_yaml_outline,
             inspect_prototype_parents,
             patch_prototype_parents,
             inspect_entity_localization,
