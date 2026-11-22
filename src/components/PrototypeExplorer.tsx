@@ -14,15 +14,17 @@ const PAGE_SIZE = 80;
 
 interface Props {
   workspaceKey: string;
+  query: string;
+  kind: string;
+  onQueryChange: (query: string) => void;
+  onKindChange: (kind: string) => void;
   onOpen: (path: string, line: number) => void;
   onEdit: (entry: PrototypeDeclaration, panel: 'fields' | 'components' | 'localization' | 'parents') => void;
 }
 
-export default function PrototypeExplorer({ workspaceKey, onOpen, onEdit }: Props) {
+export default function PrototypeExplorer({ workspaceKey, query, kind, onQueryChange, onKindChange, onOpen, onEdit }: Props) {
   const [section, setSection] = useState<'catalog' | 'diagnostics'>('catalog');
   const [inspected, setInspected] = useState<{ kind: string; id: string } | null>(null);
-  const [query, setQuery] = useState('');
-  const [kind, setKind] = useState('');
   const [page, setPage] = useState(0);
   const [diagnosticsPage, setDiagnosticsPage] = useState(0);
   const [result, setResult] = useState<PrototypePage>({ total: 0, items: [], diagnostic_count: 0 });
@@ -57,8 +59,8 @@ export default function PrototypeExplorer({ workspaceKey, onOpen, onEdit }: Prop
 
   function navigate(kindName: string, id: string) {
     setSection('catalog');
-    setKind(kindName);
-    setQuery(id);
+    onKindChange(kindName);
+    onQueryChange(id);
     setPage(0);
     setInspected({ kind: kindName, id });
   }
@@ -76,12 +78,12 @@ export default function PrototypeExplorer({ workspaceKey, onOpen, onEdit }: Prop
       <div className="search">
         <Search size={16}/>
         <input aria-label="Поиск прототипа по типу, ID или файлу" placeholder="ID, тип, путь…" value={query}
-          onChange={(event) => { setQuery(event.target.value); setPage(0); }}/>
+          onChange={(event) => { onQueryChange(event.target.value); setPage(0); }}/>
       </div>
       <div className="proto-kind">
         <label htmlFor="prototype-kind-filter">Тип</label>
         <input id="prototype-kind-filter" placeholder="Все типы (entity, reagent…)" value={kind}
-          onChange={(event) => { setKind(event.target.value); setPage(0); }}/>
+          onChange={(event) => { onKindChange(event.target.value); setPage(0); }}/>
       </div>
     </>}
     <div className="section-heading">

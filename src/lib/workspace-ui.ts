@@ -12,9 +12,12 @@ export interface WorkspaceUiState {
   kind: ResourceKind;
   fileView: 'search' | 'folders';
   explorerMode: 'files' | 'prototypes';
+  prototypeQuery: string;
+  prototypeKind: string;
 }
 export const DEFAULT_WORKSPACE_UI: WorkspaceUiState = {
   query: '', kind: 'all', fileView: 'search', explorerMode: 'files',
+  prototypeQuery: '', prototypeKind: '',
 };
 
 export function readLastProject(storage: Pick<Storage, 'getItem'>): string | null {
@@ -30,15 +33,20 @@ function validKind(value: unknown): value is ResourceKind {
 export function workspaceUiKey(projectRoot: string): string {
   return WORKSPACE_UI_PREFIX + projectRoot;
 }
+function validFilter(value: unknown): string {
+  return typeof value === 'string' && value.length <= 256
+    && !/[\u0000-\u001f\u007f]/.test(value) ? value : '';
+}
 export function sanitizeWorkspaceUi(input: unknown): WorkspaceUiState {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return { ...DEFAULT_WORKSPACE_UI };
   const item = input as Record<string, unknown>;
   return {
-    query: typeof item.query === 'string' && item.query.length <= 256
-      && !/[\u0000-\u001f\u007f]/.test(item.query) ? item.query : '',
+    query: validFilter(item.query),
     kind: validKind(item.kind) ? item.kind : 'all',
     fileView: item.fileView === 'folders' ? 'folders' : 'search',
     explorerMode: item.explorerMode === 'prototypes' ? 'prototypes' : 'files',
+    prototypeQuery: validFilter(item.prototypeQuery),
+    prototypeKind: validFilter(item.prototypeKind),
   };
 }
 

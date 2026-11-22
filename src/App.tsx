@@ -139,6 +139,8 @@ export default function App() {
   const jumpCounter = useRef(0);
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState<ResourceKind>('all');
+  const [prototypeQuery, setPrototypeQuery] = useState('');
+  const [prototypeKind, setPrototypeKind] = useState('');
   const [page, setPage] = useState(0);
   const [results, setResults] = useState<ResourcePage>({ total: 0, items: [] });
   const [searching, setSearching] = useState(false);
@@ -360,10 +362,10 @@ export default function App() {
     if (!overview || opening) return;
     try {
       writeWorkspaceUi(window.localStorage, overview.project_root, {
-        query, kind, fileView, explorerMode,
+        query, kind, fileView, explorerMode, prototypeQuery, prototypeKind,
       });
     } catch { /* local settings storage is optional */ }
-  }, [overview?.project_root, opening, query, kind, fileView, explorerMode]);
+  }, [overview?.project_root, opening, query, kind, fileView, explorerMode, prototypeQuery, prototypeKind]);
 
   async function loadProject(requestedPath: string) {
     setCreatingPrototype(false);
@@ -436,6 +438,8 @@ export default function App() {
       setReading(false);
       setQuery(restoredUi.query);
       setKind(restoredUi.kind);
+      setPrototypeQuery(restoredUi.prototypeQuery);
+      setPrototypeKind(restoredUi.prototypeKind);
       setFileView(restoredUi.fileView);
       setExplorerMode(restoredUi.explorerMode);
       setPage(0);
@@ -1623,7 +1627,8 @@ export default function App() {
           key={overview.project_root + ':' + workspaceRevision}
           selectedPath={selected?.path ?? null} onOpen={(item) => void openResource(item)}
           onOpenPrototype={openPrototypeSource} />}
-        </> : <PrototypeExplorer workspaceKey={overview.project_root + ':' + workspaceRevision}
+        </> : <PrototypeExplorer key={overview.project_root} workspaceKey={overview.project_root + ':' + workspaceRevision}
+          query={prototypeQuery} kind={prototypeKind} onQueryChange={setPrototypeQuery} onKindChange={setPrototypeKind}
           onOpen={openPrototypeSource} onEdit={editPrototypeFields} />}
       </aside>
       <section className="editor">
