@@ -136,7 +136,9 @@ fn source_span(
         return Ok(None);
     };
     let raw = head_value(&lines[line_index]).expect("indexed parent line");
-    let value = raw.trim_start_matches([' ', '\t']).trim_end_matches(['\r', '\n']);
+    let value = raw
+        .trim_start_matches([' ', '\t'])
+        .trim_end_matches(['\r', '\n']);
     let inline_comment = value
         .find(" #")
         .map(|index| value[index..].to_owned())
@@ -234,14 +236,22 @@ pub fn patch(
     let value = match requested {
         [] => String::new(),
         [only] => serde_json::to_string(only).map_err(|_| {
-            issue("PARENT_ENCODE_FAILED", "Не удалось закодировать ID родителя.")
+            issue(
+                "PARENT_ENCODE_FAILED",
+                "Не удалось закодировать ID родителя.",
+            )
         })?,
         more => {
             let values = more
                 .iter()
                 .map(|id| serde_json::to_string(id))
                 .collect::<Result<Vec<_>, _>>()
-                .map_err(|_| issue("PARENT_ENCODE_FAILED", "Не удалось закодировать список родителей."))?;
+                .map_err(|_| {
+                    issue(
+                        "PARENT_ENCODE_FAILED",
+                        "Не удалось закодировать список родителей.",
+                    )
+                })?;
             format!("[{}]", values.join(", "))
         }
     };
@@ -284,7 +294,10 @@ pub fn patch(
         next.push_str(&format!("  parent: {value}{eol}"));
     }
     if next.len() as u64 > MAX_TEXT_BYTES {
-        return Err(issue("PARENT_TOO_LARGE", "Получившийся YAML превышает 4 МиБ."));
+        return Err(issue(
+            "PARENT_TOO_LARGE",
+            "Получившийся YAML превышает 4 МиБ.",
+        ));
     }
     validate_yaml(&next)?;
     let reparsed = parse_source(&next)?;
@@ -343,9 +356,15 @@ mod tests {
         let source = "- type: entity\n  id: First\n  parent: Old # keep\n  components:\n  - type: Sprite\n    state: icon\n- type: entity\n  id: Second\n  parent: Base\n";
         let updated = patch(source, &locator(1, "First"), &ids(&["A", "B"])).unwrap();
         assert!(updated.changed);
-        assert!(updated.content.contains("  parent: [\"A\", \"B\"] # keep\n"));
-        assert!(updated.content.contains("  components:\n  - type: Sprite\n    state: icon\n"));
-        assert!(updated.content.ends_with("- type: entity\n  id: Second\n  parent: Base\n"));
+        assert!(updated
+            .content
+            .contains("  parent: [\"A\", \"B\"] # keep\n"));
+        assert!(updated
+            .content
+            .contains("  components:\n  - type: Sprite\n    state: icon\n"));
+        assert!(updated
+            .content
+            .ends_with("- type: entity\n  id: Second\n  parent: Base\n"));
         assert_eq!(
             inspect(&updated.content, &locator(1, "First"))
                 .unwrap()
@@ -356,7 +375,8 @@ mod tests {
 
     #[test]
     fn block_array_to_single_replaces_only_parent_rows() {
-        let source = "- type: entity\n  id: A\n  parent:\n  - Parent1\n  - Parent2\n  name: 'Hello'\n";
+        let source =
+            "- type: entity\n  id: A\n  parent:\n  - Parent1\n  - Parent2\n  name: 'Hello'\n";
         let changed = patch(source, &locator(1, "A"), &ids(&["Parent3"])).unwrap();
         assert_eq!(
             changed.content,
@@ -366,7 +386,8 @@ mod tests {
 
     #[test]
     fn inline_array_to_empty_removes_only_parent() {
-        let source = "- type: entity\n  id: A\n  parent: [Parent1, Parent2]\n  description: A description\n";
+        let source =
+            "- type: entity\n  id: A\n  parent: [Parent1, Parent2]\n  description: A description\n";
         let changed = patch(source, &locator(1, "A"), &[]).unwrap();
         assert_eq!(
             changed.content,
@@ -413,10 +434,16 @@ mod tests {
             "PARENT_ID_DUPLICATE"
         );
         assert_eq!(
-            patch(source, &locator(1, "A"), &ids(&["../evil"])).unwrap_err().code,
+            patch(source, &locator(1, "A"), &ids(&["../evil"]))
+                .unwrap_err()
+                .code,
             "PARENT_ID_INVALID"
         );
-        assert!(inspect("- type: entity\n  id: A\n  parent: [A, [B]]\n", &locator(1, "A")).is_err());
+        assert!(inspect(
+            "- type: entity\n  id: A\n  parent: [A, [B]]\n",
+            &locator(1, "A")
+        )
+        .is_err());
     }
 
     #[test]
