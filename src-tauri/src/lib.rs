@@ -12,6 +12,7 @@ mod prototype_create;
 mod prototype_fields;
 mod prototype_graph;
 mod prototype_localization;
+mod prototype_parents;
 mod prototypes;
 mod resource_browser;
 mod resource_drift;
@@ -45,6 +46,7 @@ use prototype_create::{PrototypeDraft, PrototypePreview};
 use prototype_fields::{FieldInspection, FieldLocator, FieldPatch, PrototypeFields};
 use prototype_graph::PrototypeRelations;
 use prototype_localization::EntityLocalizationSource;
+use prototype_parents::ParentInspection;
 use prototypes::{DiagnosticPage, PrototypePage};
 use resource_browser::ResourceBrowserPage;
 use resource_drift::{OpenRevision, ResourceDriftReport};
@@ -891,6 +893,33 @@ async fn append_prototype(
 }
 
 #[tauri::command]
+async fn inspect_prototype_parents(
+    locator: FieldLocator,
+    source: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<ParentInspection, StudioError> {
+    let project = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || project.inspect_prototype_parents(&locator, &source))
+        .await
+        .map_err(interrupted)?
+}
+
+#[tauri::command]
+async fn patch_prototype_parents(
+    locator: FieldLocator,
+    source: String,
+    parents: Vec<String>,
+    state: State<'_, WorkspaceState>,
+) -> Result<FieldPatch, StudioError> {
+    let project = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        project.patch_prototype_parents(&locator, &source, &parents)
+    })
+    .await
+    .map_err(interrupted)?
+}
+
+#[tauri::command]
 async fn inspect_prototype_fields(
     locator: FieldLocator,
     source: String,
@@ -1007,6 +1036,8 @@ pub fn run() -> Result<(), tauri::Error> {
             preview_append_prototype,
             append_prototype,
             inspect_prototype_fields,
+            inspect_prototype_parents,
+            patch_prototype_parents,
             inspect_entity_localization,
             patch_prototype_fields,
             inspect_prototype_components,
