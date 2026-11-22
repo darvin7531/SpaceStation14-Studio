@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useI18n } from '../i18n';
 import { open } from '@tauri-apps/plugin-dialog';
 import { projectFolderDefaultPath, relativeProjectFolder } from '../lib/project-folder-picker';
 import { AlertCircle, FilePlus2, X } from 'lucide-react';
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export default function CreateFluentWizard({ onClose, onCreated, onExternalCreated, projectRoot, requiredLocales, preferredFile, preferredDraft }: Props) {
+  const { t } = useI18n();
   const [draft, setDraft] = useState<NewFluentDraft>(() => suggestedFluentDraft(preferredFile, preferredDraft));
   const [destination, setDestination] = useState<'project' | 'external'>('project');
   const [gameLocaleInput, setGameLocaleInput] = useState(() =>
@@ -72,15 +74,15 @@ export default function CreateFluentWizard({ onClose, onCreated, onExternalCreat
       const chosen = await open({
         directory: true, multiple: false,
         defaultPath: projectFolderDefaultPath(projectRoot, 'fluent'),
-        title: 'Выберите папку игровой локализации',
+        title: t('wizard.fluent.dialogFolder'),
       });
       if (typeof chosen !== 'string') return;
       const folder = relativeProjectFolder(projectRoot, chosen, 'fluent');
       if (!folder) {
         setCreationError({
           code: 'FTL_FOLDER_NOT_IN_LOCALE',
-          message: 'Выбранная папка не принадлежит локализациям открытого проекта.',
-          hint: 'Выберите существующую папку внутри Resources/Locale/<локаль>.',
+          message: t('wizard.fluent.folderError'),
+          hint: t('wizard.fluent.folderHint'),
         });
         return;
       }
@@ -121,22 +123,20 @@ export default function CreateFluentWizard({ onClose, onCreated, onExternalCreat
         <header className="fluent-create-heading">
           <div>
             <small>Rust Rework · Fluent</small>
-            <h2 id="fluent-create-heading">Новая локализация</h2>
+            <h2 id="fluent-create-heading">{t('wizard.fluent.title')}</h2>
           </div>
-          <button type="button" onClick={onClose} disabled={creating} aria-label="Закрыть мастер"><X size={18}/></button>
+          <button type="button" onClick={onClose} disabled={creating} aria-label={t('wizard.common.close')}><X size={18}/></button>
         </header>
         <p className="fluent-create-help">
-          Создаётся новый файл, а существующие файлы никогда не перезаписываются.
-          Для проекта папка языка должна существовать в Resources/Locale.
-          При внешнем создании расположение выбирается через системный диалог.
+          {t('wizard.fluent.intro')}
         </p>
-        <div className="create-proto-mode" role="group" aria-label="Размещение FTL">
+        <div className="create-proto-mode" role="group" aria-label={t('wizard.fluent.location')}>
           <button type="button" className={destination === 'project' ? 'selected' : ''}
-            onClick={() => setDestination('project')}>В проекте</button>
+            onClick={() => setDestination('project')}>{t('wizard.common.project')}</button>
           <button type="button" className={destination === 'external' ? 'selected' : ''}
-            onClick={() => setDestination('external')}>Вне проекта</button>
+            onClick={() => setDestination('external')}>{t('wizard.common.external')}</button>
         </div>
-        {destination === 'project' && <label>Игровая локаль FTL (не язык интерфейса Studio)
+        {destination === 'project' && <label>{t('wizard.fluent.gameLocale')}
           <input list="fluent-game-locales" value={gameLocaleInput}
             onChange={(event) => changeGameLocale(event.target.value)}
             spellCheck={false} placeholder="ru-RU"/>
@@ -144,9 +144,9 @@ export default function CreateFluentWizard({ onClose, onCreated, onExternalCreat
             {[...new Set(['ru-RU', 'en-US', ...requiredLocales])].map((locale) =>
               <option key={locale} value={locale}/>)}
           </datalist>
-          <small>Язык редактора меняется отдельно в настройках. При выборе локали меняется только путь будущего FTL.</small>
+          <small>{t('wizard.fluent.gameLocaleHint')}</small>
         </label>}
-        <label>{destination === 'external' ? 'Имя FTL для предпросмотра (фактический путь выберете отдельно)' : 'Путь нового .ftl относительно проекта'}
+        <label>{destination === 'external' ? t('wizard.fluent.externalFilename') : t('wizard.fluent.projectPath')}
           <input value={draft.file} required spellCheck={false} maxLength={512}
             placeholder="Resources/Locale/en-US/my-messages.ftl"
             onChange={(event) => {
@@ -157,30 +157,30 @@ export default function CreateFluentWizard({ onClose, onCreated, onExternalCreat
         </label>
         {destination === 'project' && <button type="button" disabled={creating || pickingFolder}
           onClick={() => void pickProjectFolder()}>
-          {pickingFolder ? 'Выбираю папку…' : 'Выбрать папку FTL…'}
+          {pickingFolder ? t('wizard.common.chooseFolder') : t('wizard.fluent.pickFolder')}
         </button>}
-        <label>Начальный идентификатор
+        <label>{t('wizard.fluent.starterKey')}
           <input value={draft.starter_key} required spellCheck={false} maxLength={128}
             placeholder="entity-example" onChange={(event) => change('starter_key', event.target.value)}/>
         </label>
-        <label>Начальное значение (одна строка)
+        <label>{t('wizard.fluent.starterValue')}
           <input value={draft.starter_value} spellCheck={false}
             placeholder="Example"
             onChange={(event) => change('starter_value', event.target.value)}/>
         </label>
         {preferredDraft && <div className="fluent-create-entity-fields">
-          <label>Описание entity (.desc)
+          <label>{t('wizard.fluent.description')}
             <input value={draft.starter_description ?? ''} spellCheck={false}
               onChange={(event) => change('starter_description', event.target.value)}/>
           </label>
-          <label>Суффикс entity (.suffix)
+          <label>{t('wizard.fluent.suffix')}
             <input value={draft.starter_suffix ?? ''} spellCheck={false}
               onChange={(event) => change('starter_suffix', event.target.value)}/>
           </label>
         </div>}
         <div className="fluent-create-preview">
-          <strong>Содержимое нового файла</strong>
-          {checking ? <p>Проверяю…</p> : validationError
+          <strong>{t('wizard.fluent.preview')}</strong>
+          {checking ? <p>{t('wizard.common.checking')}</p> : validationError
             ? <div role="alert"><AlertCircle size={15}/>
                 <span>{validationError.message} {validationError.hint}</span>
               </div>
@@ -191,14 +191,14 @@ export default function CreateFluentWizard({ onClose, onCreated, onExternalCreat
         {creationError && <div className="fluent-create-error" role="alert">
           <AlertCircle size={16}/>
           <span>{creationError.message} {creationError.hint}
-            {creationError.details && <details><summary>Подробности</summary><pre>{creationError.details}</pre></details>}
+            {creationError.details && <details><summary>{t('wizard.common.details')}</summary><pre>{creationError.details}</pre></details>}
           </span>
         </div>}
         <footer>
-          <button type="button" disabled={creating} onClick={onClose}>Отмена</button>
+          <button type="button" disabled={creating} onClick={onClose}>{t('wizard.common.cancel')}</button>
           <button type="submit" className="fluent-create-submit"
             disabled={creating || pickingFolder || checking || !preview}>
-            <FilePlus2 size={15}/>{creating ? 'Создаю…' : 'Создать FTL'}
+            <FilePlus2 size={15}/>{creating ? t('wizard.common.creating') : t('wizard.fluent.create')}
           </button>
         </footer>
       </form>

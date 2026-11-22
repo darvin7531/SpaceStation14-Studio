@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useI18n } from '../i18n';
 import { open } from '@tauri-apps/plugin-dialog';
 import { projectFolderDefaultPath, relativeProjectFolder } from '../lib/project-folder-picker';
 import { AlertCircle, FolderPlus, X } from 'lucide-react';
@@ -19,6 +20,7 @@ function initialDirectory(path?: string): string {
 }
 
 export default function CreateRsiWizard({ onClose, onCreated, onExternalCreated, projectRoot, preferredPath }: Props) {
+  const { t } = useI18n();
   const [draft, setDraft] = useState<NewRsiDraft>(() => ({
     directory: initialDirectory(preferredPath),
     name: 'new-sprite',
@@ -69,15 +71,15 @@ export default function CreateRsiWizard({ onClose, onCreated, onExternalCreated,
       const chosen = await open({
         directory: true, multiple: false,
         defaultPath: projectFolderDefaultPath(projectRoot, 'rsi'),
-        title: 'Выберите папку для RSI в игровом проекте',
+        title: t('wizard.rsi.dialogFolder'),
       });
       if (typeof chosen !== 'string') return;
       const folder = relativeProjectFolder(projectRoot, chosen, 'rsi');
       if (!folder) {
         setCreationError({
           code: 'RSI_FOLDER_NOT_IN_TEXTURES',
-          message: 'Выбранная папка находится вне текстур открытого проекта.',
-          hint: 'Выберите папку внутри Resources/Textures.',
+          message: t('wizard.rsi.folderError'),
+          hint: t('wizard.rsi.folderHint'),
         });
         return;
       }
@@ -116,66 +118,64 @@ export default function CreateRsiWizard({ onClose, onCreated, onExternalCreated,
         <header className="fluent-create-heading">
           <div>
             <small>Rust Rework · RSI</small>
-            <h2 id="rsi-create-heading">Новый спрайт RSI</h2>
+            <h2 id="rsi-create-heading">{t('wizard.rsi.title')}</h2>
           </div>
           <button type="button" disabled={creating} onClick={onClose}
-            aria-label="Закрыть мастер создания RSI"><X size={18}/></button>
+            aria-label={t('wizard.rsi.close')}><X size={18}/></button>
         </header>
         <p className="fluent-create-help">
-          Создаётся отдельный каталог .rsi с корректным meta.json. Существующие RSI никогда
-          не перезаписываются. Родительская папка внутри Resources/Textures должна существовать.
-          Изображения и состояния можно добавить позже.
+          {t('wizard.rsi.intro')}
         </p>
-        <div className="create-proto-mode" role="group" aria-label="Размещение RSI">
+        <div className="create-proto-mode" role="group" aria-label={t('wizard.rsi.location')}>
           <button type="button" className={destination === 'project' ? 'selected' : ''}
-            onClick={() => setDestination('project')}>В проекте</button>
+            onClick={() => setDestination('project')}>{t('wizard.common.project')}</button>
           <button type="button" className={destination === 'external' ? 'selected' : ''}
-            onClick={() => setDestination('external')}>Вне проекта</button>
+            onClick={() => setDestination('external')}>{t('wizard.common.external')}</button>
         </div>
         {destination === 'external' && <p className="fluent-create-help">
-          Родительская папка будет выбрана в системном диалоге. Внешний RSI не входит в открытый проект.
+          {t('wizard.rsi.externalHint')}
         </p>}
-        {destination === 'project' && <label>Папка внутри Resources/Textures
+        {destination === 'project' && <label>{t('wizard.rsi.directory')}
           <input value={draft.directory} required spellCheck={false} maxLength={512}
             onChange={(event) => change('directory', event.target.value)}
             placeholder="Resources/Textures/Objects"/>
         </label>}
         {destination === 'project' && <button type="button" disabled={creating || pickingFolder}
           onClick={() => void pickProjectFolder()}>
-          {pickingFolder ? 'Выбираю папку…' : 'Выбрать папку RSI…'}
+          {pickingFolder ? t('wizard.common.chooseFolder') : t('wizard.rsi.pickFolder')}
         </button>}
-        <label>Имя спрайта (без .rsi)
+        <label>{t('wizard.rsi.spriteName')}
           <input value={draft.name} required spellCheck={false} maxLength={80}
             onChange={(event) => change('name', event.target.value)}
             placeholder="my-sprite"/>
         </label>
         <div className="rsi-create-grid">
-          <label>Ширина кадра
+          <label>{t('wizard.rsi.frameWidth')}
             <input type="number" min={1} max={2048} value={draft.size_x}
               onChange={(event) => change('size_x', Number(event.target.value))}/>
           </label>
-          <label>Высота кадра
+          <label>{t('wizard.rsi.frameHeight')}
             <input type="number" min={1} max={2048} value={draft.size_y}
               onChange={(event) => change('size_y', Number(event.target.value))}/>
           </label>
         </div>
-        <label>Лицензия (SPDX)
+        <label>{t('wizard.rsi.license')}
           <input value={draft.license} required maxLength={128}
             onChange={(event) => change('license', event.target.value)}/>
         </label>
-        <label>Авторство и источники
+        <label>{t('wizard.rsi.copyright')}
           <textarea className="rsi-create-copyright" value={draft.copyright}
             onChange={(event) => change('copyright', event.target.value)}/>
         </label>
         <div className="fluent-create-preview">
-          <strong>Предпросмотр meta.json</strong>
-          {checking ? <p>Проверяю…</p> : validationError
+          <strong>{t('wizard.rsi.preview')}</strong>
+          {checking ? <p>{t('wizard.common.checking')}</p> : validationError
             ? <div role="alert"><AlertCircle size={15}/>
               <span>{validationError.message} {validationError.hint}</span>
             </div>
             : <>
-              <small>{destination === 'project' ? 'Будет создан: ' + (preview?.path ?? '')
-                : 'Будет создан: ' + draft.name + '.rsi в выбранной внешней папке'}</small>
+              <small>{destination === 'project' ? t('wizard.rsi.createdPath', { path: preview?.path ?? '' })
+                : t('wizard.rsi.createdExternal', { name: draft.name })}</small>
               <pre className="rsi-create-metadata">{preview?.metadata ?? ''}</pre>
               {preview?.warnings.map((warning) => <small key={warning}>{warning}</small>)}
             </>}
@@ -183,15 +183,15 @@ export default function CreateRsiWizard({ onClose, onCreated, onExternalCreated,
         {creationError && <div className="fluent-create-error" role="alert">
           <AlertCircle size={16}/>
           <span>{creationError.message} {creationError.hint}
-            {creationError.details && <details><summary>Технические сведения</summary>
+            {creationError.details && <details><summary>{t('wizard.common.details')}</summary>
               <pre>{creationError.details}</pre></details>}
           </span>
         </div>}
         <footer>
-          <button type="button" disabled={creating} onClick={onClose}>Отмена</button>
+          <button type="button" disabled={creating} onClick={onClose}>{t('wizard.common.cancel')}</button>
           <button type="submit" className="fluent-create-submit"
             disabled={creating || pickingFolder || checking || !preview}>
-            <FolderPlus size={15}/>{creating ? 'Создаю…' : 'Создать RSI'}
+            <FolderPlus size={15}/>{creating ? t('wizard.common.creating') : t('wizard.rsi.create')}
           </button>
         </footer>
       </form>
