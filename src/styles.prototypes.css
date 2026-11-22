@@ -101,3 +101,12 @@
 .proto-source-tags > strong { color: #9fbad6; font-size: 10px; margin-right: 4px; }
 .proto-source-tags code { color: #e5f1ff; background: #234159; border: 1px solid #3b5e7b; border-radius: 4px; font-size: 10px; padding: 3px 5px; overflow-wrap: anywhere; }
 .proto-source-card > small { color: #8aa8c8; font-size: 10px; }
+
+
+/* R05 read-only partial overlays. Unknown operations are visible warnings. */
+.proto-source-warning { margin: 0; border: 1px solid #775943; padding: 7px 9px; border-radius: 5px; color: #e9bda3; background: #30251e; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+.proto-source-label { font-size: 11px; color: #d7e7f8; margin-top: 5px; }
+.proto-merged-row { display: grid; grid-template-columns: minmax(80px, 1fr) minmax(90px, 2fr) minmax(70px, 1fr); gap: 5px; align-items: start; padding: 6px 0; border-bottom: 1px solid #294357; min-width: 0; }
+.proto-merged-row strong { color: #c7e4ff; font-size: 11px; overflow-wrap: anywhere; }
+.proto-merged-row span { color: #a8bfd9; font-size: 11px; overflow-wrap: anywhere; }
+.proto-merged-row button { color: #80bdeb; font-size: 10px; word-break: break-all; }
