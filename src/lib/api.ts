@@ -618,6 +618,7 @@ export interface NewPrototypeDraft {
   abstract_prototype: boolean;
   sprite: string;
   sprite_state: string;
+  include_sprite: boolean;
   include_item: boolean;
   include_physics: boolean;
   include_appearance: boolean;

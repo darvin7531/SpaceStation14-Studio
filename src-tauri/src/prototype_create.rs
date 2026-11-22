@@ -24,6 +24,8 @@ pub struct PrototypeDraft {
     pub abstract_prototype: bool,
     pub sprite: String,
     pub sprite_state: String,
+    #[serde(default)]
+    pub include_sprite: bool,
     pub include_item: bool,
     pub include_physics: bool,
     pub include_appearance: bool,
@@ -114,7 +116,8 @@ pub fn preview(draft: &PrototypeDraft) -> Result<PrototypePreview, StudioError> 
         }
     }
     if draft.kind != "entity"
-        && (!draft.sprite.is_empty()
+        && (draft.include_sprite
+            || !draft.sprite.is_empty()
             || !draft.sprite_state.is_empty()
             || draft.include_item
             || draft.include_physics
@@ -157,16 +160,19 @@ pub fn preview(draft: &PrototypeDraft) -> Result<PrototypePreview, StudioError> 
     if !draft.suffix.is_empty() {
         lines.push(format!("  suffix: {}", yaml_string(&draft.suffix)?));
     }
-    let has_components = !draft.sprite.is_empty()
+    let has_components = draft.include_sprite
+        || !draft.sprite.is_empty()
         || draft.include_item
         || draft.include_physics
         || draft.include_appearance;
     if has_components {
         lines.push("  components:".into());
     }
-    if !draft.sprite.is_empty() {
+    if draft.include_sprite || !draft.sprite.is_empty() {
         lines.push("  - type: Sprite".into());
-        lines.push(format!("    sprite: {}", yaml_string(&draft.sprite)?));
+        if !draft.sprite.is_empty() {
+            lines.push(format!("    sprite: {}", yaml_string(&draft.sprite)?));
+        }
         if !draft.sprite_state.is_empty() {
             lines.push(format!("    state: {}", yaml_string(&draft.sprite_state)?));
         }
@@ -515,6 +521,7 @@ mod tests {
                 abstract_prototype: false,
                 sprite: String::new(),
                 sprite_state: String::new(),
+                include_sprite: false,
                 include_item: false,
                 include_physics: false,
                 include_appearance: false,
@@ -610,6 +617,18 @@ mod tests {
             preview(&draft).unwrap_err().code,
             "PROTOTYPE_COMPONENTS_INVALID"
         );
+    }
+
+    #[test]
+    fn explicitly_checked_sprite_creates_a_stub_without_requiring_a_rsi_path() {
+        let fixture = Fixture::new();
+        let mut draft = fixture.draft("SpriteStub");
+        draft.include_sprite = true;
+        let yaml = preview(&draft).unwrap().yaml;
+        let parsed = yaml_rust2::YamlLoader::load_from_str(&yaml).unwrap();
+        assert_eq!(parsed[0][0]["components"][0]["type"].as_str(), Some("Sprite"));
+        assert!(parsed[0][0]["components"][0]["sprite"].is_badvalue());
+        assert!(!yaml.contains("PLACEHOLDER.rsi"));
     }
 
     #[test]

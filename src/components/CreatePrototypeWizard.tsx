@@ -37,6 +37,7 @@ const INITIAL: NewPrototypeDraft = {
   abstract_prototype: false,
   sprite: '',
   sprite_state: '',
+  include_sprite: false,
   include_item: false,
   include_physics: false,
   include_appearance: false,
@@ -95,6 +96,7 @@ export default function CreatePrototypeWizard({
       if (field === 'kind' && value !== 'entity') {
         next.sprite = '';
         next.sprite_state = '';
+        next.include_sprite = false;
         next.include_item = false;
         next.include_physics = false;
         next.include_appearance = false;
@@ -274,6 +276,7 @@ export default function CreatePrototypeWizard({
             </label>
             <div className="create-proto-checkboxes">
               {([
+                ['include_sprite', 'Sprite'],
                 ['include_item', 'Item'],
                 ['include_physics', 'Physics'],
                 ['include_appearance', 'Appearance'],
