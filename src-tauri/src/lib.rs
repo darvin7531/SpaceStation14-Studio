@@ -35,7 +35,7 @@ use std::sync::{Arc, Mutex};
 use csharp_index::{CSharpPage, ComponentSchemaBatch};
 use draft_journal::{DraftJournal, DraftList, DraftSnapshot, DraftSummary, DraftWriteResult};
 use error::{internal_lock, interrupted, StudioError};
-use fluent_create::{FluentDraft, FluentPreview};
+use fluent_create::{ExternalCreatedFluent, FluentDraft, FluentPreview};
 use fluent_locale::FluentInspection;
 use project::{
     ContentSearchResults, ProjectIndex, ProjectOverview, ProjectRefresh, ResourceDocument,
@@ -68,6 +68,7 @@ use rsi_timing::RsiTimingUpdate;
 use serde::Serialize;
 use tauri::{Emitter, Manager, State};
 use ui_sources::UiSourcePage;
+use tauri_plugin_dialog::DialogExt;
 
 #[derive(Clone, Serialize)]
 struct ProjectScanProgress {
@@ -836,6 +837,37 @@ async fn create_new_fluent(
     })
 }
 
+/// Legacy Electron external FTL workflow: the path is selected natively, never passed by JS.
+#[tauri::command]
+async fn create_external_fluent(
+    app: tauri::AppHandle,
+    draft: FluentDraft,
+) -> Result<Option<ExternalCreatedFluent>, StudioError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let selected = app
+            .dialog()
+            .file()
+            .set_title("Сохранить внешний FTL")
+            .set_file_name("StudioNew.ftl")
+            .add_filter("Fluent", &["ftl"])
+            .blocking_save_file();
+        let Some(selected) = selected else {
+            return Ok(None);
+        };
+        let chosen_path = selected.into_path().map_err(|reason| {
+            StudioError::new(
+                "FTL_EXTERNAL_DIALOG_PATH",
+                "Системный диалог вернул неподдерживаемый путь.",
+                "Выберите обычный локальный файл.",
+            )
+            .with_details(reason.to_string())
+        })?;
+        fluent_create::create_external_at(&chosen_path, &draft).map(Some)
+    })
+    .await
+    .map_err(interrupted)?
+}
+
 #[derive(Debug, Serialize)]
 struct CreatePrototypeResult {
     file: String,
@@ -1130,6 +1162,7 @@ pub fn run() -> Result<(), tauri::Error> {
             save_ftl_resource,
             preview_new_fluent,
             create_new_fluent,
+            create_external_fluent,
             preview_new_prototype,
             create_new_prototype,
             preview_append_prototype,

@@ -35,6 +35,12 @@ pub struct CreatedFluent {
     pub warning: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct ExternalCreatedFluent {
+    pub path: String,
+    pub warning: Option<String>,
+}
+
 fn problem(code: &'static str, message: &str, hint: &str) -> StudioError {
     StudioError::new(code, message, hint)
 }
@@ -275,6 +281,101 @@ pub fn create(root: &Path, draft: &FluentDraft) -> Result<CreatedFluent, StudioE
     })
 }
 
+/// Only call from a native OS save dialog; the frontend cannot choose arbitrary paths.
+pub fn create_external_at(
+    chosen_path: &Path,
+    draft: &FluentDraft,
+) -> Result<ExternalCreatedFluent, StudioError> {
+    let rendered = preview(draft)?;
+    if chosen_path.extension().and_then(|extension| extension.to_str()) != Some("ftl") {
+        return Err(problem(
+            "FTL_EXTERNAL_EXTENSION",
+            "Внешняя локализация должна иметь расширение .ftl.",
+            "Выберите имя файла с расширением .ftl.",
+        ));
+    }
+    let parent = chosen_path.parent().ok_or_else(|| {
+        problem(
+            "FTL_EXTERNAL_PATH_INVALID",
+            "Не удалось определить папку назначения.",
+            "Выберите корректный путь в системном диалоге.",
+        )
+    })?;
+    let parent = fs::canonicalize(parent).map_err(|reason| {
+        problem(
+            "FTL_EXTERNAL_PARENT_MISSING",
+            "Папка для внешнего FTL недоступна.",
+            "Укажите существующий каталог.",
+        )
+        .with_details(reason.to_string())
+    })?;
+    if !parent.is_dir() {
+        return Err(problem(
+            "FTL_EXTERNAL_PARENT_INVALID",
+            "Путь назначения не является каталогом.",
+            "Выберите существующую папку.",
+        ));
+    }
+    let filename = chosen_path.file_name().ok_or_else(|| {
+        problem(
+            "FTL_EXTERNAL_PATH_INVALID",
+            "Не указано имя внешнего файла.",
+            "Укажите имя с расширением .ftl.",
+        )
+    })?;
+    let target = parent.join(filename);
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o644);
+    }
+    let mut handle = options.open(&target).map_err(|reason| {
+        if reason.kind() == std::io::ErrorKind::AlreadyExists {
+            problem(
+                "FTL_FILE_EXISTS",
+                "Внешний FTL уже существует и не будет перезаписан.",
+                "Выберите другое имя файла.",
+            )
+        } else {
+            problem(
+                "FTL_CREATE_FAILED",
+                "Не удалось создать внешний FTL.",
+                "Проверьте права записи и место на диске.",
+            )
+            .with_details(reason.to_string())
+        }
+    })?;
+    let write = handle
+        .write_all(rendered.content.as_bytes())
+        .and_then(|_| handle.sync_all());
+    drop(handle);
+    if let Err(reason) = write {
+        if let Err(cleanup) = fs::remove_file(&target) {
+            return Err(problem(
+                "FTL_CLEANUP_FAILED",
+                "После ошибки записи остался неполный внешний FTL.",
+                "Проверьте файл вручную перед повторной попыткой.",
+            )
+            .with_details(format!("{reason}; очистка: {cleanup}")));
+        }
+        return Err(problem(
+            "FTL_WRITE_FAILED",
+            "Не удалось полностью записать внешний FTL.",
+            "Проверьте носитель и повторите создание.",
+        )
+        .with_details(reason.to_string()));
+    }
+    let warning = sync_directory(&parent)
+        .err()
+        .map(|reason| format!("FTL создан, но синхронизация каталога не подтверждена: {reason}"));
+    Ok(ExternalCreatedFluent {
+        path: target.to_string_lossy().into_owned(),
+        warning,
+    })
+}
+
 #[cfg(unix)]
 fn sync_directory(parent: &Path) -> std::io::Result<()> {
     fs::File::open(parent)?.sync_all()
@@ -420,6 +521,29 @@ mod tests {
                 "FTL_VALUE_INVALID"
             );
         }
+    }
+
+    #[test]
+    fn external_fluent_creation_rejects_overwrite_and_invalid_extension() {
+        let fx = Fixture::new();
+        let target = fx.root.join("external.ftl");
+        let draft = fx.draft();
+        let result = create_external_at(&target, &draft).unwrap();
+        assert_eq!(result.path, target.to_string_lossy());
+        assert_eq!(
+            fs::read_to_string(&target).unwrap(),
+            "item-example = Example item\n"
+        );
+        assert_eq!(
+            create_external_at(&target, &draft).unwrap_err().code,
+            "FTL_FILE_EXISTS"
+        );
+        assert_eq!(
+            create_external_at(&fx.root.join("wrong.txt"), &draft)
+                .unwrap_err()
+                .code,
+            "FTL_EXTERNAL_EXTENSION"
+        );
     }
 
     #[test]

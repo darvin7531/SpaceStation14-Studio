@@ -1165,6 +1165,14 @@ export default function App() {
       : 'RSI создан: ' + created.path + '. Каталог готов для добавления кадров.');
   }
 
+  function onExternalFluentCreated(created: import('./lib/api').ExternalCreatedFluent) {
+    setCreatingFluent(false);
+    setQuickFixFluentDraft(null);
+    setNotice(created.warning
+      ? 'Внешний FTL создан: ' + created.path + '. ' + created.warning
+      : 'Внешний FTL создан: ' + created.path + '. Файл не добавлен в открытый проект.');
+  }
+
   function onFluentCreated(created: CreatedFluent) {
     setCreatingFluent(false);
     setQuickFixFluentDraft(null);
@@ -1213,6 +1221,7 @@ export default function App() {
     {creatingFluent && overview && <CreateFluentWizard
       onClose={() => { setCreatingFluent(false); setQuickFixFluentDraft(null); }}
       onCreated={onFluentCreated}
+      onExternalCreated={onExternalFluentCreated}
       preferredDraft={quickFixFluentDraft ?? undefined}
       preferredFile={selected?.kind === 'ftl' ? selected.path : undefined}/>}
     {creatingPrototype && overview && <CreatePrototypeWizard

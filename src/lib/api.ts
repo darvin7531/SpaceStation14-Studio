@@ -588,6 +588,10 @@ export interface NewFluentDraft {
   starter_suffix?: string;
 }
 
+export interface ExternalCreatedFluent {
+  path: string;
+  warning: string | null;
+}
 export interface NewFluentPreview {
   file: string;
   content: string;
@@ -781,6 +785,9 @@ export const studio = {
   },
   createNewFluent(draft: NewFluentDraft): Promise<CreatedFluent> {
     return invoke('create_new_fluent', { draft });
+  },
+  createExternalFluent(draft: NewFluentDraft): Promise<ExternalCreatedFluent | null> {
+    return invoke('create_external_fluent', { draft });
   },
   previewNewPrototype(draft: NewPrototypeDraft): Promise<NewPrototypePreview> {
     return invoke('preview_new_prototype', { draft });

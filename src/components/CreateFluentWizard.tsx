@@ -1,18 +1,20 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { AlertCircle, FilePlus2, X } from 'lucide-react';
-import { studio, type CreatedFluent, type NewFluentDraft, type NewFluentPreview } from '../lib/api';
+import { studio, type CreatedFluent, type ExternalCreatedFluent, type NewFluentDraft, type NewFluentPreview } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 import { suggestedFluentDraft } from '../lib/fluent-create-defaults';
 
 interface Props {
   onClose: () => void;
   onCreated: (created: CreatedFluent) => void;
+  onExternalCreated: (created: ExternalCreatedFluent) => void;
   preferredFile?: string;
   preferredDraft?: NewFluentDraft;
 }
 
-export default function CreateFluentWizard({ onClose, onCreated, preferredFile, preferredDraft }: Props) {
+export default function CreateFluentWizard({ onClose, onCreated, onExternalCreated, preferredFile, preferredDraft }: Props) {
   const [draft, setDraft] = useState<NewFluentDraft>(() => suggestedFluentDraft(preferredFile, preferredDraft));
+  const [destination, setDestination] = useState<'project' | 'external'>('project');
   const [preview, setPreview] = useState<NewFluentPreview | null>(null);
   const [validationError, setValidationError] = useState<StudioError | null>(null);
   const [creationError, setCreationError] = useState<StudioError | null>(null);
@@ -54,8 +56,13 @@ export default function CreateFluentWizard({ onClose, onCreated, preferredFile, 
     setCreating(true);
     setCreationError(null);
     try {
-      const created = await studio.createNewFluent(draft);
-      onCreated(created);
+      if (destination === 'external') {
+        const created = await studio.createExternalFluent(draft);
+        if (created) onExternalCreated(created);
+      } else {
+        const created = await studio.createNewFluent(draft);
+        onCreated(created);
+      }
     } catch (error) {
       setCreationError(normalizeStudioError(error));
     } finally {
@@ -75,9 +82,16 @@ export default function CreateFluentWizard({ onClose, onCreated, preferredFile, 
         </header>
         <p className="fluent-create-help">
           Создаётся новый файл, а существующие файлы никогда не перезаписываются.
-          Папка языка должна уже существовать в Resources/Locale.
+          Для проекта папка языка должна существовать в Resources/Locale.
+          При внешнем создании расположение выбирается через системный диалог.
         </p>
-        <label>Путь нового .ftl относительно проекта
+        <div className="create-proto-mode" role="group" aria-label="Размещение FTL">
+          <button type="button" className={destination === 'project' ? 'selected' : ''}
+            onClick={() => setDestination('project')}>В проекте</button>
+          <button type="button" className={destination === 'external' ? 'selected' : ''}
+            onClick={() => setDestination('external')}>Вне проекта</button>
+        </div>
+        <label>{destination === 'external' ? 'Имя FTL для предпросмотра (фактический путь выберете отдельно)' : 'Путь нового .ftl относительно проекта'}
           <input value={draft.file} required spellCheck={false} maxLength={512}
             placeholder="Resources/Locale/en-US/my-messages.ftl"
             onChange={(event) => change('file', event.target.value)}/>
