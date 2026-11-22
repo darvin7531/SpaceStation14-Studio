@@ -6,6 +6,7 @@ import {
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 import SpriteLayerInspector from './SpriteLayerInspector';
 import { missingLocaleFiles } from '../lib/localization-navigation';
+import { outlineDeclarationKey, outlineKeyAtLine } from '../lib/outline-selection';
 
 type EditorPanel = 'fields' | 'components' | 'localization' | 'parents';
 
@@ -20,6 +21,7 @@ interface Props {
   requiredLocales: readonly string[];
   liveValidation: boolean;
   validationDelay: number;
+  cursorLine: number | null;
 }
 
 /** Electron parity: live missing-locale diagnostics for the selected normal entity.
@@ -88,13 +90,13 @@ function SelectedEntityLocaleStatus({
 /** Parses the currently visible YAML draft, not the last saved catalog copy. */
 export default function PrototypeOutlinePanel({
   path, source, busy, onJump, onEdit, onOpenRsi, onOpenFtl,
-  requiredLocales, liveValidation, validationDelay,
+  requiredLocales, liveValidation, validationDelay, cursorLine,
 }: Props) {
   const [snapshot, setSnapshot] = useState<{ path: string; source: string; outline: SourceOutline } | null>(null);
   const [failure, setFailure] = useState<StudioError | null>(null);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [manualSelection, setManualSelection] = useState<{ key: string; line: number } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -125,8 +127,11 @@ export default function PrototypeOutlinePanel({
     const needle = query.trim().toLocaleLowerCase();
     return !needle || (declaration.kind + ' ' + declaration.id).toLocaleLowerCase().includes(needle);
   });
+  const cursorSelection = outlineKeyAtLine(declarations, cursorLine);
+  const selectedKey = manualSelection && manualSelection.line === cursorLine
+    ? manualSelection.key : cursorSelection;
   const selected = declarations.find(({ declaration }) =>
-    selectedKey === declaration.document_index + ':' + declaration.item_index + ':' + (declaration.variant_index ?? 'base'),
+    selectedKey === outlineDeclarationKey(declaration),
   ) ?? null;
   // Source forms rely on one normal, unambiguous YAML document and do not
   // guess PartialPrototypes merge semantics or rewrite generated IDs.
@@ -165,8 +170,11 @@ export default function PrototypeOutlinePanel({
       </p>}
       <div className="prototype-outline-list">
         {filtered.map(({ declaration }) => {
-          const key = declaration.document_index + ':' + declaration.item_index + ':' + (declaration.variant_index ?? 'base');
-          return <button key={key} type="button" onClick={() => { setSelectedKey(key); onJump(visualLine(declaration.line)); }}
+          const key = outlineDeclarationKey(declaration);
+          return <button key={key} type="button" onClick={() => {
+            setManualSelection({ key, line: declaration.line });
+            onJump(visualLine(declaration.line));
+          }}
             className={'prototype-outline-item' + (selectedKey === key ? ' active' : '')}
             title={'Строка ' + declaration.line + ' · ' + declaration.file}>
             <FileCode2 size={14}/>
