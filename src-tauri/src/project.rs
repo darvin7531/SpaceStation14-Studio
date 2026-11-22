@@ -746,9 +746,6 @@ impl ProjectIndex {
         resource_edit::analyze_yaml(source)
     }
 
-    /// Validate live editor text without reading or writing the disk.
-    /// Restrict this action to indexed Fluent resources.
-
     /// Electron parity: check direct entity name/description/suffix in selected game locales.
     /// Read-only, index-backed and explicitly incomplete if any locale could not be scanned.
     pub fn analyze_entity_localization(
