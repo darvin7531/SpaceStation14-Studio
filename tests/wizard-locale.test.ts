@@ -17,3 +17,12 @@ test('game locale and translated UI remain separate and interpolations are safe'
   assert.equal(uiText('ru', 'wizard.rsi.createdExternal', { name: 'hat' }),
     'Будет создан: hat.rsi в выбранной внешней папке');
 });
+
+test('prototype wizard UI switches between Russian and English without changing game values', () => {
+  assert.equal(uiText('ru', 'wizard.proto.title'), 'Создать прототип');
+  assert.equal(uiText('en', 'wizard.proto.title'), 'Create prototype');
+  assert.equal(uiText('en', 'wizard.proto.parent'), 'Parent (optional)');
+  assert.equal(uiText('ru', 'wizard.proto.matches', { shown: 200, total: 1015 }),
+    'Показано 200 из 1015 файлов — уточните путь для поиска.');
+  assert.equal(uiText('en', 'wizard.proto.previewAppend'), 'Appended block (Rust)');
+});

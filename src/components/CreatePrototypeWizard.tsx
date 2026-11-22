@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useI18n } from '../i18n';
 import { open } from '@tauri-apps/plugin-dialog';
 import { projectFolderDefaultPath, relativeProjectFolder } from '../lib/project-folder-picker';
 import { AlertCircle, AlertTriangle, CheckCircle2, FilePlus2, X } from 'lucide-react';
@@ -47,6 +48,7 @@ const INITIAL: NewPrototypeDraft = {
 export default function CreatePrototypeWizard({
   onClose, onCreated, onExternalCreated, projectRoot, dirtyPaths, preferredExistingFile,
 }: Props) {
+  const { t } = useI18n();
   const [mode, setMode] = useState<PrototypeDestinationMode>('new');
   const [destination, setDestination] = useState<'project' | 'external'>('project');
   const [availableFiles, setAvailableFiles] = useState<string[]>([]);
@@ -135,8 +137,8 @@ export default function CreatePrototypeWizard({
         setPreview(null);
         setValidationError({
           code: 'APPEND_DIRTY_TARGET',
-          message: 'Целевой YAML содержит несохранённые изменения в открытой вкладке.',
-          hint: 'Сначала сохраните файл либо выберите другой YAML, иначе изменения вкладки могут устареть.',
+          message: t('wizard.proto.dirtyMessage'),
+          hint: t('wizard.proto.dirtyHint'),
         });
         setChecking(false);
         return;
@@ -172,15 +174,15 @@ export default function CreatePrototypeWizard({
       const chosen = await open({
         directory: true, multiple: false,
         defaultPath: projectFolderDefaultPath(projectRoot, 'prototype'),
-        title: 'Выберите папку для YAML-прототипа',
+        title: t('wizard.proto.folderTitle'),
       });
       if (typeof chosen !== 'string') return;
       const folder = relativeProjectFolder(projectRoot, chosen, 'prototype');
       if (!folder) {
         setCreateError({
           code: 'PROTOTYPE_FOLDER_NOT_IN_RESOURCES',
-          message: 'Выбранная папка находится вне прототипов открытого проекта.',
-          hint: 'Выберите существующую папку внутри Resources/Prototypes.',
+          message: t('wizard.proto.folderError'),
+          hint: t('wizard.proto.folderHint'),
         });
         return;
       }
@@ -221,79 +223,78 @@ export default function CreatePrototypeWizard({
       <form className="create-proto-layout" onSubmit={(event) => void create(event)}>
         <div className="create-proto-form">
           <header className="create-proto-head">
-            <div><small><FilePlus2 size={14}/> Новое содержимое</small>
-              <h2 id="create-proto-title">Создать прототип</h2>
+            <div><small><FilePlus2 size={14}/> {t('wizard.proto.newContent')}</small>
+              <h2 id="create-proto-title">{t('wizard.proto.title')}</h2>
             </div>
-            <button type="button" onClick={onClose} disabled={creating} aria-label="Закрыть мастер">
+            <button type="button" onClick={onClose} disabled={creating} aria-label={t('wizard.proto.close')}>
               <X size={18}/>
             </button>
           </header>
           <p className="create-proto-intro">
-            Выберите создание нового YAML либо безопасное добавление прототипа в существующий список.
-            В обоих режимах все проверки и запись выполняются на стороне Rust.
+            {t('wizard.proto.intro')}
           </p>
-          <div className="create-proto-mode" role="group" aria-label="Способ размещения прототипа">
+          <div className="create-proto-mode" role="group" aria-label={t('wizard.proto.mode')}>
             <button type="button" className={mode === 'new' ? 'selected' : ''}
-              disabled={creating} onClick={() => switchMode('new')}>Новый файл</button>
+              disabled={creating} onClick={() => switchMode('new')}>{t('wizard.proto.newFile')}</button>
             <button type="button" className={mode === 'append' ? 'selected' : ''}
-              disabled={creating} onClick={() => switchMode('append')}>В существующий YAML</button>
+              disabled={creating} onClick={() => switchMode('append')}>{t('wizard.proto.append')}</button>
           </div>
 
-          {mode === 'new' && <div className="create-proto-mode" role="group" aria-label="Расположение нового прототипа">
+          {mode === 'new' && <div className="create-proto-mode" role="group" aria-label={t('wizard.proto.destination')}>
             <button type="button" className={destination === 'project' ? 'selected' : ''}
-              onClick={() => setDestination('project')}>В игровом проекте</button>
+              onClick={() => setDestination('project')}>{t('wizard.proto.project')}</button>
             <button type="button" className={destination === 'external' ? 'selected' : ''}
-              onClick={() => setDestination('external')}>Вне проекта</button>
+              onClick={() => setDestination('external')}>{t('wizard.common.external')}</button>
           </div>}
           <fieldset className="create-proto-group">
-            <legend>Идентификатор и наследование</legend>
-            <label>Тип прототипа
+            <legend>{t('wizard.proto.identity')}</legend>
+            <label>{t('wizard.proto.type')}
               <input required list="new-prototype-kinds" value={draft.kind}
                 onChange={(event) => update('kind', event.target.value)}/>
               <datalist id="new-prototype-kinds">
                 {[...new Set([...availableKinds, 'entity', 'reagent', 'tile', 'construction', 'recipe'])]
                   .map((kind) => <option key={kind} value={kind}/>)}
               </datalist>
-              <small>Типы взяты из открытого игрового проекта. Допускается ввод собственного типа форка.</small>
+              <small>{t('wizard.proto.typesHint')}</small>
             </label>
             <label>ID
               <input required maxLength={128} value={draft.id}
                 placeholder="MyNewItem" spellCheck={false}
                 onChange={(event) => update('id', event.target.value)}/>
             </label>
-            <label>Родитель (необязательно)
+            <label>{t('wizard.proto.parent')}
               <input value={draft.parent} placeholder="BaseItem" spellCheck={false}
                 onChange={(event) => update('parent', event.target.value)}/>
             </label>
             <label className="create-proto-check">
               <input type="checkbox" checked={draft.abstract_prototype}
                 onChange={(event) => update('abstract_prototype', event.target.checked)}/>
-              Абстрактный прототип
+              {t('wizard.proto.abstract')}
             </label>
           </fieldset>
 
           <fieldset className="create-proto-group">
-            <legend>Описание</legend>
-            <label>Имя
+            <legend>{t('wizard.proto.descriptionSection')}</legend>
+            <label>{t('wizard.proto.name')}
               <input value={draft.name} onChange={(event) => update('name', event.target.value)}/>
             </label>
-            <label>Описание
+            <label>{t('wizard.proto.description')}
               <textarea rows={3} value={draft.description}
                 onChange={(event) => update('description', event.target.value)}/>
             </label>
-            <label>Суффикс
+            <label>{t('wizard.proto.suffix')}
               <input value={draft.suffix}
                 onChange={(event) => update('suffix', event.target.value)}/>
             </label>
           </fieldset>
 
           {draft.kind === 'entity' && <fieldset className="create-proto-group">
-            <legend>Компоненты entity (необязательно)</legend>
-            <label>RSI спрайт
+            <legend>{t('wizard.proto.components')}</legend>
+            <label>{t('wizard.proto.sprite')}
               <input value={draft.sprite} placeholder="Objects/Tools/myitem.rsi"
                 onChange={(event) => update('sprite', event.target.value)}/>
             </label>
-            <label>Состояние спрайта
+            <label>{t('wizard.proto.spriteState')}
               <input value={draft.sprite_state} placeholder="icon"
                 onChange={(event) => update('sprite_state', event.target.value)}/>
             </label>
@@ -309,14 +310,14 @@ export default function CreatePrototypeWizard({
                 {label}
               </label>)}
             </div>
-            <small>Это шаблоны компонентов: совместимость с конкретным форком проверяется отдельно.</small>
+            <small>{t('wizard.proto.componentHint')}</small>
           </fieldset>}
 
           <fieldset className="create-proto-group">
-            <legend>{mode === 'new' ? 'Расположение нового файла' : 'Выберите существующий YAML'}</legend>
+            <legend>{mode === 'new' ? t('wizard.proto.fileNew') : t('wizard.proto.fileExisting')}</legend>
             <label>{mode === 'new' && destination === 'external'
-              ? 'Путь шаблона (фактический внешний путь выберете в системном диалоге)'
-              : 'Путь относительно корня проекта'}
+              ? t('wizard.proto.pathExternal')
+              : t('wizard.proto.pathProject')}
               <input required value={draft.file} spellCheck={false}
                 list={mode === 'append' ? 'append-prototype-files' : undefined}
                 placeholder={mode === 'append' ? 'Resources/Prototypes/Entities/items.yml' : ''}
@@ -326,55 +327,55 @@ export default function CreatePrototypeWizard({
                   {availableFiles.map((file) => <option key={file} value={file}/>)}
                 </datalist>
                 {matchingFileCount > availableFiles.length && <small>
-                  Показано {availableFiles.length} из {matchingFileCount} файлов — уточните путь для поиска.
+                  {t('wizard.proto.matches', { shown: availableFiles.length, total: matchingFileCount })}
                 </small>}
               </>}
             </label>
             {mode === 'new' && destination === 'project' && <button type="button"
               disabled={creating || pickingFolder} onClick={() => void pickProjectFolder()}>
-              {pickingFolder ? 'Выбираю папку…' : 'Выбрать папку YAML…'}
+              {pickingFolder ? t('wizard.common.chooseFolder') : t('wizard.proto.pickFolder')}
             </button>}
             <small>{mode === 'new' && destination === 'external'
-              ? 'Внешний файл выбирается через системный диалог. Он не добавляется в открытый игровой проект.'
+              ? t('wizard.proto.externalHelp')
               : mode === 'new'
-                ? 'Разрешены существующие каталоги внутри Resources/Prototypes. Папка _PrototypeStudio создаётся автоматически при необходимости.'
-                : 'Файл должен быть проиндексирован. Пока поддерживаются только обычные однодокументные YAML-списки, без Partial-тегов.'}</small>
+                ? t('wizard.proto.newHelp')
+                : t('wizard.proto.appendHelp')}</small>
           </fieldset>
         </div>
 
         <div className="create-proto-preview">
           <div className="create-proto-status">
-            {checking ? <span>Проверяю YAML…</span>
+            {checking ? <span>{t('wizard.proto.checking')}</span>
               : validationError
                 ? <span className="create-proto-invalid"><AlertCircle size={16}/> {validationError.message}</span>
-                : <span className="create-proto-valid"><CheckCircle2 size={16}/> Синтаксис проверен</span>}
+                : <span className="create-proto-valid"><CheckCircle2 size={16}/> {t('wizard.proto.valid')}</span>}
             {validationError && <p>{validationError.hint} <code>{validationError.code}</code></p>}
           </div>
           {preview?.warnings.map((warning, i) => <div className="create-proto-warning" key={i}>
             <AlertTriangle size={14}/>{warning}
           </div>)}
           <label className="create-proto-yaml-label">
-            {mode === 'new' ? 'Предпросмотр нового YAML (Rust)' : 'Добавляемый блок (Rust)'}
+            {mode === 'new' ? t('wizard.proto.previewNew') : t('wizard.proto.previewAppend')}
           </label>
           {mode === 'append' && preview && 'expected_revision' in preview && <small className="create-proto-revision">
-            Ожидаемая версия файла: {preview.expected_revision.slice(0, 12)}… Файл ещё не изменён.
+            {t('wizard.proto.revision', { revision: preview.expected_revision.slice(0, 12) })}
           </small>}
-          <pre className="create-proto-yaml">{preview?.yaml ?? 'Укажите корректные поля прототипа для предпросмотра.'}</pre>
+          <pre className="create-proto-yaml">{preview?.yaml ?? t('wizard.proto.previewHint')}</pre>
           {createError && <div className="create-proto-error" role="alert">
             <AlertCircle size={16}/><div>
               <strong>{createError.message}</strong><p>{createError.hint}</p>
               <code>{createError.code}</code>
-              {createError.details && <details><summary>Технические подробности</summary>
+              {createError.details && <details><summary>{t('wizard.proto.errorDetails')}</summary>
                 <pre>{createError.details}</pre></details>}
             </div>
           </div>}
           <footer className="create-proto-actions">
-            <button type="button" onClick={onClose} disabled={creating}>Отмена</button>
+            <button type="button" onClick={onClose} disabled={creating}>{t('wizard.common.cancel')}</button>
             <button type="submit" disabled={checking || creating || pickingFolder || !preview || targetIsDirty}>
               <FilePlus2 size={14}/>{creating
-                ? 'Записываю…'
-                : mode === 'new' && destination === 'external' ? 'Выбрать внешний YAML'
-                : mode === 'new' ? 'Создать файл' : 'Добавить прототип'}
+                ? t('wizard.proto.writing')
+                : mode === 'new' && destination === 'external' ? t('wizard.proto.externalCreate')
+                : mode === 'new' ? t('wizard.proto.createFile') : t('wizard.proto.add')}
             </button>
           </footer>
         </div>
