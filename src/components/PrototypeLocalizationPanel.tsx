@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, Languages, RefreshCw, X } from 'lucide-react';
 import { studio, type EntityLocalizationSource, type EntityLocalizationAnalysis, type PrototypeFieldLocator, type ResourceDocument, type ResourceEntry, type NewFluentDraft } from '../lib/api';
-import { buildEntityLocalePatch, type EntityLocaleField, type EntityLocalePatch } from '../lib/entity-localization';
+import { buildEntityLocalePatch, planMissingEntityTranslations, type EntityLocaleField, type EntityLocalePatch } from '../lib/entity-localization';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 import { localeFromFtlPath, localeResourceSearch } from '../lib/localization-settings';
 
@@ -11,7 +11,7 @@ interface Props {
   busy: boolean;
   requiredLocales: readonly string[];
   onCreateMissing: (draft: NewFluentDraft) => void;
-  onApply: (file: string, original: ResourceDocument, content: string) => Promise<boolean>;
+  onApply: (file: string, original: ResourceDocument, content: string, keepSource?: boolean) => Promise<boolean>;
   onClose: () => void;
 }
 
@@ -30,6 +30,11 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, requ
   const [target, setTarget] = useState('');
   const [selected, setSelected] = useState<EntityLocaleField[]>(['name', 'description', 'suffix']);
   const [preview, setPreview] = useState<{ baseline: ResourceDocument; patch: EntityLocalePatch; sourceSnapshot: string } | null>(null);
+  const [batchPreview, setBatchPreview] = useState<{
+    sourceSnapshot: string;
+    entries: { locale: string; baseline: ResourceDocument; patch: EntityLocalePatch }[];
+    missingFiles: { locale: string; path: string }[];
+  } | null>(null);
   const [reading, setReading] = useState(false);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<StudioError | null>(null);
@@ -40,6 +45,7 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, requ
     setEntity(null);
     setAnalysis(null);
     setPreview(null);
+    setBatchPreview(null);
     setError(null);
     void Promise.all([
       studio.inspectEntityLocalization(locator, source),
@@ -119,12 +125,102 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, requ
     }
   }
 
+
+  /** Port of Electron's multi-locale localization quick-fix.
+   * Only native-confirmed missing values are staged; no FTL is modified here.
+   */
+  async function prepareBatch() {
+    if (!entity || disabled || chosen.length === 0) return;
+    setReading(true);
+    setError(null);
+    setBatchPreview(null);
+    try {
+      const fresh = await studio.analyzeEntityLocalization(locator, source, [...requiredLocales]);
+      setAnalysis(fresh);
+      if (!fresh.complete) throw new Error('Индекс игровых локалей неполон. Массовое исправление заблокировано.');
+      const plan = planMissingEntityTranslations(fresh, chosen);
+      if (!plan.length) {
+        setNotice('Для выбранных полей нет подтверждённых пропусков в обязательных локалях.');
+        return;
+      }
+      const present = plan.filter((item) => item.fileExists);
+      const missingFiles = plan.filter((item) => !item.fileExists).map(({ locale, path }) => ({ locale, path }));
+      const entries: { locale: string; baseline: ResourceDocument; patch: EntityLocalePatch }[] = [];
+      if (present.length) {
+        const matches = await studio.searchResourceContent(entity.localization_id, 'ftl');
+        if (!matches.complete) throw new Error('Поиск определений Fluent неполный. Запись заблокирована.');
+        if (!/^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(entity.localization_id)) {
+          throw new Error('Fluent ID нельзя безопасно использовать для генерации.');
+        }
+        const definition = new RegExp('^' + entity.localization_id + '[ \\t]*=');
+        for (const item of present) {
+          if (!item.path.startsWith('Resources/Locale/') || !item.path.endsWith('.ftl')
+              || localeFromFtlPath(item.path) !== item.locale) {
+            throw new Error('Недопустимый путь FTL для ' + item.locale + ': ' + item.path);
+          }
+          const prefix = item.path.split('/').slice(0, 3).join('/') + '/';
+          const duplicate = matches.items.find((hit) =>
+            hit.path !== item.path && hit.path.startsWith(prefix) && definition.test(hit.preview));
+          if (duplicate) {
+            throw new Error('Для ' + item.locale + ' Fluent ID уже найден в '
+              + duplicate.path + ':' + duplicate.line + '. Проверьте файл перед исправлением.');
+          }
+          const baseline = await studio.readResource(item.path);
+          if (baseline.path !== item.path) throw new Error('FTL изменился во время проверки: ' + item.path);
+          const patch = buildEntityLocalePatch(baseline.content, entity, item.fields);
+          if (patch.changed) entries.push({ locale: item.locale, baseline, patch });
+        }
+      }
+      setBatchPreview({ sourceSnapshot: source, entries, missingFiles });
+      setNotice('Предпросмотр для ' + entries.length + ' существующих FTL готов. '
+        + (missingFiles.length ? 'Отсутствующие FTL создаются отдельно через мастер.' : ''));
+    } catch (failure) {
+      setError(normalizeStudioError(failure));
+    } finally {
+      setReading(false);
+    }
+  }
+
+  async function applyBatch() {
+    if (!batchPreview || !batchPreview.entries.length || batchPreview.sourceSnapshot !== source || disabled) return;
+    setApplying(true);
+    setError(null);
+    let saved = 0;
+    try {
+      for (const entry of batchPreview.entries) {
+        // Every file keeps its preview SHA-256 revision and the normal unsaved-draft guard.
+        const success = await onApply(entry.baseline.path, entry.baseline, entry.patch.content, true);
+        if (!success) throw new Error('Запись не подтверждена: ' + entry.baseline.path);
+        saved++;
+        setBatchPreview((current) => current ? {
+          ...current, entries: current.entries.filter((item) => item.baseline.path !== entry.baseline.path),
+        } : null);
+      }
+      setBatchPreview(null);
+      setNotice('Сохранено FTL: ' + saved + '. '
+        + (batchPreview.missingFiles.length
+          ? 'Для отсутствующих файлов используйте кнопки создания FTL выше.'
+          : 'Все выбранные существующие FTL обновлены.'));
+      try {
+        setAnalysis(await studio.analyzeEntityLocalization(locator, source, [...requiredLocales]));
+      } catch {
+        setNotice('Сохранено FTL: ' + saved + '. Повторите проверку локалей после обновления индекса.');
+      }
+    } catch (failure) {
+      setError(normalizeStudioError(failure));
+      setNotice('Успешно сохранено файлов: ' + saved + '. Остальные не перезаписаны; '
+        + 'проверьте конфликт и повторите предварительный просмотр.');
+    } finally {
+      setApplying(false);
+    }
+  }
+
   return <section className="prototype-field-editor entity-locale-panel" aria-label={'Локализация ' + locator.id}>
     <header>
       <div><strong><Languages size={15}/> Локализация entity:{locator.id}</strong>
         <small>{locator.file} · только выбранное объявление YAML</small>
       </div>
-      <button type="button" title="Закрыть" aria-label="Закрыть" onClick={onClose}><X size={16}/></button>
+      <button type="button" title="Закрыть" aria-label="Закрыть" disabled={reading || applying} onClick={onClose}><X size={16}/></button>
     </header>
     {error && <div className="prototype-field-error" role="alert">
       <AlertTriangle size={15}/><span>{error.message} {error.hint} <code>{error.code}</code></span>
@@ -165,6 +261,36 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, requ
             </div>)}
           </div>}
       </div>}
+      <div className="entity-locale-preview" aria-label="Массовое исправление локализаций">
+        <strong>Исправить обязательные игровые локали</strong>
+        <p>Как в Electron: соберите отсутствующие name, description и suffix для всех обязательных
+          локалей. Существующие значения не заменяются. Перед записью можно проверить список файлов.</p>
+        <button type="button" disabled={disabled || chosen.length === 0 || !analysis?.complete}
+          onClick={() => void prepareBatch()}>
+          <RefreshCw size={14}/> {reading ? 'Проверка…' : 'Предпросмотр всех локалей'}
+        </button>
+        {batchPreview && <div aria-live="polite">
+          <strong>Будут изменены файлы ({batchPreview.entries.length}):</strong>
+          {batchPreview.entries.map(({ locale, baseline, patch }) => <div key={baseline.path}>
+            <code>{locale}</code> · {baseline.path} · +{patch.added.join(', ')}
+          </div>)}
+          {batchPreview.missingFiles.length > 0 && <>
+            <strong>Отсутствующие FTL (создайте через мастер):</strong>
+            {batchPreview.missingFiles.map((item) => <div key={item.locale + ':' + item.path}>
+              {item.locale} · {item.path}
+            </div>)}
+          </>}
+          <div className="prototype-field-actions">
+            <button type="button" disabled={disabled || batchPreview.sourceSnapshot !== source
+              || batchPreview.entries.length === 0} onClick={() => void applyBatch()}>
+              <Languages size={14}/> {applying ? 'Запись…' : 'Записать ' + batchPreview.entries.length + ' FTL'}
+            </button>
+            <button type="button" disabled={applying} onClick={() => setBatchPreview(null)}>Отмена</button>
+          </div>
+          <small>Каждый FTL записывается отдельно с проверкой ревизии. При ошибке уже
+            сохранённые файлы не откатываются; следующие файлы не записываются.</small>
+        </div>}
+      </div>
       <div className="entity-locale-fields">
         {FIELDS.map(({ field, label }) => <label key={field}>
           <input type="checkbox" checked={selected.includes(field)}
@@ -173,6 +299,7 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, requ
               setSelected((current) => event.target.checked
                 ? [...current, field] : current.filter((candidate) => candidate !== field));
               setPreview(null);
+              setBatchPreview(null);
             }}/>
           <span>{label} — <code>{entity[field] || 'нет значения в YAML'}</code></span>
         </label>)}
