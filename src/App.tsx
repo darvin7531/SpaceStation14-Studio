@@ -926,6 +926,21 @@ export default function App() {
     }
   }
 
+  async function navigateIndexedRsi(path: string, sourcePath: string) {
+    if (!overview || opening || saving || refreshing || transitioning) return;
+    const root = overview.project_root;
+    try {
+      // A YAML literal is never an arbitrary FS read: Rust verifies index identity.
+      await studio.readResource(path);
+      if (selectedPathRef.current !== sourcePath || projectRootRef.current !== root) return;
+      openResource({ path, kind: 'rsi' });
+    } catch (failure) {
+      if (selectedPathRef.current === sourcePath && projectRootRef.current === root) {
+        setError(normalizeStudioError(failure));
+      }
+    }
+  }
+
   function openPrototypeSource(file: string, line: number) {
     setJumpTarget({ path: file, line, token: ++jumpCounter.current });
     openResource({ path: file, kind: 'yaml' });
@@ -1546,6 +1561,8 @@ export default function App() {
               value={activeText} editable={isEditableText(selected.kind) && !saving && !refreshing}
               onNavigateIdentifier={selected.kind === 'yaml'
                 ? (id) => void navigatePrototypeIdentifier(id, selected.path) : undefined}
+              onNavigateRsi={selected.kind === 'yaml'
+                ? (indexedPath) => void navigateIndexedRsi(indexedPath, selected.path) : undefined}
               onChange={isEditableText(selected.kind) ? (value) => {
                 const next = { ...draftsRef.current, [selected.path]: value };
                 draftsRef.current = next;

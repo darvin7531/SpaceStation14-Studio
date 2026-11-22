@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { studio, type ResourceDocument, type ResourceEntry } from '../lib/api';
-import { yamlCompletionContext, yamlComponentHoverTarget } from './yaml-completion';
+import { yamlCompletionContext, yamlComponentHoverTarget, yamlSpriteLinkTarget } from './yaml-completion';
 import type { EditorSettings } from '../lib/editor-settings';
 import { identifierAtColumn } from '../lib/editor-navigation';
 
@@ -15,13 +15,14 @@ interface Props {
   editable: boolean;
   onChange?: (value: string) => void;
   onNavigateIdentifier?: (identifier: string) => void;
+  onNavigateRsi?: (indexedPath: string) => void;
 }
 
 /**
  * Lazy-loads Monaco only when a resource is opened, and disposes the model,
  * workers' consumers and editor on tab switch/unmount.
  */
-export default function MonacoPreview({ resource, document, revealLine, jumpToken, value, editable, onChange, onNavigateIdentifier, settings }: Props) {
+export default function MonacoPreview({ resource, document, revealLine, jumpToken, value, editable, onChange, onNavigateIdentifier, onNavigateRsi, settings }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<{ revealLineInCenter(line: number): void; setPosition(position: { lineNumber: number; column: number }): void } | null>(null);
   const latestJump = useRef(revealLine);
@@ -37,6 +38,8 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
   onChangeRef.current = onChange;
   const onNavigateRef = useRef(onNavigateIdentifier);
   onNavigateRef.current = onNavigateIdentifier;
+  const onNavigateRsiRef = useRef(onNavigateRsi);
+  onNavigateRsiRef.current = onNavigateRsi;
 
   // A new disk revision or a discarded draft updates Monaco without losing
   // text typed before a React rerender. Ordinary keystrokes do not reset undo.
@@ -112,7 +115,7 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
           // belongs to the current Monaco model and is disposed with the tab.
           const completions = resource.kind === 'yaml'
             ? monaco.languages.registerCompletionItemProvider('yaml', {
-              triggerCharacters: [' ', ':', '-', ',', '['],
+              triggerCharacters: [' ', ':', '-', ',', '[', '/', '.', '"'],
               provideCompletionItems: async (source, position, _context, token) => {
                 if (source !== model || token.isCancellationRequested) return { suggestions: [] };
                 const first = Math.max(1, position.lineNumber - 64);
@@ -121,11 +124,38 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
                 const target = yamlCompletionContext(lines, lines.length, position.column);
                 if (!target) return { suggestions: [] };
                 try {
-                  const entries = target.kind === 'prototype-parent'
-                    ? (await studio.searchPrototypes(target.query, '', 0, 80)).items
-                        .map((item) => ({ label: item.id, detail: item.kind + ' · ' + item.file }))
-                    : (await studio.searchCSharpDefinitions(target.query, 'component', 0, 80)).items
-                        .map((item) => ({ label: item.name, detail: item.class_name + ' · ' + item.file }));
+                  let entries: { label: string; detail: string; insertText?: string }[] = [];
+                  if (target.kind === 'prototype-parent') {
+                    const page = await studio.searchPrototypes(target.query, '', 0, 80);
+                    entries = page.items.map((item) => ({
+                      label: item.id, detail: item.kind + ' · ' + item.file,
+                    }));
+                  } else if (target.kind === 'component-type' || target.kind === 'component-entry-start') {
+                    const page = await studio.searchCSharpDefinitions(target.query, 'component', 0, 80);
+                    if (page.complete) entries = page.items.map((item) => ({
+                      label: item.name, detail: item.class_name + ' · ' + item.file,
+                      insertText: target.kind === 'component-entry-start' ? 'type: ' + item.name : item.name,
+                    }));
+                  } else if (target.kind === 'component-field') {
+                    const batch = await studio.inspectComponentSchemas([target.componentType!]);
+                    const schema = batch.components.find((item) => item.type_name === target.componentType);
+                    if (batch.index_complete && schema?.status === 'unique' && schema.declarations.length === 1
+                        && !schema.declarations[0].parse_uncertain) {
+                      const used = new Set(target.existingFields ?? []);
+                      entries = schema.declarations[0].fields.filter((item) => !used.has(item.name))
+                        .map((item) => ({
+                          label: item.name, detail: item.field_type + (item.required ? ' · required' : ''),
+                          insertText: item.name + ': ',
+                        }));
+                    }
+                  } else if (target.kind === 'rsi-path') {
+                    const page = await studio.searchResources(target.query, 'rsi', 0, 80);
+                    entries = page.items.filter((item) => item.path.startsWith('Resources/Textures/'))
+                      .map((item) => ({
+                        label: item.path.slice('Resources/Textures/'.length),
+                        detail: item.path,
+                      }));
+                  }
                   if (token.isCancellationRequested || cancelled) return { suggestions: [] };
                   const seen = new Set<string>();
                   const candidates = entries.flatMap((item) => {
@@ -134,10 +164,14 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
                     seen.add(item.label);
                     return [{
                       label: item.label,
-                      kind: target.kind === 'component-type'
+                      kind: target.kind === 'component-type' || target.kind === 'component-entry-start'
                         ? monaco.languages.CompletionItemKind.Class
-                        : monaco.languages.CompletionItemKind.Reference,
-                      insertText: item.label,
+                        : target.kind === 'component-field'
+                          ? monaco.languages.CompletionItemKind.Field
+                          : target.kind === 'rsi-path'
+                            ? monaco.languages.CompletionItemKind.File
+                            : monaco.languages.CompletionItemKind.Reference,
+                      insertText: item.insertText ?? item.label,
                       detail: item.detail,
                       range: {
                         startLineNumber: position.lineNumber,
@@ -195,14 +229,24 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
               },
             }) : null;
           const navigateSubscription = editor.onMouseDown((event) => {
-            if (!settingsRef.current.ctrlClickNavigation || !onNavigateRef.current) return;
+            if (!settingsRef.current.ctrlClickNavigation) return;
             if (!(event.event.ctrlKey || event.event.metaKey) || !event.event.leftButton) return;
             const position = event.target.position;
             if (!position) return;
-            const identifier = identifierAtColumn(
-              model.getLineContent(position.lineNumber), position.column,
-            );
-            if (identifier) onNavigateRef.current(identifier);
+            const line = model.getLineContent(position.lineNumber);
+            if (resource.kind === 'yaml' && onNavigateRsiRef.current) {
+              const first = Math.max(1, position.lineNumber - 128);
+              const lines = Array.from({ length: position.lineNumber - first + 1 },
+                (_, offset) => model.getLineContent(first + offset));
+              const indexedPath = yamlSpriteLinkTarget(lines, lines.length, position.column);
+              if (indexedPath) {
+                onNavigateRsiRef.current(indexedPath);
+                return;
+              }
+              if (/^\s*sprite:\s*/.test(line)) return;
+            }
+            const identifier = identifierAtColumn(line, position.column);
+            if (identifier) onNavigateRef.current?.(identifier);
           });
           if (latestJump.current) {
             editor.revealLineInCenter(latestJump.current);
