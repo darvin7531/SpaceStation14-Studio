@@ -36,6 +36,7 @@ import CSharpCatalogPanel from './components/CSharpCatalogPanel';
 import UiSourcesPanel from './components/UiSourcesPanel';
 import ConflictReviewPanel from './components/ConflictReviewPanel';
 import EditorSettingsDialog from './components/EditorSettingsDialog';
+import StatusPanel from './components/StatusPanel';
 import QuickOpenPanel from './components/QuickOpenPanel';
 import ContentSearchPanel from './components/ContentSearchPanel';
 import type { ContentSearchHit, OpenRevision, ResourceDriftReport } from './lib/api';
@@ -1646,6 +1647,12 @@ export default function App() {
         </> : <div className="placeholder"><FileCode2 size={44} strokeWidth={1.2}/><h2>Выбери ресурс слева</h2><p>Здесь откроется его исходный текст.</p></div>}
       </section>
     </main>}
-    <footer className="statusbar"><span>● {refreshing ? 'Обновление индекса…' : overview ? ('Проект открыт · ' + dirtyPaths.length + ' несохранённых черновиков') : 'Ожидание проекта'}</span><span>Rust Core · Tauri 2 · без Electron</span></footer>
+    <StatusPanel overview={overview} scanProgress={scanProgress}
+      opening={opening} refreshing={refreshing} dirtyCount={dirtyPaths.length}
+      notice={notice} error={error} revision={workspaceRevision}
+      onOpenIssue={(file, line) => {
+        setJumpTarget({ path: file, line, token: ++jumpCounter.current });
+        void openResource({ path: file, kind: 'yaml' });
+      }}/>
   </div>;
 }
