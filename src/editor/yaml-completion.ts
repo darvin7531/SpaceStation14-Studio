@@ -48,3 +48,17 @@ export function yamlCompletionContext(
   }
   return null;
 }
+
+
+/** Hover only the component identity under the cursor, not prototype types. */
+export function yamlComponentHoverTarget(
+  lines: readonly string[], lineNumber: number, column: number,
+): { name: string; startColumn: number; endColumn: number } | null {
+  const line = lines[lineNumber - 1] ?? '';
+  const match = line.match(/^(\s*-\s*type:\s*)([A-Za-z0-9_]+)(?:\s*(?:#.*)?)?$/);
+  if (!match || !insideComponents(lines, lineNumber)) return null;
+  const startColumn = match[1].length + 1;
+  const endColumn = startColumn + match[2].length;
+  if (column < startColumn || column > endColumn) return null;
+  return { name: match[2], startColumn, endColumn };
+}

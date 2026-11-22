@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { yamlCompletionContext } from '../src/editor/yaml-completion';
+import { yamlCompletionContext, yamlComponentHoverTarget } from '../src/editor/yaml-completion';
 
 test('suggests prototype parents for scalar and inline sequence', () => {
   assert.deepEqual(yamlCompletionContext(['- type: entity', '  parent: Bas'], 2, 14), {
@@ -25,4 +25,14 @@ test('component classes are suggested only inside an explicit components sequenc
 test('refuses comments and out-of-range editor positions', () => {
   assert.equal(yamlCompletionContext(['parent: Foo # comment'], 1, 22), null);
   assert.equal(yamlCompletionContext(['parent: Foo'], 1, 999), null);
+});
+
+test('component hover points to the real C# component token and ignores root prototype type', () => {
+  const lines = ['- type: entity', '  components:', '  - type: Sprite', '    state: icon'];
+  assert.deepEqual(yamlComponentHoverTarget(lines, 3, 13), {
+    name: 'Sprite', startColumn: 11, endColumn: 17,
+  });
+  assert.equal(yamlComponentHoverTarget(lines, 3, 5), null);
+  assert.equal(yamlComponentHoverTarget(lines, 1, 9), null);
+  assert.equal(yamlComponentHoverTarget(['- type: entity', '  other:', '  - type: Sprite'], 3, 13), null);
 });

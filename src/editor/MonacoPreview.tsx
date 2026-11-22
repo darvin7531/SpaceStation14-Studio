@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { studio, type ResourceDocument, type ResourceEntry } from '../lib/api';
-import { yamlCompletionContext } from './yaml-completion';
+import { yamlCompletionContext, yamlComponentHoverTarget } from './yaml-completion';
 import type { EditorSettings } from '../lib/editor-settings';
 import { identifierAtColumn } from '../lib/editor-navigation';
 
@@ -154,6 +154,46 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
                 }
               },
             }) : null;
+          const componentHover = resource.kind === 'yaml'
+            ? monaco.languages.registerHoverProvider('yaml', {
+              provideHover: async (source, position, token) => {
+                if (source !== model || token.isCancellationRequested) return null;
+                const first = Math.max(1, position.lineNumber - 64);
+                const lines = Array.from({ length: position.lineNumber - first + 1 },
+                  (_, offset) => source.getLineContent(first + offset));
+                const hover = yamlComponentHoverTarget(lines, lines.length, position.column);
+                if (!hover) return null;
+                try {
+                  const batch = await studio.inspectComponentSchemas([hover.name]);
+                  if (token.isCancellationRequested || cancelled) return null;
+                  const schema = batch.components.find((item) => item.type_name === hover.name);
+                  if (!schema) return null;
+                  const title = hover.name.replace(/[`\\]/g, '');
+                  const status = schema.status === 'unique' && batch.index_complete
+                    && schema.declarations.length === 1;
+                  const definition = status ? schema.declarations[0] : null;
+                  const content = definition ? [
+                    '**' + title + '** · `' + definition.class_name.replace(/[`\\]/g, '') + '`',
+                    '',
+                    'C# source: `' + definition.file.replace(/[`\\]/g, '') + ':' + definition.line + '`',
+                    '',
+                    ...definition.fields.slice(0, 16).map((field) =>
+                      '- `' + field.name.replace(/[`\\]/g, '') + '`: `'
+                        + field.field_type.replace(/[`\\]/g, '') + '`'),
+                    '',
+                    'Показаны только прямые DataField без проверки движкового наследования.',
+                  ].join('\n') : '**' + title
+                    + '** — C# схема неоднозначна или индекс неполный. Проверьте исходники вручную.';
+                  return {
+                    range: new monaco.Range(position.lineNumber, hover.startColumn,
+                      position.lineNumber, hover.endColumn),
+                    contents: [{ value: content }],
+                  };
+                } catch {
+                  return null;
+                }
+              },
+            }) : null;
           const navigateSubscription = editor.onMouseDown((event) => {
             if (!settingsRef.current.ctrlClickNavigation || !onNavigateRef.current) return;
             if (!(event.event.ctrlKey || event.event.metaKey) || !event.event.leftButton) return;
@@ -172,6 +212,7 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
             subscription.dispose();
             navigateSubscription.dispose();
             completions?.dispose();
+            componentHover?.dispose();
             contentRef.current = null;
             updateOptionsRef.current = null;
             editorRef.current = null;
