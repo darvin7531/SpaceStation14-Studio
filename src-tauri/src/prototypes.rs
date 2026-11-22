@@ -1511,7 +1511,10 @@ mod tests {
             None,
         );
         assert!(issues.is_empty());
-        assert_eq!(unique_kinds(&entries), ["customPrototype", "entity", "reagent"]);
+        assert_eq!(
+            unique_kinds(&entries),
+            ["customPrototype", "entity", "reagent"]
+        );
     }
 
     #[test]
