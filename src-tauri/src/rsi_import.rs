@@ -261,19 +261,12 @@ fn validate_png(
     Ok(())
 }
 
-fn updated_metadata(
-    bytes: &[u8],
-    request: &RsiStateImport,
-    png: &[u8],
-) -> Result<String, StudioError> {
-    updated_metadata_at(bytes, request, png, None)
-}
-
 pub(crate) fn updated_metadata_at(
     bytes: &[u8],
     request: &RsiStateImport,
     png: &[u8],
     insert_at: Option<usize>,
+    preserve_state: Option<&Value>,
 ) -> Result<String, StudioError> {
     let mut meta: Value = serde_json::from_slice(bytes).map_err(|e| {
         issue(
@@ -372,11 +365,17 @@ pub(crate) fn updated_metadata_at(
             })
             .collect::<Vec<_>>()
     });
-    let new_state = json!({
-        "name": request.name,
-        "directions": request.directions,
-        "delays": delays,
-    });
+    let mut new_state = preserve_state.cloned().unwrap_or_else(|| json!({}));
+    let Some(state_object) = new_state.as_object_mut() else {
+        return Err(issue(
+            "RSI_IMPORT_META_INVALID",
+            "Исходное состояние не является JSON-объектом.",
+            "Проверьте структуру состояния перед заменой PNG.",
+        ));
+    };
+    state_object.insert("name".into(), json!(request.name));
+    state_object.insert("directions".into(), json!(request.directions));
+    state_object.insert("delays".into(), json!(delays));
     if let Some(index) = insert_at {
         if index > states.len() {
             return Err(issue(
@@ -446,13 +445,14 @@ pub(crate) fn safe_import_directory(
 /// revision check catches external edits during PNG staging. Power loss can
 /// leave an orphan PNG, which is intentionally never deleted on startup.
 pub fn import(root: &Path, request: &RsiStateImport) -> Result<ImportedRsiState, StudioError> {
-    import_at(root, request, None)
+    import_at(root, request, None, None)
 }
 
 pub(crate) fn import_at(
     root: &Path,
     request: &RsiStateImport,
     insert_at: Option<usize>,
+    preserve_state: Option<Value>,
 ) -> Result<ImportedRsiState, StudioError> {
     validate_request(request)?;
     let folder = safe_import_directory(root, &request.path)?;
@@ -474,7 +474,7 @@ pub(crate) fn import_at(
         )
         .with_details(e.to_string())
     })?;
-    let content = updated_metadata_at(&original, request, &png, insert_at)?;
+    let content = updated_metadata_at(&original, request, &png, insert_at, preserve_state.as_ref())?;
     let target_png = folder.join(format!("{}.png", request.name));
     if target_png.exists() {
         return Err(issue(

@@ -24,7 +24,7 @@ fn valid_sha(value: &str) -> bool {
 
 /// Validate both the metadata and old PNG snapshots before the first mutation.
 /// Returns the original state index so replacement preserves metadata ordering.
-fn prevalidate(root: &Path, request: &RsiStateImport) -> Result<usize, StudioError> {
+fn prevalidate(root: &Path, request: &RsiStateImport) -> Result<(usize, Value), StudioError> {
     rsi_import::validate_request(request)?;
     let expected_png = request.expected_png_revision.as_deref().ok_or_else(|| {
         issue(
@@ -94,7 +94,7 @@ fn prevalidate(root: &Path, request: &RsiStateImport) -> Result<usize, StudioErr
             ))
         }
     };
-    states.remove(original_index);
+    let preserved_state = states.remove(original_index);
     let base_bytes = serde_json::to_vec(&base).map_err(|error| {
         issue(
             "RSI_REPLACE_META_INVALID",
@@ -124,7 +124,13 @@ fn prevalidate(root: &Path, request: &RsiStateImport) -> Result<usize, StudioErr
     })?;
     // This checks RSI v1 metadata, frame-grid dimensions, PNG chunks and CRC,
     // as well as the preserved insertion point, without touching disk.
-    rsi_import::updated_metadata_at(&base_bytes, request, &new_png, Some(original_index))?;
+    rsi_import::updated_metadata_at(
+        &base_bytes,
+        request,
+        &new_png,
+        Some(original_index),
+        Some(&preserved_state),
+    )?;
 
     let old_png = rsi_delete::read_png(&folder.join(format!("{}.png", request.name)))?;
     if revision(&old_png) != expected_png {
@@ -134,7 +140,7 @@ fn prevalidate(root: &Path, request: &RsiStateImport) -> Result<usize, StudioErr
             "Обновите предпросмотр RSI и повторите замену.",
         ));
     }
-    Ok(original_index)
+    Ok((original_index, preserved_state))
 }
 
 fn recovery_error(
@@ -168,7 +174,7 @@ pub fn replace(
     root: &Path,
     request: &RsiStateImport,
 ) -> Result<ImportedRsiState, StudioError> {
-    let original_index = prevalidate(root, request)?;
+    let (original_index, preserved_state) = prevalidate(root, request)?;
     let expected_png = request.expected_png_revision.as_deref().ok_or_else(|| {
         issue(
             "RSI_REPLACE_PNG_REVISION_MISSING",
@@ -225,7 +231,12 @@ pub fn replace(
     import_request.expected_revision = deleted.revision.clone();
     import_request.expected_png_revision = None;
 
-    match rsi_import::import_at(root, &import_request, Some(original_index)) {
+    match rsi_import::import_at(
+        root,
+        &import_request,
+        Some(original_index),
+        Some(preserved_state),
+    ) {
         Ok(mut imported) => {
             let mut warnings = Vec::new();
             if let Some(warning) = deleted.warning {
@@ -325,7 +336,7 @@ mod tests {
         assert_eq!(metadata["states"][0]["name"], "idle");
         assert_eq!(metadata["states"][0]["directions"], 4);
         assert_eq!(metadata["states"][0]["delays"].as_array().unwrap().len(), 4);
-        assert_eq!(metadata["states"][0]["customState"], Value::Null);
+        assert_eq!(metadata["states"][0]["customState"], "preserve");
         assert_eq!(metadata["states"][1]["name"], "other");
         assert_eq!(
             fs::read(fixture.root.join(&fixture.path).join("other.png")).unwrap(),
