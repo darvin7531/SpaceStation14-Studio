@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import type { ResourceDocument, ResourceEntry } from '../lib/api';
 import type { EditorSettings } from '../lib/editor-settings';
+import { identifierAtColumn } from '../lib/editor-navigation';
 
 interface Props {
   settings: EditorSettings;
@@ -12,13 +13,14 @@ interface Props {
   value: string;
   editable: boolean;
   onChange?: (value: string) => void;
+  onNavigateIdentifier?: (identifier: string) => void;
 }
 
 /**
  * Lazy-loads Monaco only when a resource is opened, and disposes the model,
  * workers' consumers and editor on tab switch/unmount.
  */
-export default function MonacoPreview({ resource, document, revealLine, jumpToken, value, editable, onChange, settings }: Props) {
+export default function MonacoPreview({ resource, document, revealLine, jumpToken, value, editable, onChange, onNavigateIdentifier, settings }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<{ revealLineInCenter(line: number): void; setPosition(position: { lineNumber: number; column: number }): void } | null>(null);
   const latestJump = useRef(revealLine);
@@ -32,6 +34,8 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
   settingsRef.current = settings;
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const onNavigateRef = useRef(onNavigateIdentifier);
+  onNavigateRef.current = onNavigateIdentifier;
 
   // A new disk revision or a discarded draft updates Monaco without losing
   // text typed before a React rerender. Ordinary keystrokes do not reset undo.
@@ -103,12 +107,23 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
           const subscription = editor.onDidChangeModelContent(() => {
             onChangeRef.current?.(editor.getValue());
           });
+          const navigateSubscription = editor.onMouseDown((event) => {
+            if (!settingsRef.current.ctrlClickNavigation || !onNavigateRef.current) return;
+            if (!(event.event.ctrlKey || event.event.metaKey) || !event.event.leftButton) return;
+            const position = event.target.position;
+            if (!position) return;
+            const identifier = identifierAtColumn(
+              model.getLineContent(position.lineNumber), position.column,
+            );
+            if (identifier) onNavigateRef.current(identifier);
+          });
           if (latestJump.current) {
             editor.revealLineInCenter(latestJump.current);
             editor.setPosition({ lineNumber: latestJump.current, column: 1 });
           }
           dispose = () => {
             subscription.dispose();
+            navigateSubscription.dispose();
             contentRef.current = null;
             updateOptionsRef.current = null;
             editorRef.current = null;

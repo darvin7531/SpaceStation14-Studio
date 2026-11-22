@@ -80,6 +80,7 @@ export default function App() {
   const [fileView, setFileView] = useState<'search' | 'folders'>('search');
   const [quickOpen, setQuickOpen] = useState(false);
   const [contentSearchOpen, setContentSearchOpen] = useState(false);
+  const [contentSearchSeed, setContentSearchSeed] = useState('');
   const [editorSettings, setEditorSettings] = useState(() => readEditorSettings(window.localStorage));
   useEffect(() => {
     try { window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(editorSettings)); } catch { /* storage may be blocked */ }
@@ -127,6 +128,8 @@ export default function App() {
   draftsRef.current = drafts;
   const selectedPathRef = useRef(selected?.path ?? null);
   selectedPathRef.current = selected?.path ?? null;
+  const projectRootRef = useRef(overview?.project_root ?? null);
+  projectRootRef.current = overview?.project_root ?? null;
   const dirtyPaths = dirtyDocumentPaths(drafts, documents.current);
   const isDirty = (file: string) => dirtyPaths.includes(file);
   const activeConflict = selected && document?.path === selected.path
@@ -753,6 +756,30 @@ export default function App() {
     }
   }
 
+  async function navigatePrototypeIdentifier(identifier: string, sourcePath: string) {
+    if (!overview || opening || saving || refreshing || transitioning) return;
+    const root = overview.project_root;
+    try {
+      const result = await studio.searchPrototypes(identifier, '', 0, 100);
+      if (selectedPathRef.current !== sourcePath || projectRootRef.current !== root) return;
+      const exact = result.items.filter((item) => item.id === identifier);
+      // Partial, generated variants and duplicate IDs require explicit choice.
+      if (exact.length === 1 && result.total <= 100) {
+        openPrototypeSource(exact[0].file, exact[0].line);
+      } else {
+        setContentSearchSeed(identifier);
+        setQuickOpen(false);
+        setContentSearchOpen(true);
+        setNotice('Однозначное определение «' + identifier
+          + '» не найдено. Выберите нужный исходник в поиске по содержимому.');
+      }
+    } catch (failure) {
+      if (selectedPathRef.current === sourcePath && projectRootRef.current === root) {
+        setError(normalizeStudioError(failure));
+      }
+    }
+  }
+
   function openPrototypeSource(file: string, line: number) {
     setJumpTarget({ path: file, line, token: ++jumpCounter.current });
     openResource({ path: file, kind: 'yaml' });
@@ -818,6 +845,7 @@ export default function App() {
         event.preventDefault();
         if (!opening && !refreshing && !transitioning) {
           setQuickOpen(false);
+          setContentSearchSeed('');
           setContentSearchOpen(true);
         }
         return;
@@ -969,6 +997,8 @@ export default function App() {
 
   return <div className="app">
     {contentSearchOpen && overview && <ContentSearchPanel
+      key={contentSearchSeed}
+      initialQuery={contentSearchSeed}
       onClose={() => setContentSearchOpen(false)} onOpen={openContentHit}/>}
     {quickOpen && overview && <QuickOpenPanel onClose={() => setQuickOpen(false)}
       onOpen={(resource) => { setQuickOpen(false); openResource(resource); }}/>}
@@ -998,7 +1028,7 @@ export default function App() {
           <Search size={15}/> Быстро открыть
         </button>
         <button type="button" className="settings-trigger" disabled={!overview || opening || refreshing}
-          title="Поиск по содержимому (Ctrl+Shift+F)" onClick={() => setContentSearchOpen(true)}>
+          title="Поиск по содержимому (Ctrl+Shift+F)" onClick={() => { setContentSearchSeed(''); setContentSearchOpen(true); }}>
           <Search size={15}/> Поиск в файлах
         </button>
         <button type="button" className="settings-trigger"
@@ -1229,6 +1259,8 @@ export default function App() {
                 onRenamed={(result) => onRsiRenamed(selected.path, result)}/>
               : document ? <MonacoPreview settings={editorSettings} key={document.path} resource={selected} document={document}
               value={activeText} editable={isEditableText(selected.kind) && !saving && !refreshing}
+              onNavigateIdentifier={selected.kind === 'yaml'
+                ? (id) => void navigatePrototypeIdentifier(id, selected.path) : undefined}
               onChange={isEditableText(selected.kind) ? (value) => {
                 const next = { ...draftsRef.current, [selected.path]: value };
                 draftsRef.current = next;

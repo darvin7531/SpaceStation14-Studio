@@ -6,10 +6,11 @@ import { normalizeStudioError } from '../lib/errors';
 interface Props {
   onClose: () => void;
   onOpen: (hit: ContentSearchHit) => void;
+  initialQuery?: string;
 }
 
-export default function ContentSearchPanel({ onClose, onOpen }: Props) {
-  const [query, setQuery] = useState('');
+export default function ContentSearchPanel({ onClose, onOpen, initialQuery = '' }: Props) {
+  const [query, setQuery] = useState(initialQuery);
   const [kind, setKind] = useState<ResourceKind>('all');
   const [results, setResults] = useState<ContentSearchResults | null>(null);
   const [error, setError] = useState<string | null>(null);

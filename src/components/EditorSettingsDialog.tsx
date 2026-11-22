@@ -43,6 +43,10 @@ export default function EditorSettingsDialog({ value, onChange, onClose }: Props
         <label>Номера строк<select value={value.lineNumbers} onChange={(event) => patch({ lineNumbers: event.target.value as EditorSettings['lineNumbers'] })}>
           <option value="on">Обычные</option><option value="relative">Относительные</option><option value="off">Скрыть</option></select></label>
         <label className="settings-check"><input type="checkbox" checked={value.minimap} onChange={(event) => patch({ minimap: event.target.checked })}/>Миникарта</label>
+        <label className="settings-check"><input type="checkbox"
+          checked={value.ctrlClickNavigation} onChange={(event) => patch({ ctrlClickNavigation: event.target.checked })}/>
+          Ctrl+Click — перейти к определению прототипа
+        </label>
         <label className="settings-check"><input type="checkbox" checked={value.liveValidation}
           onChange={(event) => patch({ liveValidation: event.target.checked })}/>Автоматическая проверка YAML и Fluent</label>
         <label>Задержка проверки YAML/Fluent (100–1500 мс)
