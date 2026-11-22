@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {closeTab, MAX_OPEN_TABS, openTab, type TabState, nextTabPath } from '../src/lib/tabs';
+import {
+  closeTab, MAX_OPEN_TABS, openTab, type TabState, nextTabPath,
+  reorderTab, insertionIndexForTabPointer,
+} from '../src/lib/tabs';
 import type { ResourceEntry } from '../src/lib/api';
 
 const resource = (path: string): ResourceEntry => ({ path, kind: 'yaml' });
@@ -64,4 +67,25 @@ test('nextTabPath cycles forward and backward without changing tabs', () => {
   assert.equal(nextTabPath({ ...state, active: state.tabs[2].path }), state.tabs[0].path);
   assert.equal(nextTabPath({ tabs: [], active: null }), null);
   assert.equal(nextTabPath({ tabs: state.tabs, active: null }), state.tabs[0].path);
+});
+
+test('Electron tab drag reorders paths but preserves the active editor and draft identities', () => {
+  const original: TabState = {
+    tabs: [resource('a'), resource('b'), resource('c')],
+    active: 'b',
+  };
+  assert.deepEqual(reorderTab(original, 'a', 2).tabs.map((item) => item.path), ['b', 'c', 'a']);
+  assert.deepEqual(reorderTab(original, 'c', 0).tabs.map((item) => item.path), ['c', 'a', 'b']);
+  assert.equal(reorderTab(original, 'a', 2).active, 'b');
+  assert.equal(reorderTab(original, 'unknown', 1), original);
+  assert.equal(reorderTab(original, 'a', -1), original);
+  assert.equal(reorderTab(original, 'a', 8), original);
+  assert.equal(reorderTab(original, 'b', 1), original);
+});
+
+test('drop insertion is decided by the pointer against remaining tab centers', () => {
+  const centers = [{ path: 'a', center: 60 }, { path: 'c', center: 260 }];
+  assert.equal(insertionIndexForTabPointer(20, centers), 0);
+  assert.equal(insertionIndexForTabPointer(100, centers), 1);
+  assert.equal(insertionIndexForTabPointer(340, centers), 2);
 });

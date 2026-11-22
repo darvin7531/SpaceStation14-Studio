@@ -10,7 +10,7 @@ import {
 import { studio, type DraftList, type DraftSnapshot, type CreatedPrototype, type CreatedFluent, type CreatedRsi, type DeletedRsiState, type ImportedRsiState, RenamedRsiState, type RestoredRsiState, type PrototypeDeclaration, type PrototypeFieldLocator, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage, type NewFluentDraft } from './lib/api';
 import { normalizeStudioError, type StudioError } from './lib/errors';
 import type { ProjectScanProgress } from './lib/api';
-import { closeTab, openTab, nextTabPath, type TabState } from './lib/tabs';
+import { closeTab, openTab, nextTabPath, reorderTab, type TabState } from './lib/tabs';
 import { readTabSession, retainAvailableTabs, writeTabSession } from './lib/tab-session';
 import { readRecentProjects, rememberRecentProject, writeRecentProjects } from './lib/recent-projects';
 import { dirtyDocumentPaths, reconcileSavedDraft } from './lib/draft-state';
@@ -37,6 +37,7 @@ import UiSourcesPanel from './components/UiSourcesPanel';
 import ConflictReviewPanel from './components/ConflictReviewPanel';
 import EditorSettingsDialog from './components/EditorSettingsDialog';
 import StatusPanel from './components/StatusPanel';
+import ResourceTabStrip from './components/ResourceTabStrip';
 import QuickOpenPanel from './components/QuickOpenPanel';
 import ContentSearchPanel from './components/ContentSearchPanel';
 import type { ContentSearchHit, OpenRevision, ResourceDriftReport } from './lib/api';
@@ -1517,20 +1518,15 @@ export default function App() {
           onOpen={openPrototypeSource} onEdit={editPrototypeFields} />}
       </aside>
       <section className="editor">
-        {tabState.tabs.length > 0 && <div className="tab-strip" role="tablist" aria-label={t('app.openTabs')}>
-          {tabState.tabs.map((tab) => <div className={'tab' + (tabState.active === tab.path ? ' active' : '')} key={tab.path}>
-            <button type="button" role="tab" title={tab.path}
-              aria-selected={tabState.active === tab.path}
-              className="tab-focus" disabled={saving || refreshing} onClick={() => selectTab(tab.path)}>
-              <ResourceIcon kind={tab.kind}/>
-              <span>{tab.path.split('/').at(-1)}{isDirty(tab.path) ? ' ●' : ''}</span>
-            </button>
-            <button className="tab-close" type="button"
-              aria-label={t('app.closeTab', { path: tab.path })} disabled={saving || refreshing} onClick={() => removeTab(tab.path)}>
-              <X size={13}/>
-            </button>
-          </div>)}
-        </div>}
+        {tabState.tabs.length > 0 && <ResourceTabStrip
+          tabs={tabState.tabs} activePath={tabState.active}
+          dirtyPaths={dirtyPaths} disabled={saving || refreshing || transitioning}
+          renderIcon={(kind) => <ResourceIcon kind={kind}/>}
+          label={t('app.openTabs')}
+          closeLabel={(path) => t('app.closeTab', { path })}
+          onSelect={selectTab} onClose={removeTab}
+          onReorder={(path, index) => setTabState((state) => reorderTab(state, path, index))}/>}
+
         {selected ? <>
           <div className="editor-heading">
             <div><ResourceIcon kind={selected.kind}/><span>{selected.path}</span></div>

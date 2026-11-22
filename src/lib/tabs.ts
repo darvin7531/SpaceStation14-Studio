@@ -36,6 +36,27 @@ export function closeTab(state: TabState, path: string): TabState {
   return { tabs, active };
 }
 
+/** Electron tab reorder parity: moving a tab never changes its active file or draft. */
+export function reorderTab(state: TabState, path: string, index: number): TabState {
+  const previousIndex = state.tabs.findIndex((tab) => tab.path === path);
+  if (previousIndex < 0 || !Number.isSafeInteger(index)
+    || index < 0 || index >= state.tabs.length || index === previousIndex) return state;
+  const tabs = [...state.tabs];
+  const [item] = tabs.splice(previousIndex, 1);
+  tabs.splice(index, 0, item);
+  return { tabs, active: state.active };
+}
+
+/** Calculate a drop index without mutating tabs or requiring DOM in tests.
+ * Centers are the remaining tabs in current visual order.
+ */
+export function insertionIndexForTabPointer(
+  pointerX: number, centers: readonly { path: string; center: number }[],
+): number {
+  if (!Number.isFinite(pointerX)) return 0;
+  return centers.filter((item) => Number.isFinite(item.center) && pointerX > item.center).length;
+}
+
 /** Select the next or previous visible tab without discarding any draft. */
 export function nextTabPath(state: TabState, backwards = false): string | null {
   const count = state.tabs.length;
