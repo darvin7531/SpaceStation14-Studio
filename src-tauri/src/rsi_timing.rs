@@ -479,17 +479,26 @@ mod tests {
         let mut request = fixture.request();
         request.delays = vec![vec![0.1], vec![0.2], vec![0.3], vec![0.4]];
         request.expected_png_revision = Some("0".repeat(64));
-        assert_eq!(update(&fixture.root, &request).unwrap_err().code, "RSI_TIMING_PNG_CONFLICT");
+        assert_eq!(
+            update(&fixture.root, &request).unwrap_err().code,
+            "RSI_TIMING_PNG_CONFLICT"
+        );
         request.expected_png_revision = Some(revision(&png));
         let result = update(&fixture.root, &request).unwrap();
         let doc: Value = serde_json::from_str(&result.content).unwrap();
         assert_eq!(doc["states"][0]["directions"], 4);
         assert_eq!(doc["states"][0]["extra"], 7);
         assert_eq!(fs::read(&png_path).unwrap(), png);
-        assert_eq!(update(&fixture.root, &request).unwrap_err().code, "RSI_TIMING_CONFLICT");
+        assert_eq!(
+            update(&fixture.root, &request).unwrap_err().code,
+            "RSI_TIMING_CONFLICT"
+        );
         request.expected_revision = result.revision;
         request.delays = vec![vec![1.0; 8]];
-        assert_eq!(update(&fixture.root, &request).unwrap_err().code, "RSI_TIMING_FRAME_COUNT_CHANGED");
+        assert_eq!(
+            update(&fixture.root, &request).unwrap_err().code,
+            "RSI_TIMING_FRAME_COUNT_CHANGED"
+        );
         assert_eq!(fs::read_to_string(&meta).unwrap(), result.content);
     }
 
