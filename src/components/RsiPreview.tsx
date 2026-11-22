@@ -20,11 +20,12 @@ function Failure({ error }: { error: StudioError }) {
 
 /** Load one PNG at a time; do not expose project paths to the webview filesystem. */
 export default function RsiPreview({
-  path, metadata, revision, onImported, onTimingUpdated, onCreditsUpdated, onDeleted, onRestored, onRenamed,
+  path, metadata, revision, initialState, onImported, onTimingUpdated, onCreditsUpdated, onDeleted, onRestored, onRenamed,
 }: {
   path: string;
   metadata: string;
   revision: string;
+  initialState?: string | null;
   onImported: (updated: ImportedRsiState) => void;
   onTimingUpdated: (updated: ImportedRsiState) => void;
   onCreditsUpdated: (updated: ImportedRsiState) => void;
@@ -61,14 +62,16 @@ export default function RsiPreview({
     void studio.listRsiSheets(path).then((result) => {
       if (!active) return;
       setList(result);
-      setSelected(result.sheets.find((sheet) =>
+      setSelected(result.sheets.find((sheet) => sheet.previewable
+        && initialState && sheet.name === initialState + '.png')?.name
+        ?? result.sheets.find((sheet) =>
         sheet.previewable && inspection.states.some((state) => sheet.name === state.name + '.png'))?.name
         ?? result.sheets.find((sheet) => sheet.previewable)?.name ?? null);
     }).catch((failure: unknown) => {
       if (active) setListError(normalizeStudioError(failure));
     }).finally(() => { if (active) setListing(false); });
     return () => { active = false; };
-  }, [path, refresh, inspection]);
+  }, [path, refresh, inspection, initialState]);
 
   useEffect(() => {
     let active = true;
