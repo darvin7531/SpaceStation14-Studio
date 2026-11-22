@@ -148,6 +148,13 @@ export interface PrototypeFieldLocator {
   mode: PrototypeDeclaration['mode'];
 }
 
+export interface EntityLocalizationSource {
+  localization_id: string;
+  name: string;
+  description: string;
+  suffix: string;
+}
+
 export interface PrototypeFields {
   name: string;
   description: string;
@@ -556,6 +563,9 @@ export const studio = {
   },
   searchPrototypes(query: string, kind: string, offset: number, limit = 100): Promise<PrototypePage> {
     return invoke('search_prototypes', { query, kind: kind || null, offset, limit });
+  },
+  inspectEntityLocalization(locator: PrototypeFieldLocator, source: string): Promise<EntityLocalizationSource> {
+    return invoke('inspect_entity_localization', { locator, source });
   },
   inspectPrototypeFields(locator: PrototypeFieldLocator, source: string): Promise<FieldInspection> {
     return invoke('inspect_prototype_fields', { locator, source });
