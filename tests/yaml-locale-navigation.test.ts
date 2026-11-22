@@ -37,8 +37,38 @@ test('direct entity selector ignores component properties and adjacent declarati
   assert.equal(directEntityLocaleField(example, 5, declaration), 'suffix');
   assert.equal(directEntityLocaleField(example, 8, declaration), null);
   assert.equal(directEntityLocaleField(example, 11, { ...declaration, line: 9, id: 'OtherEntity' }), 'name');
-  assert.equal(directEntityLocaleField(example, 11, declaration), 'name');
-  // The caller must also restrict line numbers to the next native declaration.
+  assert.equal(directEntityLocaleField(example, 11, declaration), null);
+  // The native declaration remains authoritative, but stale cursor requests cannot cross items.
   assert.equal(directEntityLocaleField(example, 3, { ...declaration, kind: 'reagent' }), null);
   assert.equal(directEntityLocaleField(example, 3, { ...declaration, mode: 'partial_only' }), null);
+});
+
+test('localization navigation cannot escape selected YAML document or sibling prototype', () => {
+  const withDocuments = [
+    '- type: entity',
+    '  id: First',
+    '  name: First name',
+    '---',
+    '- type: entity',
+    '  id: Second',
+    '  name: Second name',
+  ];
+  assert.equal(directEntityLocaleField(withDocuments, 3, declaration), 'name');
+  assert.equal(directEntityLocaleField(withDocuments, 7, declaration), null);
+  assert.equal(directEntityLocaleField(withDocuments, 7, { ...declaration, line: 5 }), 'name');
+
+  const withNestedItems = [
+    '- type: entity',
+    '  id: First',
+    '  components:',
+    '  - type: Sprite',
+    '    name: Not a prototype name',
+    '  name: First name',
+    '- type: entity',
+    '  id: Second',
+    '  name: Second name',
+  ];
+  assert.equal(directEntityLocaleField(withNestedItems, 5, declaration), null);
+  assert.equal(directEntityLocaleField(withNestedItems, 6, declaration), 'name');
+  assert.equal(directEntityLocaleField(withNestedItems, 9, declaration), null);
 });
