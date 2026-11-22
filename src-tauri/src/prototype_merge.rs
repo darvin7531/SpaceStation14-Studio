@@ -112,7 +112,12 @@ impl TreeBuilder {
                     // the component map's !Remove operation. All other tagged
                     // keys fail closed rather than being interpreted as data.
                     if let Some(op) = &node.tag {
-                        if op == "Remove" && pairs.is_empty() && tag.is_none() && name == "type" {
+                        if pairs.is_empty()
+                            && tag.is_none()
+                            && ((op == "Remove" && name == "type")
+                                || op.starts_with("CombineIndex:")
+                                || op.starts_with("Index:"))
+                        {
                             *tag = Some(op.clone());
                         } else {
                             self.error.get_or_insert_with(|| {
@@ -820,6 +825,25 @@ mod tests {
         assert_eq!(items[0].field("type").unwrap().scalar(), Some("Physics"));
         assert_eq!(items[0].field("mass").unwrap().scalar(), Some("2"));
         assert_eq!(items[1].field("type").unwrap().scalar(), Some("Transform"));
+    }
+
+    #[test]
+    fn combine_index_tag_on_first_mapping_key_is_preserved() {
+        let mut initial = node("effects:\n- data: { int: 1, tag: old }\n");
+        let patch = node("effects:\n- !CombineIndex:0 data: { int: 2 }\n");
+        merge(&mut initial, &patch, false).unwrap();
+        let Value::Seq(effects) = &initial.field("effects").unwrap().value else {
+            panic!("effects sequence was lost");
+        };
+        assert_eq!(effects.len(), 1);
+        let data = effects[0].field("data").unwrap();
+        assert_eq!(data.field("int").unwrap().scalar(), Some("2"));
+        assert_eq!(data.field("tag").unwrap().scalar(), Some("old"));
+    }
+
+    #[test]
+    fn reject_unknown_tag_on_mapping_key_instead_of_guessing() {
+        assert!(parse("- !Fancy type: Sprite\n").is_err());
     }
 
     #[test]
