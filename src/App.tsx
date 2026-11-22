@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useI18n } from './i18n';
 import { listen } from '@tauri-apps/api/event';
 import { open as openDirectoryDialog } from '@tauri-apps/plugin-dialog';
 import {
@@ -57,18 +58,20 @@ function ResourceIcon({ kind }: { kind: ResourceEntry['kind'] }) {
 }
 
 function ErrorPanel({ error, close }: { error: StudioError; close: () => void }) {
+  const { t } = useI18n();
   return <section className="error-panel" role="alert">
     <div className="error-heading"><AlertCircle size={18}/><strong>{error.message}</strong></div>
     <p>{error.hint}</p>
     <div className="error-footer">
       <code>{error.code}</code>
-      {error.details && <details><summary>Технические сведения</summary><pre>{error.details}</pre></details>}
-      <button type="button" onClick={close}>Закрыть</button>
+      {error.details && <details><summary>{t('app.errorDetails')}</summary><pre>{error.details}</pre></details>}
+      <button type="button" onClick={close}>{t('common.close')}</button>
     </div>
   </section>;
 }
 
 export default function App() {
+  const { t } = useI18n();
   const [path, setPath] = useState(() => {
     try {
       return window.localStorage.getItem(LAST_PROJECT_KEY) ?? '';
@@ -295,7 +298,6 @@ export default function App() {
       setOverview(next);
       setResults({ total: 0, items: [] });
       setTabState(restored);
-      if (restored.active) void focusResource(restored.active);
       setDriftReport(null);
       autoRefreshHandled.current = 0;
       setAutoRefreshTick(0);
@@ -305,6 +307,9 @@ export default function App() {
       setQuery('');
       setKind('all');
       setPage(0);
+      // Trigger the restored file read only after resetting the previous
+      // document. Otherwise a late setDocument(null) can hide that read.
+      if (restored.active) void focusResource(restored.active);
     } catch (failure) {
       setError(normalizeStudioError(failure));
     } finally {
@@ -1089,62 +1094,62 @@ export default function App() {
       <div className="brand"><span className="logo">S</span><div><strong>SS14 Studio</strong><small>RUST REWORK</small></div></div>
       <div className="titlebar-actions">
         <button type="button" className="settings-trigger" disabled={!overview || opening || refreshing}
-          title="Быстро открыть файл (Ctrl+P)" onClick={() => setQuickOpen(true)}>
-          <Search size={15}/> Быстро открыть
+          title={t('app.quickHint')} onClick={() => setQuickOpen(true)}>
+          <Search size={15}/> {t('app.quickOpen')}
         </button>
         <button type="button" className="settings-trigger" disabled={!overview || opening || refreshing}
-          title="Поиск по содержимому (Ctrl+Shift+F)" onClick={() => { setContentSearchSeed(''); setContentSearchOpen(true); }}>
-          <Search size={15}/> Поиск в файлах
+          title={t('app.searchHint')} onClick={() => { setContentSearchSeed(''); setContentSearchOpen(true); }}>
+          <Search size={15}/> {t('app.searchContent')}
         </button>
         <button type="button" className="settings-trigger"
-        onClick={() => setSettingsOpen(true)}><Settings2 size={15}/> Настройки</button>
+        onClick={() => setSettingsOpen(true)}><Settings2 size={15}/> {t('app.settings')}</button>
         <span className="version">0.1.5 alpha · Rust + Tauri</span></div>
     </header>
 
     <section className="project-bar">
       <form onSubmit={(event: FormEvent<HTMLFormElement>) => { event.preventDefault(); requestAction({ type: 'open', path }); }}>
-        <label htmlFor="project-path"><FolderOpen size={16}/> Папка исходников SS14</label>
+        <label htmlFor="project-path"><FolderOpen size={16}/> {t('app.sourceFolder')}</label>
         <div className="path-control">
           <input id="project-path" value={path} spellCheck={false} autoComplete="off"
             placeholder="/home/user/SpaceStation14 или C:\SpaceStation14"
             onChange={(event) => setPath(event.target.value)}/>
-          <button type="button" className="browse-button" disabled={opening || picking || saving || refreshing} onClick={() => void chooseProjectFolder()}>Обзор…</button>
-          <button type="submit" disabled={opening || picking || saving || refreshing}><FolderOpen size={16}/>{opening ? 'Проверяю…' : 'Открыть проект'}</button>
+          <button type="button" className="browse-button" disabled={opening || picking || saving || refreshing} onClick={() => void chooseProjectFolder()}>{t('app.browse')}</button>
+          <button type="submit" disabled={opening || picking || saving || refreshing}><FolderOpen size={16}/>{opening ? t('app.opening') : t('app.openProject')}</button>
         </div>
       </form>
       {overview && <div className="project-counts">
-        <span><b>{overview.prototype_files}</b> YAML-файлов</span>
+        <span><b>{overview.prototype_files}</b> {t('app.yamlFiles')}</span>
         <span><b>{overview.rsi_directories}</b> RSI</span>
         <span><b>{overview.locale_files}</b> FTL</span>
         <button type="button" className="create-proto-open" disabled={opening || saving || transitioning || refreshing || creatingFluent || creatingRsi || creatingPrototype}
           onClick={() => setCreatingPrototype(true)}>
-          <FilePlus2 size={15}/> Создать прототип
+          <FilePlus2 size={15}/> {t('app.createPrototype')}
         </button>
         <button type="button" className="create-proto-open"
           disabled={opening || saving || transitioning || refreshing || creatingPrototype || creatingFluent || creatingRsi}
           onClick={() => setCreatingRsi(true)}>
-          <FilePlus2 size={15}/> Создать RSI
+          <FilePlus2 size={15}/> {t('app.createRsi')}
         </button>
         <button type="button" className="create-proto-open"
           disabled={opening || saving || transitioning || refreshing || creatingPrototype || creatingFluent || creatingRsi}
           onClick={() => setCreatingFluent(true)}>
-          <FilePlus2 size={15}/> Создать FTL
+          <FilePlus2 size={15}/> {t('app.createFtl')}
         </button>
         <button type="button" className="create-proto-open"
           disabled={opening || saving || transitioning || refreshing || creatingPrototype || creatingFluent || creatingRsi}
           onClick={() => setShowingCSharp(true)}>
-          <FileCode2 size={15}/> C# схемы
+          <FileCode2 size={15}/> {t('app.csharpSchemas')}
         </button>
         <button type="button" className="create-proto-open"
           disabled={opening || saving || refreshing || transitioning || driftChecking || !tabState.tabs.length}
-          title="Проверить открытые файлы на внешние изменения, не трогая черновики"
+          title={t('app.checkHint')}
           onClick={() => setDriftRetry((value) => value + 1)}>
-          <RotateCcw size={15}/>{driftChecking ? 'Проверяю…' : 'Проверить файлы'}
+          <RotateCcw size={15}/>{driftChecking ? t('app.checking') : t('app.checkFiles')}
         </button>
         <button type="button" className="create-proto-open" disabled={opening || picking || saving || transitioning || reading || refreshing || creatingPrototype || creatingFluent || creatingRsi}
-          title="Полностью пересканировать проект, сохранив открытые черновики"
+          title={t('app.rescanHint')}
           onClick={() => void refreshProject()}>
-          <RotateCcw size={15}/>{refreshing ? 'Обновляю…' : 'Обновить индекс'}
+          <RotateCcw size={15}/>{refreshing ? t('app.refreshing') : t('app.refreshIndex')}
         </button>
       </div>}
     </section>
@@ -1158,21 +1163,21 @@ export default function App() {
       aria-label="Подтверждение удаления черновика">
       <AlertTriangle size={18}/>
       <div>
-        <strong>Есть несохранённые изменения.</strong>
+        <strong>{t('app.unsavedTitle')}</strong>
         <p>{pendingAction.type === 'open'
-          ? 'Открытие другого проекта удалит все несохранённые черновики.'
-          : 'Это действие удалит несохранённые изменения выбранного файла.'}</p>
+          ? t('app.unsavedOpen')
+          : t('app.unsavedFile')}</p>
       </div>
-      <button type="button" disabled={transitioning} onClick={() => setPendingAction(null)}>Отмена</button>
+      <button type="button" disabled={transitioning} onClick={() => setPendingAction(null)}>{t('common.cancel')}</button>
       <button type="button" className="danger-button" disabled={transitioning}
         onClick={() => void confirmPendingAction()}>
-        Удалить черновик и продолжить
+        {t('app.discard')}
       </button>
     </div>}
     {activeConflict && selected && <div className="recovery-conflict-notice" role="alert">
       <AlertTriangle size={16}/>
-      <span>Черновик основан на прежней версии файла. Сохранение заблокировано до проверки diff.</span>
-      <button type="button" disabled={comparing} onClick={() => void compareCurrent()}>Сравнить версии</button>
+      <span>{t('app.draftConflict')}</span>
+      <button type="button" disabled={comparing} onClick={() => void compareCurrent()}>{t('app.compareVersions')}</button>
     </div>}
     {overview && <RecoveryPanel entries={recoveries.items}
       warnings={recoveries.warnings} dirtyPaths={dirtyPaths}
@@ -1186,7 +1191,7 @@ export default function App() {
       onReload={reloadCurrent}
       onRefreshIndex={() => void refreshProject()}/>}
     {overview && driftError && <div className="resource-drift-warning" role="status">
-      <AlertTriangle size={14}/> Проверка файлов: {driftError.message}
+      <AlertTriangle size={14}/> {t('app.driftFailure')}{driftError.message}
       <button type="button" onClick={() => setDriftError(null)}>Закрыть</button>
     </div>}
     {overview?.warnings.map((message) =>
@@ -1194,36 +1199,36 @@ export default function App() {
 
     {!overview ? <main className="empty-workspace">
       <FolderOpen size={46} strokeWidth={1.2}/>
-      <h1>Открыть проект SS14</h1>
-      <p>Rust-ядро безопасно проверит структуру репозитория, построит индекс ресурсов и откроет их для просмотра.</p>
-      <small>YAML и Fluent можно редактировать с проверкой конфликта; RSI поддерживают просмотр, импорт состояний и ограниченное редактирование метаданных.</small>
+      <h1>{t('app.emptyTitle')}</h1>
+      <p>{t('app.emptyDescription')}</p>
+      <small>{t('app.emptyHelp')}</small>
     </main> :
     <main className="workspace">
       <aside className="explorer">
-        <div className="explorer-switch" role="group" aria-label="Режим навигации">
+        <div className="explorer-switch" role="group" aria-label={t('app.explorerMode')}>
           <button type="button" className={explorerMode === 'files' ? 'selected' : ''}
-            onClick={() => setExplorerMode('files')}>Файлы</button>
+            onClick={() => setExplorerMode('files')}>{t('app.files')}</button>
           <button type="button" className={explorerMode === 'prototypes' ? 'selected' : ''}
-            onClick={() => setExplorerMode('prototypes')}>Прототипы</button>
+            onClick={() => setExplorerMode('prototypes')}>{t('app.prototypes')}</button>
         </div>
         {explorerMode === 'files' ? <>
-        <div className="explorer-switch" role="group" aria-label="Способ просмотра файлов">
+        <div className="explorer-switch" role="group" aria-label={t('app.fileView')}>
           <button type="button" className={fileView === 'search' ? 'selected' : ''}
-            onClick={() => setFileView('search')}>Поиск</button>
+            onClick={() => setFileView('search')}>{t('app.search')}</button>
           <button type="button" className={fileView === 'folders' ? 'selected' : ''}
-            onClick={() => setFileView('folders')}>Папки</button>
+            onClick={() => setFileView('folders')}>{t('app.folders')}</button>
         </div>
         {fileView === 'search' ? <>
-        <div className="section-heading"><strong>Ресурсы</strong><small>{results.total} найдено</small></div>
-        <div className="search"><Search size={16}/><input aria-label="Поиск ресурсов" value={query}
-          placeholder="Поиск по путям…" onChange={(event) => { setQuery(event.target.value); setPage(0); }}/></div>
-        <div className="filters" role="group" aria-label="Тип ресурсов">
+        <div className="section-heading"><strong>{t('app.resources')}</strong><small>{t('app.matchCount', { count: results.total })}</small></div>
+        <div className="search"><Search size={16}/><input aria-label={t('app.searchResources')} value={query}
+          placeholder={t('app.searchPaths')} onChange={(event) => { setQuery(event.target.value); setPage(0); }}/></div>
+        <div className="filters" role="group" aria-label={t('app.resourceKind')}>
           {kinds.map((option) => <button type="button" key={option}
             aria-pressed={kind === option} className={kind === option ? 'selected' : ''}
-            onClick={() => { setKind(option); setPage(0); }}>{option === 'all' ? 'Все' : option.toUpperCase()}</button>)}
+            onClick={() => { setKind(option); setPage(0); }}>{option === 'all' ? t('app.all') : option.toUpperCase()}</button>)}
         </div>
         <div className="resource-list" aria-busy={searching}>
-          {!results.items.length && <p className="muted">{searching ? 'Поиск…' : 'Совпадений нет'}</p>}
+          {!results.items.length && <p className="muted">{searching ? t('app.searching') : t('app.noMatches')}</p>}
           {results.items.map((item) => <button key={item.path} title={item.path} type="button"
             className={'resource-row' + (selected?.path === item.path ? ' active' : '')}
             onClick={() => void openResource(item)}>
@@ -1232,9 +1237,9 @@ export default function App() {
           </button>)}
         </div>
         <div className="pagination">
-          <button type="button" aria-label="Предыдущая страница" disabled={page === 0} onClick={() => setPage((value) => value - 1)}><ChevronLeft size={17}/></button>
-          <span>{results.total ? (page * PAGE_SIZE + 1) + '–' + Math.min((page + 1) * PAGE_SIZE, results.total) + ' из ' + results.total : '0 ресурсов'}</span>
-          <button type="button" aria-label="Следующая страница" disabled={(page + 1) * PAGE_SIZE >= results.total} onClick={() => setPage((value) => value + 1)}><ChevronRight size={17}/></button>
+          <button type="button" aria-label={t('common.previous')} disabled={page === 0} onClick={() => setPage((value) => value - 1)}><ChevronLeft size={17}/></button>
+          <span>{results.total ? t('common.countRange', { from: page * PAGE_SIZE + 1, to: Math.min((page + 1) * PAGE_SIZE, results.total), total: results.total }) : t('common.totalResources', { count: 0 })}</span>
+          <button type="button" aria-label={t('common.next')} disabled={(page + 1) * PAGE_SIZE >= results.total} onClick={() => setPage((value) => value + 1)}><ChevronRight size={17}/></button>
         </div>
         </> : <ResourceFolderBrowser
           key={overview.project_root + ':' + workspaceRevision}
@@ -1243,7 +1248,7 @@ export default function App() {
           onOpen={openPrototypeSource} onEdit={editPrototypeFields} />}
       </aside>
       <section className="editor">
-        {tabState.tabs.length > 0 && <div className="tab-strip" role="tablist" aria-label="Открытые файлы">
+        {tabState.tabs.length > 0 && <div className="tab-strip" role="tablist" aria-label={t('app.openTabs')}>
           {tabState.tabs.map((tab) => <div className={'tab' + (tabState.active === tab.path ? ' active' : '')} key={tab.path}>
             <button type="button" role="tab" title={tab.path}
               aria-selected={tabState.active === tab.path}
@@ -1252,7 +1257,7 @@ export default function App() {
               <span>{tab.path.split('/').at(-1)}{isDirty(tab.path) ? ' ●' : ''}</span>
             </button>
             <button className="tab-close" type="button"
-              aria-label={'Закрыть вкладку ' + tab.path} disabled={saving || refreshing} onClick={() => removeTab(tab.path)}>
+              aria-label={t('app.closeTab', { path: tab.path })} disabled={saving || refreshing} onClick={() => removeTab(tab.path)}>
               <X size={13}/>
             </button>
           </div>)}
@@ -1261,22 +1266,22 @@ export default function App() {
           <div className="editor-heading">
             <div><ResourceIcon kind={selected.kind}/><span>{selected.path}</span></div>
             <div className="editor-tools">
-              <button type="button" onClick={reloadCurrent} disabled={reading || saving || refreshing} title="Загрузить содержимое файла с диска">
-                <RotateCcw size={14}/> Перечитать
+              <button type="button" onClick={reloadCurrent} disabled={reading || saving || refreshing} title={t('app.reloadHint')}>
+                <RotateCcw size={14}/> {t('app.reload')}
               </button>
               {isEditableText(selected.kind) && <button type="button" onClick={() => void compareCurrent()}
                 disabled={saving || reading || comparing || refreshing || !isDirty(selected.path)}
-                title="Сравнить черновик с актуальной версией файла на диске">
-                <FileCode2 size={14}/>{comparing ? 'Сравниваю…' : 'Сравнить'}
+                title={t('app.compareHint')}>
+                <FileCode2 size={14}/>{comparing ? t('app.comparing') : t('app.compare')}
               </button>}
               {isEditableText(selected.kind) && <button type="button" onClick={() => void saveCurrent()}
-                disabled={saving || reading || refreshing || !isDirty(selected.path)} title="Сохранить ресурс (Ctrl+S)">
-                <Save size={14}/>{saving ? 'Сохраняю…' : 'Сохранить'}
+                disabled={saving || reading || refreshing || !isDirty(selected.path)} title={t('app.saveHint')}>
+                <Save size={14}/>{saving ? t('app.saving') : t('app.save')}
               </button>}
               <span className="readonly"><CheckCircle2 size={14}/>
                 {isEditableText(selected.kind)
-                  ? (isDirty(selected.path) ? 'Черновик изменён' : selected.kind.toUpperCase() + ' · редактирование')
-                  : 'Только чтение'}
+                  ? (isDirty(selected.path) ? t('app.modified') : t('app.editing', { kind: selected.kind.toUpperCase() }))
+                  : t('app.readOnly')}
               </span>
             </div>
           </div>
