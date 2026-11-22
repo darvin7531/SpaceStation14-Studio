@@ -1611,8 +1611,10 @@ mod tests {
         let fx = Fixture::new();
         fx.write("Resources/Prototypes/base.yml",
             "- type: entity\n  id: Item\n  parent: [Old]\n  name: Before\n  components:\n  - type: Sprite\n    state: old\n  - type: Physics\n");
-        fx.write("Resources/PartialPrototypes/partialPrototypes.yml",
-            "- /Prototypes/patches\n");
+        fx.write(
+            "Resources/PartialPrototypes/partialPrototypes.yml",
+            "- /Prototypes/patches\n",
+        );
         fx.write("Resources/Prototypes/patches/patch.yml",
             "- type: entity\n  id: Item\n  parent: !Clear [New]\n  name: After\n  components:\n  - !Remove type: Physics\n  - type: Sprite\n    state: new\n");
         let project = ProjectIndex::open(fx.root_str()).unwrap();
@@ -1622,8 +1624,20 @@ mod tests {
         assert_eq!(report.applied_partials, 1);
         assert_eq!(report.components.len(), 1);
         assert_eq!(report.components[0].type_name, "Sprite");
-        assert_eq!(report.fields.iter().find(|field| field.key == "name").unwrap().preview, "After");
-        assert!(project.read_resource("Resources/Prototypes/base.yml").unwrap().content.contains("Before"));
+        assert_eq!(
+            report
+                .fields
+                .iter()
+                .find(|field| field.key == "name")
+                .unwrap()
+                .preview,
+            "After"
+        );
+        assert!(project
+            .read_resource("Resources/Prototypes/base.yml")
+            .unwrap()
+            .content
+            .contains("Before"));
     }
 
     #[test]
