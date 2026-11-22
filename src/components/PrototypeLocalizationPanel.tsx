@@ -25,7 +25,7 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, onAp
   const [search, setSearch] = useState('');
   const [target, setTarget] = useState('');
   const [selected, setSelected] = useState<EntityLocaleField[]>(['name', 'description', 'suffix']);
-  const [preview, setPreview] = useState<{ baseline: ResourceDocument; patch: EntityLocalePatch } | null>(null);
+  const [preview, setPreview] = useState<{ baseline: ResourceDocument; patch: EntityLocalePatch; sourceSnapshot: string } | null>(null);
   const [reading, setReading] = useState(false);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<StudioError | null>(null);
@@ -67,10 +67,24 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, onAp
     setError(null);
     setPreview(null);
     try {
+      // The old Electron implementation could create duplicate IDs in separate FTLs.
+      // Check the indexed locale before editing, refusing incomplete scans instead of guessing.
+      const matches = await studio.searchResourceContent(entity.localization_id, 'ftl');
+      if (!matches.complete) {
+        throw new Error('Проверка Fluent-файлов неполная. Обновите или сузьте проект и проверьте существующие ID вручную.');
+      }
+      const localeRoot = target.split('/').slice(0, 3).join('/') + '/';
+      const otherDefinition = matches.items.find((hit) => hit.path !== target
+        && hit.path.startsWith(localeRoot)
+        && new RegExp('^' + entity.localization_id + '[ \t]*=').test(hit.preview));
+      if (otherDefinition) {
+        throw new Error('Fluent ID уже объявлен в ' + otherDefinition.path
+          + ':' + otherDefinition.line + '. Выберите этот файл вместо создания дубликата.');
+      }
       const baseline = await studio.readResource(target);
       if (baseline.path !== target) throw new Error('Выбранный Fluent-файл изменился. Повторите выбор.');
       const patch = buildEntityLocalePatch(baseline.content, entity, chosen);
-      setPreview({ baseline, patch });
+      setPreview({ baseline, patch, sourceSnapshot: source });
       setNotice(patch.changed ? 'Предпросмотр готов. Существующие значения не заменяются.' : 'Выбранные поля уже присутствуют в FTL.');
     } catch (failure) {
       setError(normalizeStudioError(failure));
@@ -80,7 +94,7 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, onAp
   }
 
   async function save() {
-    if (!preview || !preview.patch.changed || disabled || !target || preview.baseline.path !== target) return;
+    if (!preview || !preview.patch.changed || disabled || !target || preview.baseline.path !== target || preview.sourceSnapshot !== source) return;
     setApplying(true);
     setError(null);
     try {
@@ -147,7 +161,7 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, onAp
         <button type="button" disabled={disabled || !target || chosen.length === 0} onClick={() => void inspectTarget()}>
           <RefreshCw size={14}/>{reading ? 'Проверка…' : 'Предпросмотр FTL'}
         </button>
-        <button type="button" disabled={disabled || !preview?.patch.changed}
+        <button type="button" disabled={disabled || !preview?.patch.changed || preview?.sourceSnapshot !== source}
           onClick={() => void save()}>
           <Languages size={14}/>{applying ? 'Запись…' : 'Записать FTL'}
         </button>
