@@ -48,7 +48,7 @@ async function script(source) {
 }
 async function edit(value, token) {
   const editor = await until('Monaco input', () => find('.monaco-shell textarea.inputarea'));
-  await call('POST', `/element/${editor}/click`, {});
+  await script("document.querySelector('.monaco-shell textarea.inputarea').focus();");
   await keys(editor, '\uE009a\uE000'); // Ctrl+A, then release modifiers
   await keys(editor, value);
   await until('edited draft', () => script(`return document.querySelector('.monaco-shell .view-lines')?.textContent?.includes(${JSON.stringify(token)});`));
