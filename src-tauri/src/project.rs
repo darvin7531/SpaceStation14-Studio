@@ -118,6 +118,16 @@ enum ScanScope {
 
 impl ProjectIndex {
     pub fn open(input: &str) -> Result<Self, StudioError> {
+        Self::open_with_progress(input, |_, _| {})
+    }
+
+    /// Report completed scan phases without inventing a percentage.
+    /// The callback is deliberately non-fallible: event listeners must never
+    /// break a valid project scan when their webview is closing.
+    pub fn open_with_progress(
+        input: &str,
+        mut on_progress: impl FnMut(&'static str, usize),
+    ) -> Result<Self, StudioError> {
         if input.trim().is_empty() {
             return Err(StudioError::new(
                 "PROJECT_PATH_EMPTY",
@@ -172,6 +182,7 @@ impl ProjectIndex {
 
         let mut resources = Vec::new();
         let mut traversed = 0;
+        on_progress("prototypes", resources.len());
         scan(
             &root,
             &prototypes,
@@ -179,6 +190,7 @@ impl ProjectIndex {
             &mut traversed,
             &mut resources,
         )?;
+        on_progress("textures", resources.len());
         scan(
             &root,
             &resources_root.join("Textures"),
@@ -186,6 +198,7 @@ impl ProjectIndex {
             &mut traversed,
             &mut resources,
         )?;
+        on_progress("locale", resources.len());
         scan(
             &root,
             &resources_root.join("Locale"),
@@ -193,6 +206,7 @@ impl ProjectIndex {
             &mut traversed,
             &mut resources,
         )?;
+        on_progress("finalizing", resources.len());
         resources.sort_unstable_by(|a, b| a.path.cmp(&b.path));
         let mut positions = HashMap::with_capacity(resources.len());
         for (index, item) in resources.iter().enumerate() {
@@ -1319,6 +1333,30 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+
+    #[test]
+    fn open_progress_tracks_scanned_resource_counts_without_guessing_percentages() {
+        let fx = Fixture::new();
+        fx.write(
+            "Resources/Prototypes/Example.yml",
+            "- type: entity\n  id: Example\n",
+        );
+        fx.write("Resources/Locale/en-US/Example.ftl", "ent-Example = Example\n");
+        let mut observed = Vec::new();
+        let index = ProjectIndex::open_with_progress(fx.root_str(), |phase, count| {
+            observed.push((phase, count));
+        })
+        .unwrap();
+        assert_eq!(
+            observed.iter().map(|(phase, _)| *phase).collect::<Vec<_>>(),
+            vec!["prototypes", "textures", "locale", "finalizing"]
+        );
+        assert!(observed.windows(2).all(|window| window[0].1 <= window[1].1));
+        assert_eq!(
+            observed.last().unwrap().1,
+            index.overview().total_resources
+        );
     }
 
     #[test]
