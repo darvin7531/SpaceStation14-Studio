@@ -17,7 +17,7 @@ use crate::prototype_create::{self, CreatedPrototype, PrototypeDraft, PrototypeP
 use crate::prototype_fields::{self, FieldInspection, FieldLocator, FieldPatch, PrototypeFields};
 use crate::prototype_localization::{self, EntityLocalizationSource};
 use crate::prototype_parents::{self, ParentInspection};
-use crate::prototypes::PrototypeCatalog;
+use crate::prototypes::{self, PrototypeCatalog, SourceOutline};
 use crate::resource_browser::{self, ResourceBrowserPage};
 use crate::resource_edit::{self, SaveResult};
 use crate::rsi_create::{self, CreatedRsi, RsiCreationPreview, RsiDraft};
@@ -615,6 +615,28 @@ impl ProjectIndex {
             .get(path)
             .and_then(|index| self.resources.get(*index))
             .is_some_and(|entry| matches!(entry.kind, "yaml" | "ftl"))
+    }
+
+    /// Parse only the active in-memory YAML draft. The resource path itself
+    /// must already be indexed; source text is never persisted by inspection.
+    pub fn inspect_yaml_outline(
+        &self,
+        path: &str,
+        source: &str,
+    ) -> Result<SourceOutline, StudioError> {
+        if !self.is_yaml_indexed(path) {
+            return Err(StudioError::new(
+                "OUTLINE_NOT_INDEXED",
+                "Объявления доступны только для YAML-файлов открытого проекта.",
+                "Откройте YAML из каталога ресурсов Studio.",
+            ));
+        }
+        prototypes::inspect_source_outline(&self.root, path, source, |rsi| {
+            self.positions
+                .get(rsi)
+                .and_then(|index| self.resources.get(*index))
+                .is_some_and(|entry| entry.kind == "rsi")
+        })
     }
 
     pub fn prototypes(&self) -> Result<Arc<PrototypeCatalog>, StudioError> {
@@ -1540,6 +1562,24 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+
+    #[test]
+    fn live_outline_reads_unsaved_prototypes_without_modifying_disk() {
+        let fx = Fixture::new();
+        let file = "Resources/Prototypes/live.yml";
+        fx.write(file, "- type: entity\n  id: Before\n");
+        fx.write("Resources/Textures/Test.rsi/meta.json", r#"{"version":1}"#);
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let unsaved = "- type: entity\n  id: After\n  components:\n  - type: Sprite\n    sprite: Test.rsi\n";
+        let report = index.inspect_yaml_outline(file, unsaved).unwrap();
+        assert_eq!(report.declarations[0].declaration.id, "After");
+        assert!(report.declarations[0].sprite.as_ref().unwrap().indexed);
+        assert!(index.read_resource(file).unwrap().content.contains("Before"));
+        assert_eq!(
+            index.inspect_yaml_outline("secret.yml", unsaved).unwrap_err().code,
+            "OUTLINE_NOT_INDEXED"
+        );
     }
 
     #[test]
