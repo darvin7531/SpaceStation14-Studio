@@ -144,3 +144,20 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   overflow: hidden;
   white-space: nowrap;
 }
+
+/* Native scan phase indicator. Numbers are indexed resources, not estimates. */
+.project-scan-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  border: 1px solid #36536b;
+  background: #112537;
+  border-radius: 7px;
+  padding: 9px 12px;
+  margin: 8px 0;
+  color: #c8e0f6;
+  font-size: 12px;
+}
+.project-scan-status small { color: #97b4d0; }
+.project-scan-status svg { flex: none; }
