@@ -760,6 +760,313 @@ pub fn preview(
     })
 }
 
+
+const MAX_INHERIT_IDENTITIES: usize = 64;
+const MAX_INHERIT_DEPTH: usize = 32;
+const MAX_INHERIT_BYTES: usize = 24 * 1024 * 1024;
+const MAX_INHERIT_WARNINGS: usize = 48;
+
+/// Structural source projection only. Unlike engine deserialization, this does
+/// not know C# DataField custom serializers, AlwaysPushInheritance or defaults.
+#[derive(Debug, Serialize)]
+pub struct PrototypeInheritancePreview {
+    pub kind: String,
+    pub id: String,
+    /// All referenced static sources were available and had a unique base.
+    /// Does NOT mean that the values equal RobustToolbox's runtime objects.
+    pub structural_complete: bool,
+    /// Deliberately false until this is checked against engine definitions.
+    pub runtime_exact: bool,
+    pub direct_parents: Vec<String>,
+    /// Ordered, distinct source prototypes involved in this projection.
+    pub lineage: Vec<String>,
+    pub fields: Vec<MergeField>,
+    pub components: Vec<MergeComponent>,
+    pub total_partials: usize,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Clone)]
+struct InheritedSnapshot {
+    node: Node,
+    sources: HashMap<String, String>,
+    parents: Vec<String>,
+    lineage: Vec<String>,
+    complete: bool,
+    partials: usize,
+}
+
+struct InheritanceSolver<'a, F> {
+    catalog: &'a PrototypeCatalog,
+    kind: &'a str,
+    reader: F,
+    file_cache: HashMap<String, String>,
+    bytes: usize,
+    stack: Vec<String>,
+    calculated: HashMap<String, InheritedSnapshot>,
+    warnings: Vec<String>,
+}
+
+impl<F: FnMut(&str) -> Result<String, StudioError>> InheritanceSolver<'_, F> {
+    fn warn(&mut self, message: String) {
+        if self.warnings.len() < MAX_INHERIT_WARNINGS {
+            self.warnings.push(message);
+        }
+    }
+
+    fn read_file(&mut self, file: &str) -> Result<String, StudioError> {
+        if let Some(cached) = self.file_cache.get(file) {
+            return Ok(cached.clone());
+        }
+        let source = (self.reader)(file)?;
+        if source.len() > MAX_INHERIT_BYTES.saturating_sub(self.bytes) {
+            return Err(StudioError::new(
+                "PROTOTYPE_INHERITANCE_LIMIT",
+                "Превышен общий лимит исходных YAML для наследования (24 МиБ).",
+                "Просмотрите связи прототипа по отдельности.",
+            ));
+        }
+        self.bytes += source.len();
+        self.file_cache.insert(file.to_owned(), source.clone());
+        Ok(source)
+    }
+
+    fn resolve(&mut self, id: &str) -> Result<InheritedSnapshot, String> {
+        if let Some(snapshot) = self.calculated.get(id) {
+            return Ok(snapshot.clone());
+        }
+        if self.stack.iter().any(|ancestor| ancestor == id) {
+            return Err(format!("Цикл parent: {} → {id}", self.stack.join(" → ")));
+        }
+        if self.stack.len() >= MAX_INHERIT_DEPTH {
+            return Err(format!("Глубина parent для {id} превысила {MAX_INHERIT_DEPTH}."));
+        }
+        if self.calculated.len() + self.stack.len() >= MAX_INHERIT_IDENTITIES {
+            return Err(format!("Достигнут лимит {MAX_INHERIT_IDENTITIES} прототипов."));
+        }
+        self.stack.push(id.to_owned());
+        // A separate closure ensures we always pop the current identity after
+        // a parse, source read or parent resolution failure.
+        let attempt = (|| {
+            let catalog = self.catalog;
+            let kind = self.kind;
+            let partial = preview(catalog, kind, id, |path| self.read_file(path))
+                .map_err(|error| format!("{id}: {} [{}]", error.message, error.code))?;
+            let own = partial.composed.as_ref().ok_or_else(|| {
+                format!("{id}: базовое объявление отсутствует или недоступно")
+            })?;
+            let mut complete = partial.exact;
+            for warning in &partial.warnings {
+                self.warn(format!("{id}: {warning}"));
+            }
+            let parents = partial.parents.clone();
+            if parents.len() > 1 {
+                complete = false;
+                self.warn(format!(
+                    "{id}: {} родителя; порядок и DataField-семантика конфликтующих полей движка не подтверждены.",
+                    parents.len()
+                ));
+            }
+            let mut seen_parents = std::collections::HashSet::new();
+            let mut projected = Node { tag: None, value: Value::Map(Vec::new()) };
+            let mut sources = HashMap::new();
+            let mut lineage = Vec::new();
+            let mut total_partials = partial.applied_partials;
+            for parent_id in &parents {
+                if parent_id.trim().is_empty() || !seen_parents.insert(parent_id.clone()) {
+                    complete = false;
+                    self.warn(format!("{id}: пустой или повторяющийся parent «{parent_id}»."));
+                    continue;
+                }
+                match self.resolve(parent_id) {
+                    Ok(parent) => {
+                        if !parent.complete {
+                            complete = false;
+                        }
+                        total_partials += parent.partials;
+                        for ancestor in parent.lineage {
+                            if !lineage.contains(&ancestor) {
+                                lineage.push(ancestor);
+                            }
+                        }
+                        if let Err(error) = overlay_inherited(
+                            &mut projected, &parent.node, &mut sources, &parent.sources
+                        ) {
+                            complete = false;
+                            self.warn(format!("{id} ← {parent_id}: {error}"));
+                        }
+                    }
+                    Err(error) => {
+                        complete = false;
+                        self.warn(format!("{id}: {error}"));
+                    }
+                }
+            }
+            // Apply a child's already-partial-merged source *after* the parents.
+            // No metadata such as parent, id, type or abstract is inherited.
+            if let Err(error) = overlay_inherited(
+                &mut projected, own, &mut sources, &partial.sources
+            ) {
+                complete = false;
+                self.warn(format!("{id}: {error}"));
+            }
+            lineage.push(id.to_owned());
+            Ok(InheritedSnapshot {
+                node: projected,
+                sources,
+                parents,
+                lineage,
+                complete,
+                partials: total_partials,
+            })
+        })();
+        self.stack.pop();
+        if let Ok(value) = &attempt {
+            self.calculated.insert(id.to_owned(), value.clone());
+        }
+        attempt
+    }
+}
+
+/// Inheritance is deliberately different from partial append semantics:
+/// normal child sequences replace parent sequences. Components retain their
+/// type-indexed overlay (AlwaysPushInheritance in engine), while custom
+/// DataField serializers are not represented by this structural projection.
+fn overlay_inherited(
+    dest: &mut Node,
+    incoming: &Node,
+    provenance: &mut HashMap<String, String>,
+    incoming_sources: &HashMap<String, String>,
+) -> Result<(), String> {
+    let (Value::Map(target), Value::Map(fields)) = (&mut dest.value, &incoming.value) else {
+        return Err("Для наследования требуются два YAML-словаря.".into());
+    };
+    for (key, value) in fields {
+        if matches!(key.as_str(), "id" | "type" | "abstract" | "parent") {
+            continue;
+        }
+        let origin = incoming_sources.get(key).cloned().unwrap_or_default();
+        let before = target.iter().position(|(name, _)| name == key);
+        if key == "components" {
+            let Value::Seq(additions) = &value.value else {
+                return Err("components не является списком.".into());
+            };
+            let position = if let Some(index) = before {
+                index
+            } else {
+                target.push((key.clone(), Node { tag: None, value: Value::Seq(Vec::new()) }));
+                target.len() - 1
+            };
+            let Value::Seq(current) = &mut target[position].1.value else {
+                return Err("Унаследованные components не являются списком.".into());
+            };
+            for component in additions {
+                let name = component.field("type").and_then(Node::scalar)
+                    .ok_or_else(|| "У компонента отсутствует статический type.".to_owned())?;
+                let slot = current.iter().position(|item|
+                    item.field("type").and_then(Node::scalar) == Some(name));
+                let key_name = format!("components/{name}");
+                let component_source = incoming_sources.get(&key_name)
+                    .cloned().unwrap_or_else(|| origin.clone());
+                if let Some(index) = slot {
+                    let before_component = current[index].clone();
+                    overlay_inherited_mapping(&mut current[index], component)?;
+                    if current[index] != before_component {
+                        provenance.insert(key_name, component_source);
+                    }
+                } else {
+                    current.push(component.clone());
+                    provenance.insert(key_name, component_source);
+                }
+            }
+        } else if let Some(index) = before {
+            let old = target[index].1.clone();
+            overlay_inherited_mapping(&mut target[index].1, value)?;
+            if target[index].1 != old {
+                provenance.insert(key.clone(), origin);
+            }
+        } else {
+            target.push((key.clone(), value.clone()));
+            provenance.insert(key.clone(), origin);
+        }
+    }
+    Ok(())
+}
+
+/// Mapping entries can be inherited field by field; ordinary lists are replaced
+/// by the child rather than appended as with partial-prototype modifications.
+fn overlay_inherited_mapping(dest: &mut Node, incoming: &Node) -> Result<(), String> {
+    if dest.tag.is_some() || incoming.tag.is_some() {
+        return Err("Неизвестный YAML-тег в данных наследования.".into());
+    }
+    if let (Value::Map(target), Value::Map(fields)) = (&mut dest.value, &incoming.value) {
+        for (key, value) in fields {
+            if let Some((_, existing)) = target.iter_mut().find(|(name, _)| name == key) {
+                overlay_inherited_mapping(existing, value)?;
+            } else {
+                target.push((key.clone(), value.clone()));
+            }
+        }
+    } else {
+        *dest = incoming.clone();
+    }
+    Ok(())
+}
+
+/// Resolve a bounded source-derived inheritance projection with partials
+/// applied independently to each ancestor first. This is not an engine-runtime
+/// resolver: field-specific C# inheritance, custom serializers and variants
+/// may give different actual results.
+pub fn preview_inheritance(
+    catalog: &PrototypeCatalog,
+    kind: &str,
+    id: &str,
+    read: impl FnMut(&str) -> Result<String, StudioError>,
+) -> Result<PrototypeInheritancePreview, StudioError> {
+    if !catalog.has_identity(kind, id) {
+        return Err(StudioError::new(
+            "PROTOTYPE_NOT_INDEXED",
+            "Прототип не найден в каталоге проекта.",
+            "Обновите каталог или проверьте ID и тип.",
+        ));
+    }
+    let mut solver = InheritanceSolver {
+        catalog,
+        kind,
+        reader: read,
+        file_cache: HashMap::new(),
+        bytes: 0,
+        stack: Vec::new(),
+        calculated: HashMap::new(),
+        warnings: Vec::new(),
+    };
+    let result = solver.resolve(id).map_err(|reason| {
+        StudioError::new(
+            "PROTOTYPE_INHERITANCE_UNAVAILABLE",
+            "Не удалось вычислить базовую структуру прототипа.",
+            "Проверьте исходные объявления, теги и пути проекта.",
+        ).with_details(reason)
+    })?;
+    let (fields, components) = preview_fields(&result.node, &result.sources);
+    let mut structural_complete = result.complete;
+    if fields.len() >= MAX_PREVIEW_FIELDS || components.len() >= MAX_PREVIEW_COMPONENTS {
+        structural_complete = false;
+        solver.warn("Вывод ограничен 96 полями и 128 компонентами.".into());
+    }
+    Ok(PrototypeInheritancePreview {
+        kind: kind.to_owned(),
+        id: id.to_owned(),
+        structural_complete,
+        runtime_exact: false,
+        direct_parents: result.parents,
+        lineage: result.lineage,
+        fields,
+        components,
+        total_partials: result.partials,
+        warnings: solver.warnings,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
