@@ -1213,8 +1213,8 @@ export default function App() {
                 onTimingUpdated={(result) => onRsiImported(selected.path, result, 'timing')}
                 onCreditsUpdated={(result) => onRsiImported(selected.path, result, 'credits')}
                 onDeleted={(result) => onRsiDeleted(selected.path, result)}
-                onRestored={(result) => onRsiRestored(selected.path, result)}/>
-            onRenamed={(result) => onRsiRenamed(selected.path, result)}
+                onRestored={(result) => onRsiRestored(selected.path, result)}
+                onRenamed={(result) => onRsiRenamed(selected.path, result)}/>
               : document ? <MonacoPreview settings={editorSettings} key={document.path} resource={selected} document={document}
               value={activeText} editable={isEditableText(selected.kind) && !saving && !refreshing}
               onChange={isEditableText(selected.kind) ? (value) => {
