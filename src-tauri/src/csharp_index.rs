@@ -494,9 +494,12 @@ fn is_skipped_dir(name: &str) -> bool {
 /// intentionally omitted: speculative matches must not become YAML hints.
 fn lexical_base(derived: &str, candidate: &str) -> Option<String> {
     let base = candidate.trim();
-    if base.is_empty() || !base.chars().all(|ch| {
-        ch.is_ascii_alphanumeric() || ch == '_' || ch == '.'
-    }) || base.split('.').any(str::is_empty) {
+    if base.is_empty()
+        || !base
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '.')
+        || base.split('.').any(str::is_empty)
+    {
         return None;
     }
     if base.contains('.') {
@@ -738,23 +741,39 @@ impl CSharpCatalog {
                     Vec::new()
                 };
                 let inherited_candidates = if status == "unique" {
-                    declarations.iter().flat_map(|definition| {
-                        definition.base_types.split(',').take(8).filter_map(|base_name| {
-                            let base_full = lexical_base(&definition.qualified_name, base_name)?;
-                            let parts = fragments_by_type.get(base_full.as_str())?;
-                            // Duplicate source declarations may come from different
-                            // assemblies. Show every candidate and never auto-merge.
-                            Some(parts.iter().take(16).filter(|part| !part.fields.is_empty())
-                                .map(|part| CSharpInheritedCandidate {
-                                    base_type: base_name.trim().to_owned(),
-                                    qualified_name: base_full.clone(),
-                                    file: part.file.clone(),
-                                    line: part.line,
-                                    fields: part.fields.clone(),
-                                    parse_uncertain: part.parse_uncertain,
-                                }).collect::<Vec<_>>())
-                        }).flatten()
-                    }).take(64).collect()
+                    declarations
+                        .iter()
+                        .flat_map(|definition| {
+                            definition
+                                .base_types
+                                .split(',')
+                                .take(8)
+                                .filter_map(|base_name| {
+                                    let base_full =
+                                        lexical_base(&definition.qualified_name, base_name)?;
+                                    let parts = fragments_by_type.get(base_full.as_str())?;
+                                    // Duplicate source declarations may come from different
+                                    // assemblies. Show every candidate and never auto-merge.
+                                    Some(
+                                        parts
+                                            .iter()
+                                            .take(16)
+                                            .filter(|part| !part.fields.is_empty())
+                                            .map(|part| CSharpInheritedCandidate {
+                                                base_type: base_name.trim().to_owned(),
+                                                qualified_name: base_full.clone(),
+                                                file: part.file.clone(),
+                                                line: part.line,
+                                                fields: part.fields.clone(),
+                                                parse_uncertain: part.parse_uncertain,
+                                            })
+                                            .collect::<Vec<_>>(),
+                                    )
+                                })
+                                .flatten()
+                        })
+                        .take(64)
+                        .collect()
                 } else {
                     Vec::new()
                 };
@@ -828,7 +847,9 @@ mod tests {
     #[test]
     fn direct_base_fields_are_read_only_candidates_with_source_location() {
         let mut parser = Parser::new();
-        parser.set_language(&tree_sitter_c_sharp::LANGUAGE.into()).unwrap();
+        parser
+            .set_language(&tree_sitter_c_sharp::LANGUAGE.into())
+            .unwrap();
         let text = r#"
             namespace Content.Shared.Equipment;
             public class SharedItemBase {
@@ -840,13 +861,22 @@ mod tests {
             }
         "#;
         let (definitions, parts, invalid) = parse_source(
-            &mut parser, "Content.Shared/Equipment/ItemComponent.cs", text
+            &mut parser,
+            "Content.Shared/Equipment/ItemComponent.cs",
+            text,
         );
         assert!(!invalid);
-        assert!(parts.iter().any(|part| part.qualified_name.ends_with("SharedItemBase")));
+        assert!(parts
+            .iter()
+            .any(|part| part.qualified_name.ends_with("SharedItemBase")));
         let index = CSharpCatalog {
-            definitions, parts, warnings: Vec::new(), complete: true,
-            files_scanned: 1, files_parsed: 1, bytes_scanned: text.len() as u64,
+            definitions,
+            parts,
+            warnings: Vec::new(),
+            complete: true,
+            files_scanned: 1,
+            files_parsed: 1,
+            bytes_scanned: text.len() as u64,
         };
         let schema = index.component_schemas(&["Item".into()]);
         let item = &schema.components[0];
@@ -855,7 +885,9 @@ mod tests {
         assert_eq!(item.inherited_candidates.len(), 1);
         assert_eq!(item.inherited_candidates[0].fields[0].name, "base_speed");
         assert_eq!(item.inherited_candidates[0].base_type, "SharedItemBase");
-        assert!(item.inherited_candidates[0].file.ends_with("ItemComponent.cs"));
+        assert!(item.inherited_candidates[0]
+            .file
+            .ends_with("ItemComponent.cs"));
     }
 
     #[test]
@@ -868,9 +900,18 @@ mod tests {
             lexical_base("Content.Shared.ItemComponent", "Content.Other.Base").as_deref(),
             Some("Content.Other.Base")
         );
-        assert_eq!(lexical_base("Content.Shared.ItemComponent", "Base<T>"), None);
-        assert_eq!(lexical_base("Content.Shared.ItemComponent", "global::Base"), None);
-        assert_eq!(lexical_base("Content.Shared.ItemComponent", "../Base"), None);
+        assert_eq!(
+            lexical_base("Content.Shared.ItemComponent", "Base<T>"),
+            None
+        );
+        assert_eq!(
+            lexical_base("Content.Shared.ItemComponent", "global::Base"),
+            None
+        );
+        assert_eq!(
+            lexical_base("Content.Shared.ItemComponent", "../Base"),
+            None
+        );
     }
 
     #[test]
