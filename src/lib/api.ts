@@ -160,6 +160,11 @@ export interface EntityLocalizationSource {
   suffix: string;
 }
 
+export interface ParentInspection {
+  parents: string[];
+  notice: string;
+}
+
 export interface PrototypeFields {
   name: string;
   description: string;
@@ -571,6 +576,12 @@ export const studio = {
   },
   inspectEntityLocalization(locator: PrototypeFieldLocator, source: string): Promise<EntityLocalizationSource> {
     return invoke('inspect_entity_localization', { locator, source });
+  },
+  inspectPrototypeParents(locator: PrototypeFieldLocator, source: string): Promise<ParentInspection> {
+    return invoke('inspect_prototype_parents', { locator, source });
+  },
+  patchPrototypeParents(locator: PrototypeFieldLocator, source: string, parents: string[]): Promise<FieldPatch> {
+    return invoke('patch_prototype_parents', { locator, source, parents });
   },
   inspectPrototypeFields(locator: PrototypeFieldLocator, source: string): Promise<FieldInspection> {
     return invoke('inspect_prototype_fields', { locator, source });
