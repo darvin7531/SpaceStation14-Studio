@@ -141,12 +141,20 @@ async fn open_project(
 /// Only swap the workspace after a complete and valid scan. An overlapping
 /// project switch must not be undone by a late refresh result.
 #[tauri::command]
-async fn refresh_project(state: State<'_, WorkspaceState>) -> Result<ProjectRefresh, StudioError> {
+async fn refresh_project(
+    changed_paths: Option<Vec<String>>,
+    state: State<'_, WorkspaceState>,
+) -> Result<ProjectRefresh, StudioError> {
     let original = current_project(&state)?;
     let source = original.clone();
-    let (rebuilt, summary) = tauri::async_runtime::spawn_blocking(move || source.refresh())
-        .await
-        .map_err(interrupted)??;
+    let (rebuilt, summary) = tauri::async_runtime::spawn_blocking(move || {
+        match changed_paths {
+            Some(paths) => source.refresh_paths(&paths),
+            None => source.refresh(),
+        }
+    })
+    .await
+    .map_err(interrupted)??;
     let mut active = state.0.lock().map_err(|_| internal_lock())?;
     if !active
         .as_ref()
