@@ -17,7 +17,7 @@ const MAX_META_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_DATA_URL_CHARS: usize = 12 * 1024 * 1024;
 const MAX_STATES: usize = 512;
 const MAX_FRAMES: u32 = 128;
-const PNG_DATA_PREFIX: &str = "data:image/png;base64:";
+const PNG_DATA_PREFIX: &str = "data:image/png;base64,";
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Deserialize)]

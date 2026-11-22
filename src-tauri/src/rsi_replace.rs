@@ -106,7 +106,7 @@ fn prevalidate(root: &Path, request: &RsiStateImport) -> Result<(usize, Value), 
 
     let encoded = request
         .data_url
-        .strip_prefix("data:image/png;base64:")
+        .strip_prefix("data:image/png;base64,")
         .ok_or_else(|| {
             issue(
                 "RSI_REPLACE_PNG_INVALID",
