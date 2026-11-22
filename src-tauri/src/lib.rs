@@ -58,8 +58,15 @@ use rsi_rename::{RenamedRsiState, RsiRenameRequest};
 use rsi_restore::{RestoredRsiState, RsiArchiveList, RsiRestoreRequest};
 use rsi_timing::RsiTimingUpdate;
 use serde::Serialize;
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 use ui_sources::UiSourcePage;
+
+#[derive(Clone, Serialize)]
+struct ProjectScanProgress {
+    requested_path: String,
+    phase: &'static str,
+    indexed_resources: usize,
+}
 
 #[derive(Default)]
 pub struct WorkspaceState(Mutex<Option<Arc<ProjectIndex>>>);
@@ -102,9 +109,22 @@ async fn open_project(
     app: tauri::AppHandle,
     watcher: State<'_, ProjectWatcher>,
 ) -> Result<ProjectOverview, StudioError> {
-    let index = tauri::async_runtime::spawn_blocking(move || ProjectIndex::open(&path))
-        .await
-        .map_err(interrupted)??;
+    let scan_app = app.clone();
+    let requested_path = path.clone();
+    let index = tauri::async_runtime::spawn_blocking(move || {
+        ProjectIndex::open_with_progress(&path, |phase, indexed_resources| {
+            let _ = scan_app.emit(
+                "studio:scan-progress",
+                ProjectScanProgress {
+                    requested_path: requested_path.clone(),
+                    phase,
+                    indexed_resources,
+                },
+            );
+        })
+    })
+    .await
+    .map_err(interrupted)??;
     let mut summary = index.overview().clone();
     *state.0.lock().map_err(|_| internal_lock())? = Some(Arc::new(index));
     if let Err(error) = watcher.replace(&app, std::path::Path::new(&summary.project_root)) {
