@@ -760,7 +760,6 @@ pub fn preview(
     })
 }
 
-
 const MAX_INHERIT_IDENTITIES: usize = 64;
 const MAX_INHERIT_DEPTH: usize = 32;
 const MAX_INHERIT_BYTES: usize = 24 * 1024 * 1024;
@@ -839,10 +838,14 @@ impl<F: FnMut(&str) -> Result<String, StudioError>> InheritanceSolver<'_, F> {
             return Err(format!("Цикл parent: {} → {id}", self.stack.join(" → ")));
         }
         if self.stack.len() >= MAX_INHERIT_DEPTH {
-            return Err(format!("Глубина parent для {id} превысила {MAX_INHERIT_DEPTH}."));
+            return Err(format!(
+                "Глубина parent для {id} превысила {MAX_INHERIT_DEPTH}."
+            ));
         }
         if self.calculated.len() + self.stack.len() >= MAX_INHERIT_IDENTITIES {
-            return Err(format!("Достигнут лимит {MAX_INHERIT_IDENTITIES} прототипов."));
+            return Err(format!(
+                "Достигнут лимит {MAX_INHERIT_IDENTITIES} прототипов."
+            ));
         }
         self.stack.push(id.to_owned());
         // A separate closure ensures we always pop the current identity after
@@ -852,9 +855,10 @@ impl<F: FnMut(&str) -> Result<String, StudioError>> InheritanceSolver<'_, F> {
             let kind = self.kind;
             let partial = preview(catalog, kind, id, |path| self.read_file(path))
                 .map_err(|error| format!("{id}: {} [{}]", error.message, error.code))?;
-            let own = partial.composed.as_ref().ok_or_else(|| {
-                format!("{id}: базовое объявление отсутствует или недоступно")
-            })?;
+            let own = partial
+                .composed
+                .as_ref()
+                .ok_or_else(|| format!("{id}: базовое объявление отсутствует или недоступно"))?;
             let mut complete = partial.exact;
             for warning in &partial.warnings {
                 self.warn(format!("{id}: {warning}"));
@@ -868,14 +872,19 @@ impl<F: FnMut(&str) -> Result<String, StudioError>> InheritanceSolver<'_, F> {
                 ));
             }
             let mut seen_parents = std::collections::HashSet::new();
-            let mut projected = Node { tag: None, value: Value::Map(Vec::new()) };
+            let mut projected = Node {
+                tag: None,
+                value: Value::Map(Vec::new()),
+            };
             let mut sources = HashMap::new();
             let mut lineage = Vec::new();
             let mut total_partials = partial.applied_partials;
             for parent_id in &parents {
                 if parent_id.trim().is_empty() || !seen_parents.insert(parent_id.clone()) {
                     complete = false;
-                    self.warn(format!("{id}: пустой или повторяющийся parent «{parent_id}»."));
+                    self.warn(format!(
+                        "{id}: пустой или повторяющийся parent «{parent_id}»."
+                    ));
                     continue;
                 }
                 match self.resolve(parent_id) {
@@ -978,20 +987,31 @@ fn overlay_inherited(
             let position = if let Some(index) = before {
                 index
             } else {
-                target.push((key.clone(), Node { tag: None, value: Value::Seq(Vec::new()) }));
+                target.push((
+                    key.clone(),
+                    Node {
+                        tag: None,
+                        value: Value::Seq(Vec::new()),
+                    },
+                ));
                 target.len() - 1
             };
             let Value::Seq(current) = &mut target[position].1.value else {
                 return Err("Унаследованные components не являются списком.".into());
             };
             for component in additions {
-                let name = component.field("type").and_then(Node::scalar)
+                let name = component
+                    .field("type")
+                    .and_then(Node::scalar)
                     .ok_or_else(|| "У компонента отсутствует статический type.".to_owned())?;
-                let slot = current.iter().position(|item|
-                    item.field("type").and_then(Node::scalar) == Some(name));
+                let slot = current
+                    .iter()
+                    .position(|item| item.field("type").and_then(Node::scalar) == Some(name));
                 let key_name = format!("components/{name}");
-                let component_source = incoming_sources.get(&key_name)
-                    .cloned().unwrap_or_else(|| origin.clone());
+                let component_source = incoming_sources
+                    .get(&key_name)
+                    .cloned()
+                    .unwrap_or_else(|| origin.clone());
                 if let Some(index) = slot {
                     let before_component = current[index].clone();
                     overlay_inherited_mapping(&mut current[index], component)?;
@@ -1069,7 +1089,8 @@ pub fn preview_inheritance(
             "PROTOTYPE_INHERITANCE_UNAVAILABLE",
             "Не удалось вычислить базовую структуру прототипа.",
             "Проверьте исходные объявления, теги и пути проекта.",
-        ).with_details(reason)
+        )
+        .with_details(reason)
     })?;
     let (fields, components) = preview_fields(&result.node, &result.sources);
     let mut structural_complete = result.complete;
@@ -1109,7 +1130,9 @@ mod tests {
             ("flags".to_owned(), "child.yml".to_owned()),
         ]);
         overlay_inherited(&mut parent, &child, &mut provenance, &child_sources).unwrap();
-        let Value::Seq(tags) = &parent.field("tags").unwrap().value else { panic!("missing tags") };
+        let Value::Seq(tags) = &parent.field("tags").unwrap().value else {
+            panic!("missing tags")
+        };
         assert_eq!(tags.len(), 1);
         assert_eq!(tags[0].scalar(), Some("c"));
         let flags = parent.field("flags").unwrap();
@@ -1134,7 +1157,10 @@ mod tests {
         };
         assert_eq!(components.len(), 2);
         assert_eq!(components[0].field("state").unwrap().scalar(), Some("new"));
-        assert_eq!(components[0].field("shader").unwrap().scalar(), Some("unshaded"));
+        assert_eq!(
+            components[0].field("shader").unwrap().scalar(),
+            Some("unshaded")
+        );
         assert_eq!(provenance["components/Sprite"], "child.yml");
         assert_eq!(provenance["components/Physics"], "child.yml");
     }
