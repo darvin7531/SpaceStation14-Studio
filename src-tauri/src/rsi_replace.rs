@@ -170,10 +170,7 @@ fn recovery_error(
     }
 }
 
-pub fn replace(
-    root: &Path,
-    request: &RsiStateImport,
-) -> Result<ImportedRsiState, StudioError> {
+pub fn replace(root: &Path, request: &RsiStateImport) -> Result<ImportedRsiState, StudioError> {
     let (original_index, preserved_state) = prevalidate(root, request)?;
     let expected_png = request.expected_png_revision.as_deref().ok_or_else(|| {
         issue(
@@ -285,8 +282,8 @@ mod tests {
     impl Fixture {
         fn new() -> Self {
             let id = NEXT.fetch_add(1, Ordering::Relaxed);
-            let root = std::env::temp_dir()
-                .join(format!("ss14-rsi-replace-{}-{id}", std::process::id()));
+            let root =
+                std::env::temp_dir().join(format!("ss14-rsi-replace-{}-{id}", std::process::id()));
             let path = "Resources/Textures/sample.rsi".to_string();
             let folder = root.join(&path);
             fs::create_dir_all(&folder).unwrap();
@@ -298,7 +295,11 @@ mod tests {
             let old_png = b"original-idle-png".to_vec();
             fs::write(folder.join("idle.png"), &old_png).unwrap();
             fs::write(folder.join("other.png"), b"other-state-unchanged").unwrap();
-            Self { root, path, old_png }
+            Self {
+                root,
+                path,
+                old_png,
+            }
         }
 
         fn request(&self) -> RsiStateImport {
@@ -378,15 +379,31 @@ mod tests {
             fixture.old_png
         );
         let restored_meta: Value = serde_json::from_str(&restored.content).unwrap();
-        assert_eq!(restored_meta["states"].iter().find(|state| state["name"] == "idle").unwrap()["directions"], 1);
-        assert_eq!(restored_meta["states"].iter().find(|state| state["name"] == "idle").unwrap()["customState"], "preserve");
+        assert_eq!(
+            restored_meta["states"]
+                .iter()
+                .find(|state| state["name"] == "idle")
+                .unwrap()["directions"],
+            1
+        );
+        assert_eq!(
+            restored_meta["states"]
+                .iter()
+                .find(|state| state["name"] == "idle")
+                .unwrap()["customState"],
+            "preserve"
+        );
     }
 
     #[test]
     fn stale_png_or_invalid_new_image_is_rejected_before_archiving() {
         let fixture = Fixture::new();
         let mut request = fixture.request();
-        fs::write(fixture.root.join(&fixture.path).join("idle.png"), b"external change").unwrap();
+        fs::write(
+            fixture.root.join(&fixture.path).join("idle.png"),
+            b"external change",
+        )
+        .unwrap();
         assert_eq!(
             replace(&fixture.root, &request).unwrap_err().code,
             "RSI_REPLACE_PNG_CONFLICT"
@@ -398,7 +415,11 @@ mod tests {
             fs::read(fixture.root.join(&fixture.path).join("idle.png")).unwrap(),
             b"external change"
         );
-        assert!(!fixture.root.join(&fixture.path).join(".ss14-studio-archive").exists());
+        assert!(!fixture
+            .root
+            .join(&fixture.path)
+            .join(".ss14-studio-archive")
+            .exists());
 
         let fixture = Fixture::new();
         request = fixture.request();
@@ -408,6 +429,10 @@ mod tests {
             fs::read(fixture.root.join(&fixture.path).join("idle.png")).unwrap(),
             fixture.old_png
         );
-        assert!(!fixture.root.join(&fixture.path).join(".ss14-studio-archive").exists());
+        assert!(!fixture
+            .root
+            .join(&fixture.path)
+            .join(".ss14-studio-archive")
+            .exists());
     }
 }
