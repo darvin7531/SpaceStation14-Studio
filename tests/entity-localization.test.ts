@@ -76,3 +76,13 @@ test('batch quick-fix plans only confirmed missing fields for each game locale',
   assert.deepEqual(planMissingEntityTranslations({ ...analysis, complete: false }, ['name']), []);
   assert.deepEqual(planMissingEntityTranslations(analysis, []), []);
 });
+
+test('missing main value can be added to an existing attribute-only Fluent message', () => {
+  const original = 'ent-TestEntity =   \r\n    .desc = Existing description\r\n\r\n';
+  const patch = buildEntityLocalePatch(original, entity, ['name', 'description', 'suffix']);
+  assert.deepEqual(patch.added, ['name', 'suffix']);
+  assert.deepEqual(patch.alreadyPresent, ['description']);
+  assert.equal(patch.content, 'ent-TestEntity = Test entity\r\n    .desc = Existing description\r\n    .suffix = Suffix\r\n\r\n');
+  assert.equal(buildEntityLocalePatch('ent-TestEntity =\n    .desc = Old\n', entity, ['name']).content,
+    'ent-TestEntity = Test entity\n    .desc = Old\n');
+});
