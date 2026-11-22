@@ -112,11 +112,7 @@ impl TreeBuilder {
                     // the component map's !Remove operation. All other tagged
                     // keys fail closed rather than being interpreted as data.
                     if let Some(op) = &node.tag {
-                        if op == "Remove"
-                            && pairs.is_empty()
-                            && tag.is_none()
-                            && name == "type"
-                        {
+                        if op == "Remove" && pairs.is_empty() && tag.is_none() && name == "type" {
                             *tag = Some(op.clone());
                         } else {
                             self.error.get_or_insert_with(|| {
@@ -139,10 +135,13 @@ impl MarkedEventReceiver for TreeBuilder {
     fn on_event(&mut self, event: Event, _: Marker) {
         // Prevent recursive merge/clean from hitting unbounded user-controlled
         // nesting. Finish parsing the stream, then reject the whole snapshot.
-        if matches!(&event, Event::SequenceStart(_, _) | Event::MappingStart(_, _))
-            && self.stack.len() >= MAX_PREVIEW_DEPTH
+        if matches!(
+            &event,
+            Event::SequenceStart(_, _) | Event::MappingStart(_, _)
+        ) && self.stack.len() >= MAX_PREVIEW_DEPTH
         {
-            self.error.get_or_insert_with(|| "YAML глубже 96 уровней не вычисляется.".into());
+            self.error
+                .get_or_insert_with(|| "YAML глубже 96 уровней не вычисляется.".into());
         }
         match event {
             Event::DocumentStart => {}
@@ -590,8 +589,10 @@ pub fn preview(
         }
         let Some(Ok(docs)) = files.get(&entry.file) else {
             exact = false;
-            let why = files.get(&entry.file)
-                .and_then(|result| result.as_ref().err()).map_or("Неизвестная ошибка", String::as_str);
+            let why = files
+                .get(&entry.file)
+                .and_then(|result| result.as_ref().err())
+                .map_or("Неизвестная ошибка", String::as_str);
             warnings.push(format!("{}: {why}", entry.file));
             continue;
         };
