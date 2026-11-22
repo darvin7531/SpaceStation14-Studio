@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { PrototypeDeclaration, SourceOutlineEntry } from '../src/lib/api';
-import { outlineDeclarationKey, outlineKeyAtLine } from '../src/lib/outline-selection';
+import { canApplyPrototypeFields, outlineDeclarationKey, outlineKeyAtLine, resolvePrototypeTab } from '../src/lib/outline-selection';
 
 const entry = (line: number, item_index: number, variant_index: number | null = null,
   document_index = 1): SourceOutlineEntry => ({
@@ -37,4 +37,25 @@ test('the inspector never confuses multiple YAML documents or variant IDs', () =
   assert.equal(outlineDeclarationKey(items[2].declaration), '2:1:0');
   const reordered = [items[2], items[0], items[1], items[3]];
   assert.equal(outlineKeyAtLine(reordered, 16), '2:1:base');
+});
+
+test('legacy tabs resolve only unique, complete matches and keep exact variant identity', () => {
+  const base = entry(15, 1);
+  const variant = entry(15, 1, 0);
+  const { variant_index: _variant, ...legacy } = base.declaration;
+  assert.equal(resolvePrototypeTab([base], legacy, false), base.declaration);
+  assert.equal(resolvePrototypeTab([variant], legacy, false), variant.declaration);
+  assert.equal(resolvePrototypeTab([base, variant], legacy, false), null);
+  assert.equal(resolvePrototypeTab([base], legacy, true), null);
+  assert.equal(resolvePrototypeTab([base, variant], { ...legacy, variant_index: 0 }, false), variant.declaration);
+  assert.equal(outlineDeclarationKey(resolvePrototypeTab([base, variant], { ...legacy, variant_index: 0 }, false)!), '1:1:0');
+});
+
+test('pending form patches are rejected after switching or reopening a tab', () => {
+  const target = entry(2, 1).declaration;
+  assert.equal(canApplyPrototypeFields(target, target, target, target.file), true);
+  assert.equal(canApplyPrototypeFields(target, null, target, target.file), false);
+  assert.equal(canApplyPrototypeFields(target, { ...target }, target, target.file), false);
+  assert.equal(canApplyPrototypeFields(target, target, { ...target, id: 'other' }, target.file), false);
+  assert.equal(canApplyPrototypeFields(target, target, target, 'other.yml'), false);
 });

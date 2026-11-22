@@ -12,6 +12,7 @@ import { normalizeStudioError, type StudioError } from './lib/errors';
 import type { ProjectScanProgress } from './lib/api';
 import { closeTab, openTab, nextTabPath, reorderTab, tabId, isLastFileView, type EditorTab, type TabState } from './lib/tabs';
 import { readTabSession, retainAvailableTabs, writeTabSession } from './lib/tab-session';
+import { canApplyPrototypeFields, outlineDeclarationKey, resolvePrototypeTab } from './lib/outline-selection';
 import { readRecentProjects, rememberRecentProject, writeRecentProjects } from './lib/recent-projects';
 import { LAST_PROJECT_KEY, readLastProject, readWorkspaceUi, writeWorkspaceUi } from './lib/workspace-ui';
 import { dirtyDocumentPaths, reconcileSavedDraft } from './lib/draft-state';
@@ -123,9 +124,13 @@ export default function App() {
   const [creatingRsi, setCreatingRsi] = useState(false);
   const [showingCSharp, setShowingCSharp] = useState(false);
   const [showingUiSources, setShowingUiSources] = useState(false);
-  const [fieldTarget, setFieldTarget] = useState<PrototypeFieldLocator | null>(null);
+  const [fieldTarget, setFieldTargetState] = useState<PrototypeFieldLocator | null>(null);
   const fieldTargetRef = useRef(fieldTarget);
   fieldTargetRef.current = fieldTarget;
+  const setFieldTarget = (target: PrototypeFieldLocator | null) => {
+    fieldTargetRef.current = target;
+    setFieldTargetState(target);
+  };
   const [prototypePanel, setPrototypePanel] = useState<'fields' | 'components' | 'localization' | 'parents'>('fields');
   // The Electron inspector followed the active prototype without requiring a
   // second click in a resource list. Keep it visible for opened YAML by default.
@@ -192,8 +197,15 @@ export default function App() {
 
   // Resolve persisted/indexed locators against the actual shared draft, never an old line number.
   const lastPrototypeJump = useRef<string | null>(null);
+  const lastPrototypeTab = useRef<string | null>(null);
   const [prototypeJumpRequest, setPrototypeJumpRequest] = useState(0);
+  const [outlineJump, setOutlineJump] = useState<{ tab: string; key: string; line: number; token: number } | null>(null);
   useEffect(() => {
+    if (lastPrototypeTab.current !== tabState.active) {
+      lastPrototypeTab.current = tabState.active;
+      lastPrototypeJump.current = null;
+      setOutlineJump(null);
+    }
     const target = selected?.prototype;
     if (!selected || !target || !document || document.path !== target.file) {
       lastPrototypeJump.current = null;
@@ -203,21 +215,20 @@ export default function App() {
     let cancelled = false;
     void studio.inspectYamlOutline(target.file, activeText).then((outline) => {
       if (cancelled) return;
-      const matches = outline.declarations.map((item) => item.declaration).filter((item) =>
-        item.file === target.file && item.kind === target.kind && item.id === target.id
-        && item.document_index === target.document_index && item.item_index === target.item_index
-        && target.variant_index !== undefined && item.variant_index === target.variant_index
-        && item.mode === target.mode);
-      if (outline.truncated || matches.length !== 1) {
+      const match = resolvePrototypeTab(outline.declarations, target, outline.truncated);
+      if (!match) {
         setFieldTarget(null);
+        setOutlineJump(null);
         setNotice('Прототип во вкладке больше не соответствует черновику. Откройте его заново из актуального индекса.');
         return;
       }
       const jump = id + ':' + prototypeJumpRequest;
       if (lastPrototypeJump.current !== jump) {
         lastPrototypeJump.current = jump;
-        setYamlCursor({ path: target.file, line: matches[0].line });
-        setJumpTarget({ path: target.file, line: matches[0].line, token: ++jumpCounter.current });
+        const token = ++jumpCounter.current;
+        setOutlineJump({ tab: id, key: outlineDeclarationKey(match), line: match.line, token });
+        setYamlCursor({ path: target.file, line: match.line });
+        setJumpTarget({ path: target.file, line: match.line, token });
       }
     }).catch((failure) => { if (!cancelled) setError(normalizeStudioError(failure)); });
     return () => { cancelled = true; };
@@ -761,6 +772,7 @@ export default function App() {
     setDrafts((previous) => ({
       ...previous, [snapshot.path]: snapshot.content,
     }));
+    if (tabState.active !== result.state.active) setFieldTarget(null);
     setTabState(result.state);
     void focusResource(snapshot.path);
     setNotice('Черновик восстановлен в редактор. Исходный YAML пока не изменён.');
@@ -1132,14 +1144,9 @@ export default function App() {
     locator: PrototypeFieldLocator, original: string, changed: string,
   ): boolean {
     const file = fieldTarget?.file;
-    if (!file || selectedPathRef.current !== file || saving || opening || transitioning || refreshing) return false;
-    // A slow native IPC result must never apply to a different declaration
-    // even when another selected prototype shares the same source file.
-    if (locator.file !== fieldTarget.file || locator.id !== fieldTarget.id
-        || locator.kind !== fieldTarget.kind
-        || locator.document_index !== fieldTarget.document_index
-        || locator.item_index !== fieldTarget.item_index
-        || locator.mode !== fieldTarget.mode) return false;
+    // Reject callbacks belonging to a closed or replaced form, even in the same file.
+    if (!file || !canApplyPrototypeFields(fieldTarget, fieldTargetRef.current, locator, selectedPathRef.current)
+        || saving || opening || transitioning || refreshing) return false;
     const live = draftsRef.current[file] ?? documents.current.get(file)?.content;
     if (live !== original) return false;
     const next = { ...draftsRef.current, [file]: changed };
@@ -1727,6 +1734,7 @@ export default function App() {
           {showYamlOutline && selected.kind === 'yaml' && document?.path === selected.path && !reading
             && <PrototypeOutlinePanel key={overview.project_root + ':' + workspaceRevision + ':' + selected.path}
               path={selected.path} source={activeText}
+              prototypeJump={outlineJump?.tab === tabState.active ? outlineJump : null}
               cursorLine={yamlCursor?.path === selected.path
                 ? yamlCursor.line : jumpTarget?.path === selected.path ? jumpTarget.line : null}
               workspaceKey={overview.project_root + ':' + workspaceRevision}

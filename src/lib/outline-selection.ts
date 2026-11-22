@@ -1,4 +1,22 @@
-import type { PrototypeDeclaration, SourceOutlineEntry } from './api';
+import type { PrototypeDeclaration, PrototypeFieldLocator, SourceOutlineEntry } from './api';
+import type { EditorTab } from './tabs';
+
+export function canApplyPrototypeFields(target: PrototypeFieldLocator | null, current: PrototypeFieldLocator | null, locator: PrototypeFieldLocator, path: string | null): boolean {
+  return !!target && target === current && path === target.file
+    && locator.file === target.file && locator.id === target.id && locator.kind === target.kind
+    && locator.document_index === target.document_index && locator.item_index === target.item_index
+    && locator.mode === target.mode;
+}
+
+export function resolvePrototypeTab(entries: readonly SourceOutlineEntry[], target: NonNullable<EditorTab['prototype']>, truncated: boolean): PrototypeDeclaration | null {
+  if (truncated) return null;
+  const matches = entries.map(({ declaration }) => declaration).filter((item) =>
+    item.file === target.file && item.kind === target.kind && item.id === target.id
+    && item.document_index === target.document_index && item.item_index === target.item_index
+    && (target.variant_index === undefined || item.variant_index === target.variant_index)
+    && item.mode === target.mode);
+  return matches.length === 1 ? matches[0] : null;
+}
 
 /** Stable identity of a YAML item, independent of its editable ID. */
 export function outlineDeclarationKey(

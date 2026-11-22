@@ -24,6 +24,7 @@ interface Props {
   liveValidation: boolean;
   validationDelay: number;
   cursorLine: number | null;
+  prototypeJump: { key: string; line: number; token: number } | null;
   workspaceKey: string;
   sourceDirty: boolean;
   onNavigatePrototype: (kind: string, id: string) => void;
@@ -96,7 +97,7 @@ function SelectedEntityLocaleStatus({
 /** Parses the currently visible YAML draft, not the last saved catalog copy. */
 export default function PrototypeOutlinePanel({
   path, source, busy, onJump, onEdit, onOpenRsi, onOpenFtl,
-  requiredLocales, liveValidation, validationDelay, cursorLine,
+  requiredLocales, liveValidation, validationDelay, cursorLine, prototypeJump,
   workspaceKey, sourceDirty, onNavigatePrototype, onOpenSource,
 }: Props) {
   const [snapshot, setSnapshot] = useState<{ path: string; source: string; outline: SourceOutline } | null>(null);
@@ -106,6 +107,10 @@ export default function PrototypeOutlinePanel({
   const [manualSelection, setManualSelection] = useState<{ key: string; line: number } | null>(null);
   const [showLinked, setShowLinked] = useState(false);
   const [showInheritance, setShowInheritance] = useState(false);
+
+  useEffect(() => {
+    setManualSelection(prototypeJump ? { key: prototypeJump.key, line: prototypeJump.line } : null);
+  }, [prototypeJump]);
 
   useEffect(() => {
     let active = true;
