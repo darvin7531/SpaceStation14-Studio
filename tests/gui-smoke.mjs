@@ -214,7 +214,9 @@ try {
   assert.ok(await find('.content-search-modal'), 'failed open must not close search');
   assert.ok(await script("return document.activeElement?.matches('.content-search-modal input[type=search]');"), 'failed open restores search focus');
   await keys(await find('.content-search-modal input[type=search]'), '\uE00C');
+  await until('tab limit search closed', async () => !(await find('.content-search-modal')));
   for (let i = 1; i <= 9; i++) {
+    await script(`document.querySelector('.tab:has([role=tab][title="Resources/Prototypes/filler${i}.yml"]) .tab-close').scrollIntoView({ block: 'nearest', inline: 'center' });`);
     await click(`.tab:has([role=tab][title="Resources/Prototypes/filler${i}.yml"]) .tab-close`);
     await until('filler tab closed', async () => !(await find(`[role=tab][title="Resources/Prototypes/filler${i}.yml"]`)));
   }
