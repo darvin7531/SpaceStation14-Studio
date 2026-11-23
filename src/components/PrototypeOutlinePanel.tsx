@@ -8,7 +8,7 @@ import SpriteLayerInspector from './SpriteLayerInspector';
 import LinkedPrototypePanel from './LinkedPrototypePanel';
 import InheritancePreviewPanel from './InheritancePreviewPanel';
 import { missingLocaleFiles } from '../lib/localization-navigation';
-import { outlineDeclarationKey, outlineKeyAtLine } from '../lib/outline-selection';
+import { inheritedSpriteForEntry, outlineDeclarationKey, outlineKeyAtLine } from '../lib/outline-selection';
 import { prototypeNotice } from '../lib/prototype-notices';
 import { useI18n } from '../i18n';
 
@@ -112,20 +112,23 @@ function InheritedSpriteInspector({ entry, workspaceKey, busy, onOpenRsi, onOpen
       .catch((error: unknown) => { if (active) setFailure(normalizeStudioError(error)); });
     return () => { active = false; };
   }, [entry.declaration.kind, entry.declaration.id, workspaceKey]);
-  const projection = report?.sprite;
+  const projection = inheritedSpriteForEntry(entry, report);
   return <>
     {!report && !failure && <p role="status">Загрузка структурного Sprite…</p>}
     {failure && <p role="alert">Не удалось разрешить Sprite: {failure.message} [{failure.code}]</p>}
     {report && <>
-      <p className="prototype-outline-warning">Структурный Sprite из сохранённых источников; не итоговая композиция игры.
-        {!report.structural_complete && ' Цепочка неоднозначна или неполна — результат приблизителен.'}</p>
+      <p className="prototype-outline-warning">{projection
+        ? 'Структурный Sprite из сохранённых источников; не итоговая композиция игры.'
+        : 'Не удалось однозначно определить унаследованный Sprite; показаны прямые данные объявления.'}</p>
       {report.warnings.map((warning, index) => <p className="prototype-outline-warning" key={index}>{prototypeNotice(language, warning)}</p>)}
       {projection?.source && <button type="button" onClick={() => onOpenSource(projection.source!.file, projection.source!.line)}>
         Последний источник компонента: {projection.source.file}:{projection.source.line}
       </button>}
-      {projection && <SpriteLayerInspector sprite={projection.sprite} layers={projection.layers}
-        total={projection.layers_total} busy={busy} onOpenRsi={onOpenRsi}/>}
     </>}
+    {projection ? <SpriteLayerInspector sprite={projection.sprite} layers={projection.layers}
+      total={projection.layers_total} busy={busy} onOpenRsi={onOpenRsi}/>
+      : (entry.sprite || entry.sprite_layers.length > 0) && <SpriteLayerInspector sprite={entry.sprite}
+        layers={entry.sprite_layers} total={entry.sprite_layers_total} busy={busy} onOpenRsi={onOpenRsi}/>}
   </>;
 }
 

@@ -782,6 +782,7 @@ pub enum PrototypeWarning {
 pub struct PrototypeInheritancePreview {
     pub kind: String,
     pub id: String,
+    pub base: Option<PrototypeDeclaration>,
     /// All referenced static sources were available and had a unique base.
     /// Does NOT mean that the values equal RobustToolbox's runtime objects.
     pub structural_complete: bool,
@@ -1189,9 +1190,13 @@ pub fn preview_inheritance(
         .collect();
     let source = if candidates.len() == 1 { candidates.into_iter().next() } else { None };
     let sprite = inherited_sprite(&result.node, source, &indexed);
+    let normal: Vec<_> = catalog.source_declarations(kind, id).into_iter()
+        .filter(|declaration| declaration.mode == "normal").collect();
+    let base = if normal.len() == 1 { normal.into_iter().next() } else { None };
     Ok(PrototypeInheritancePreview {
         kind: kind.to_owned(),
         id: id.to_owned(),
+        base,
         structural_complete,
         runtime_exact: false,
         direct_parents: result.parents,

@@ -1,5 +1,16 @@
-import type { PrototypeDeclaration, PrototypeFieldLocator, SourceOutlineEntry } from './api';
+import type { PrototypeDeclaration, PrototypeFieldLocator, SourceOutlineEntry, PrototypeInheritancePreview } from './api';
 import type { EditorTab } from './tabs';
+
+export function inheritedSpriteForEntry(entry: SourceOutlineEntry, report: PrototypeInheritancePreview | null) {
+  const selected = entry.declaration;
+  const base = report?.base;
+  if (!report?.structural_complete || !base || !report.sprite?.source
+      || report.kind !== selected.kind || report.id !== selected.id
+      || base.kind !== selected.kind || base.id !== selected.id || base.file !== selected.file
+      || base.mode !== selected.mode || base.document_index !== selected.document_index
+      || base.item_index !== selected.item_index || base.variant_index !== selected.variant_index) return null;
+  return report.sprite;
+}
 
 export function canApplyPrototypeFields(target: PrototypeFieldLocator | null, current: PrototypeFieldLocator | null, locator: PrototypeFieldLocator, path: string | null): boolean {
   return !!target && target === current && path === target.file

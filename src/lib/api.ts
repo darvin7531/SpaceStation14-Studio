@@ -337,6 +337,7 @@ export interface LinkedPrototypeReport {
 export interface PrototypeInheritancePreview {
   kind: string;
   id: string;
+  base: PrototypeDeclaration | null;
   structural_complete: boolean;
   runtime_exact: boolean;
   direct_parents: string[];

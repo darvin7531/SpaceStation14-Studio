@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { PrototypeDeclaration, SourceOutlineEntry } from '../src/lib/api';
-import { canApplyPrototypeFields, outlineDeclarationKey, outlineKeyAtLine, resolvePrototypeTab } from '../src/lib/outline-selection';
+import { canApplyPrototypeFields, outlineDeclarationKey, outlineKeyAtLine, resolvePrototypeTab, inheritedSpriteForEntry } from '../src/lib/outline-selection';
 
 const entry = (line: number, item_index: number, variant_index: number | null = null,
   document_index = 1): SourceOutlineEntry => ({
@@ -58,4 +58,18 @@ test('pending form patches are rejected after switching or reopening a tab', () 
   assert.equal(canApplyPrototypeFields(target, { ...target }, target, target.file), false);
   assert.equal(canApplyPrototypeFields(target, target, { ...target, id: 'other' }, target.file), false);
   assert.equal(canApplyPrototypeFields(target, target, target, 'other.yml'), false);
+});
+
+test('inherited sprite requires a complete report for the exact selected base and a known sprite source', () => {
+  const selected = entry(2, 1);
+  const projection = { sprite: null, layers: [], layers_total: 0, source: selected.declaration };
+  const report = { kind: 'entity', id: selected.declaration.id, structural_complete: true,
+    base: selected.declaration, sprite: projection } as Parameters<typeof inheritedSpriteForEntry>[1];
+  assert.equal(inheritedSpriteForEntry(selected, report), projection);
+  assert.equal(inheritedSpriteForEntry(selected, null), null);
+  assert.equal(inheritedSpriteForEntry(selected, { ...report, structural_complete: false }), null);
+  assert.equal(inheritedSpriteForEntry(selected, { ...report, base: null }), null);
+  assert.equal(inheritedSpriteForEntry(selected, { ...report, base: { ...selected.declaration, file: 'other.yml' } }), null);
+  assert.equal(inheritedSpriteForEntry(selected, { ...report, base: { ...selected.declaration, item_index: 2 } }), null);
+  assert.equal(inheritedSpriteForEntry(selected, { ...report, sprite: { ...projection, source: null } }), null);
 });
