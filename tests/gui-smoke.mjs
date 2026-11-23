@@ -62,7 +62,7 @@ async function edit(value, token) {
 try {
   await until('tauri-driver', async () => (await request('GET', '/status')).ready);
   const created = await request('POST', '/session', { capabilities: { alwaysMatch: {
-    'tauri:options': { application: resolve('src-tauri/target/release/ss14-studio') },
+    'tauri:options': { application: resolve(process.env.SMOKE_EXECUTABLE || 'src-tauri/target/release/ss14-studio') },
   } } });
   session = created.sessionId;
   assert.ok(session, 'WebDriver session ID');

@@ -54,7 +54,7 @@ jobs:
       - name: Install Linux native dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev build-essential libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev build-essential libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf webkit2gtk-driver xvfb xauth
       - name: Install frontend dependencies
         run: npm install --no-audit --no-fund
       - name: Generate icons from canonical PNG
@@ -70,6 +70,20 @@ jobs:
             src-tauri/target/release/bundle/appimage/*.AppImage
           if-no-files-found: error
           retention-days: 14
+      - name: Install generated Debian package
+        run: |
+          packages=(src-tauri/target/release/bundle/deb/*.deb)
+          [[ ${#packages[@]} -eq 1 && -f "${packages[0]}" ]]
+          sudo apt-get install -y "./${packages[0]}"
+          dpkg -L "$(dpkg-deb -f "${packages[0]}" Package)" | grep -Fx /usr/bin/ss14-studio
+          test -x /usr/bin/ss14-studio
+      - name: Install Tauri WebDriver
+        run: cargo install tauri-driver --version '=2.0.5' --locked
+      - name: Exercise installed desktop application
+        timeout-minutes: 5
+        env:
+          SMOKE_EXECUTABLE: /usr/bin/ss14-studio
+        run: xvfb-run -a timeout --signal=TERM --kill-after=10s 180s bash tests/gui-smoke.sh
 
   windows:
     name: Build Windows NSIS + MSI installers
