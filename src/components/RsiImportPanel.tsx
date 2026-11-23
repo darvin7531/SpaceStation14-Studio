@@ -12,7 +12,8 @@ interface Props {
   replaceState?: RsiState;
   expectedPngRevision?: string;
   attachState?: RsiState;
-  projectRoot?: string;
+  projectRoot: string;
+  onAttempt: (failure?: unknown) => void;
 }
 
 const PNG_LIMIT = 8 * 1024 * 1024;
@@ -31,7 +32,7 @@ function fileToDataUrl(file: File): Promise<string> {
 
 /** Append a new state or replace an existing PNG through an archived, conflict-aware operation. */
 export default function RsiImportPanel({
-  path, revision, onImported, replaceState, expectedPngRevision, attachState, projectRoot,
+  path, revision, onImported, replaceState, expectedPngRevision, attachState, projectRoot, onAttempt,
 }: Props) {
   const attaching = Boolean(attachState);
   const existingState = replaceState ?? attachState;
@@ -133,11 +134,17 @@ export default function RsiImportPanel({
         ...(replacing ? { expected_png_revision: expectedPngRevision } : {}),
         ...(preserveDelays && replaceState ? { delays: replaceState.delays } : {}),
       };
-      if (attaching && !projectRoot) throw new Error('Проект не определён.');
-      const result = attaching ? await studio.attachRsiState(request, projectRoot!) : replacing
-        ? await studio.replaceRsiState(request)
-        : metadataOnly ? await studio.createRsiState(request) : await studio.importRsiState(request);
+      let result: ImportedRsiState;
+      try {
+        result = attaching ? await studio.attachRsiState(request, projectRoot) : replacing
+          ? await studio.replaceRsiState(request, projectRoot)
+          : metadataOnly ? await studio.createRsiState(request, projectRoot) : await studio.importRsiState(request, projectRoot);
+      } catch (failure) {
+        onAttempt(failure);
+        throw failure;
+      }
       onImported(result);
+      onAttempt();
       setFile(null);
       if (input.current) input.current.value = '';
     } catch (failure) {

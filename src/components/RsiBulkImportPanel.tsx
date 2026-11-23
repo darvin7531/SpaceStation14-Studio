@@ -9,6 +9,8 @@ import { planRsiBatch, pngHeaderSize } from '../lib/rsi-batch-plan';
 
 interface Props {
   path: string;
+  projectRoot: string;
+  onAttempt: (failure?: unknown) => void;
   revision: string;
   metadata: string;
   onImported: (result: ImportedRsiState) => void;
@@ -32,7 +34,7 @@ function readPngAsDataUrl(file: File, language: Language): Promise<string> {
  * repeatedly. All PNG dimensions and names are checked before the first write.
  */
 export default function RsiBulkImportPanel({
-  path, revision, metadata, onImported, onBatchOutcome,
+  path, revision, metadata, onImported, onBatchOutcome, projectRoot, onAttempt,
 }: Props) {
   const { t, language } = useI18n();
   const [files, setFiles] = useState<File[]>([]);
@@ -65,6 +67,8 @@ export default function RsiBulkImportPanel({
     setImporting(true);
     let last: ImportedRsiState | null = null;
     let imported = 0;
+    let attempted = false;
+    let operationFailure: unknown;
     try {
       if (!inspection.size || inspection.errors.length) {
         throw new Error(t('rsi.bulk.invalidMeta'));
@@ -90,7 +94,10 @@ export default function RsiBulkImportPanel({
         const item = plan[i];
         setProgress(t('rsi.bulk.progress', { current: i + 1, total: plan.length, name: item.name }));
         const data_url = await readPngAsDataUrl(files[i], language);
-        const result = await studio.importRsiState({
+        let result: ImportedRsiState;
+        try {
+          attempted = true;
+          result = await studio.importRsiState({
           path,
           expected_revision: expectedRevision,
           name: item.name,
@@ -98,7 +105,11 @@ export default function RsiBulkImportPanel({
           frames_per_direction: item.frames,
           delay_seconds: delay,
           data_url,
-        });
+          }, projectRoot);
+        } catch (failure) {
+          operationFailure = failure;
+          throw failure;
+        }
         expectedRevision = result.revision;
         last = result;
         imported++;
@@ -108,6 +119,7 @@ export default function RsiBulkImportPanel({
         onBatchOutcome(t('rsi.bulk.success', { count: imported, path }));
       }
     } catch (error) {
+      if (attempted) operationFailure = error;
       const normalized = normalizeStudioError(error);
       const detail = error instanceof Error ? error.message : [normalized.message, normalized.hint, normalized.code, normalized.details].filter(Boolean).join(' ');
       if (last) {
@@ -117,6 +129,7 @@ export default function RsiBulkImportPanel({
         setFailure(detail);
       }
     } finally {
+      if (attempted) onAttempt(operationFailure);
       setImporting(false);
       setProgress('');
     }

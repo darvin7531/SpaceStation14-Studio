@@ -858,17 +858,17 @@ export const studio = {
   readRsiSheet(path: string, name: string): Promise<RsiSheetImage> {
     return invoke('read_rsi_sheet', { path, name });
   },
-  importRsiState(request: RsiImportRequest): Promise<ImportedRsiState> {
-    return invoke('import_rsi_state', { request });
+  importRsiState(request: RsiImportRequest, expectedProjectRoot: string): Promise<ImportedRsiState> {
+    return invoke('import_rsi_state', { request, expectedProjectRoot });
   },
   attachRsiState(request: RsiImportRequest, expectedProjectRoot: string): Promise<ImportedRsiState> {
     return invoke('attach_rsi_state', { request, expectedProjectRoot });
   },
-  createRsiState(request: RsiImportRequest): Promise<ImportedRsiState> {
-    return invoke('create_rsi_state', { request });
+  createRsiState(request: RsiImportRequest, expectedProjectRoot: string): Promise<ImportedRsiState> {
+    return invoke('create_rsi_state', { request, expectedProjectRoot });
   },
-  replaceRsiState(request: RsiImportRequest): Promise<ImportedRsiState> {
-    return invoke('replace_rsi_state', { request });
+  replaceRsiState(request: RsiImportRequest, expectedProjectRoot: string): Promise<ImportedRsiState> {
+    return invoke('replace_rsi_state', { request, expectedProjectRoot });
   },
   updateRsiCredits(request: RsiCreditsUpdate): Promise<ImportedRsiState> {
     return invoke('update_rsi_credits', { request });

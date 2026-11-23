@@ -114,6 +114,14 @@ fn current_project(state: &WorkspaceState) -> Result<Arc<ProjectIndex>, StudioEr
         })
 }
 
+fn project_for_rsi_write(state: &WorkspaceState, expected: &str) -> Result<Arc<ProjectIndex>, StudioError> {
+    let index = current_project(state)?;
+    if index.overview().project_root != expected {
+        return Err(StudioError::new("PROJECT_CHANGED", "Проект изменился.", "Откройте RSI заново."));
+    }
+    Ok(index)
+}
+
 #[tauri::command]
 async fn check_app_updates(
     app: tauri::AppHandle,
@@ -370,9 +378,10 @@ async fn read_rsi_sheet(
 #[tauri::command]
 async fn replace_rsi_state(
     request: RsiStateImport,
+    expected_project_root: String,
     state: State<'_, WorkspaceState>,
 ) -> Result<ImportedRsiState, StudioError> {
-    let index = current_project(&state)?;
+    let index = project_for_rsi_write(&state, &expected_project_root)?;
     tauri::async_runtime::spawn_blocking(move || index.replace_rsi_state(&request))
         .await
         .map_err(interrupted)?
@@ -383,9 +392,10 @@ async fn replace_rsi_state(
 #[tauri::command]
 async fn import_rsi_state(
     request: RsiStateImport,
+    expected_project_root: String,
     state: State<'_, WorkspaceState>,
 ) -> Result<ImportedRsiState, StudioError> {
-    let index = current_project(&state)?;
+    let index = project_for_rsi_write(&state, &expected_project_root)?;
     tauri::async_runtime::spawn_blocking(move || index.import_rsi_state(&request))
         .await
         .map_err(interrupted)?
@@ -397,10 +407,7 @@ async fn attach_rsi_state(
     expected_project_root: String,
     state: State<'_, WorkspaceState>,
 ) -> Result<ImportedRsiState, StudioError> {
-    let index = current_project(&state)?;
-    if index.overview().project_root != expected_project_root {
-        return Err(StudioError::new("PROJECT_CHANGED", "Проект изменился.", "Откройте RSI заново."));
-    }
+    let index = project_for_rsi_write(&state, &expected_project_root)?;
     tauri::async_runtime::spawn_blocking(move || index.attach_rsi_state(&request))
         .await
         .map_err(interrupted)?
@@ -409,9 +416,10 @@ async fn attach_rsi_state(
 #[tauri::command]
 async fn create_rsi_state(
     request: RsiStateImport,
+    expected_project_root: String,
     state: State<'_, WorkspaceState>,
 ) -> Result<ImportedRsiState, StudioError> {
-    let index = current_project(&state)?;
+    let index = project_for_rsi_write(&state, &expected_project_root)?;
     tauri::async_runtime::spawn_blocking(move || index.create_rsi_state(&request))
         .await
         .map_err(interrupted)?
@@ -1332,4 +1340,25 @@ pub fn run() -> Result<(), tauri::Error> {
             delete_draft
         ])
         .run(tauri::generate_context!())
+}
+
+#[cfg(test)]
+mod rsi_project_binding_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_a_project_switch_before_any_rsi_write() {
+        let base = std::env::temp_dir().join(format!("studio-rsi-binding-{}", std::process::id()));
+        let a = base.join("a");
+        let b = base.join("b");
+        std::fs::create_dir_all(a.join("Resources/Prototypes")).unwrap();
+        std::fs::create_dir_all(b.join("Resources/Prototypes")).unwrap();
+        let first = Arc::new(ProjectIndex::open(a.to_str().unwrap()).unwrap());
+        let expected = first.overview().project_root.clone();
+        let state = WorkspaceState(Mutex::new(Some(first)));
+        assert!(project_for_rsi_write(&state, &expected).is_ok());
+        *state.0.lock().unwrap() = Some(Arc::new(ProjectIndex::open(b.to_str().unwrap()).unwrap()));
+        assert_eq!(project_for_rsi_write(&state, &expected).unwrap_err().code, "PROJECT_CHANGED");
+        std::fs::remove_dir_all(base).unwrap();
+    }
 }

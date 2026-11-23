@@ -1,3 +1,4 @@
+import { refreshAfterRsiImport } from './lib/rsi-import-refresh';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useI18n } from './i18n';
 import { listen } from '@tauri-apps/api/event';
@@ -1807,7 +1808,18 @@ export default function App() {
                 initialState={rsiRequested?.path === selected.path ? rsiRequested.state : null}
                 path={selected.path} metadata={document.content} revision={document.revision}
                 onImported={(result) => { if (projectRootRef.current === overview.project_root) onRsiImported(selected.path, result); }}
-                onBatchOutcome={(message) => setNotice(message)}
+                onImportAttempt={(failure) => {
+                  const root = overview.project_root;
+                  const path = selected.path;
+                  if (projectRootRef.current === root) setWorkspaceRevision((value) => value + 1);
+                  void refreshAfterRsiImport(root, () => projectRootRef.current,
+                    () => studio.readResource(path), (loaded) => {
+                      documents.current.set(path, loaded);
+                      setDrafts((previous) => ({ ...previous, [path]: loaded.content }));
+                      setDocument((current) => current?.path === path ? loaded : current);
+                    }, setError, failure);
+                }}
+                onBatchOutcome={(message) => { if (projectRootRef.current === overview.project_root) setNotice(message); }}
                 onTimingUpdated={(result) => onRsiImported(selected.path, result, 'timing')}
                 onCreditsUpdated={(result) => onRsiImported(selected.path, result, 'credits')}
                 onSizeUpdated={(result) => onRsiImported(selected.path, result, 'size')}
