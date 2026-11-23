@@ -109,7 +109,18 @@ try {
       { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: 1, ctrlKey: true }));
   `);
   await ctrlClickWord('SmokeSecond');
-  await until('first prototype search held', () => script('return window.__navigationGate.held;'));
+  try {
+    await until('first prototype search held', () => script('return window.__navigationGate.held;'));
+  } catch (error) {
+    console.error('Navigation diagnostic:', await script(`
+      const line = [...document.querySelectorAll('.monaco-shell .view-line')].find(el => el.textContent.includes('SmokeSecond'));
+      const rect = line?.getBoundingClientRect();
+      return JSON.stringify({ line: line?.textContent, rect: rect?.toJSON(),
+        target: rect && document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)?.outerHTML,
+        state: document.body.innerText });
+    `));
+    throw error;
+  }
   await ctrlClickWord('SmokeFirst');
   await until('newer prototype selected', () => find('[role=tab][data-prototype-id="SmokeFirst"][aria-selected=true]'));
   await script('window.__navigationGate.release();');
