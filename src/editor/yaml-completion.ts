@@ -9,6 +9,42 @@ export interface YamlCompletionContext {
   existingFields?: readonly string[];
 }
 
+type EditorModel = { getLineContent(line: number): string; getVersionId(): number };
+const editorContexts = new WeakMap<EditorModel, { version: number; lineNumber: number; lines: string[] }>();
+
+/** Include the entire current prototype, including unsaved edits. */
+// ponytail: first request per line/version scans the prototype; index scopes if large prototypes lag.
+export function yamlEditorContextLines(model: EditorModel, lineNumber: number): string[] {
+  const cache = editorContexts.get(model);
+  const version = model.getVersionId();
+  if (cache?.version === version && cache.lineNumber === lineNumber) return cache.lines;
+  const lines: string[] = [];
+  for (let line = lineNumber; line >= 1; line -= 1) {
+    const text = model.getLineContent(line);
+    lines.push(text);
+    if (/^-\s*type:\s*\S+/.test(text)) break;
+  }
+  lines.reverse();
+  editorContexts.set(model, { version, lineNumber, lines });
+  return lines;
+}
+
+export function yamlEditorCompletionContext(model: EditorModel, lineNumber: number, column: number): YamlCompletionContext | null {
+  const line = model.getLineContent(lineNumber);
+  if (!Number.isInteger(column) || column < 1 || column > line.length + 1) return null;
+  const prefix = line.slice(0, column - 1);
+  if (!/^\s*(?:parent:\s*(?:[A-Za-z0-9_-]*|\[[^\]\n]*)|-\s*(?:type:\s*)?[A-Za-z0-9_-]*|sprite:\s*["']?[^"'#\s]*|[a-zA-Z_][\w-]*)$/.test(prefix)) return null;
+  const lines = yamlEditorContextLines(model, lineNumber);
+  return yamlCompletionContext(lines, lines.length, column);
+}
+
+export function yamlEditorComponentHoverTarget(model: EditorModel, lineNumber: number, column: number) {
+  const match = model.getLineContent(lineNumber).match(/^(\s*-\s*type:\s*)([A-Za-z0-9_]+)(?:\s*(?:#.*)?)?$/);
+  if (!match || column < match[1].length + 1 || column > match[1].length + match[2].length + 1) return null;
+  const lines = yamlEditorContextLines(model, lineNumber);
+  return yamlComponentHoverTarget(lines, lines.length, column);
+}
+
 function insideComponents(lines: readonly string[], lineNumber: number): boolean {
   for (let index = lineNumber - 2; index >= 0; index -= 1) {
     const line = lines[index];

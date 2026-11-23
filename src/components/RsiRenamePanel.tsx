@@ -7,18 +7,19 @@ interface Props {
   path: string;
   revision: string;
   name: string;
-  expectedPngRevision: string;
+  expectedPngRevision?: string;
+  expectedMissingPng?: boolean;
   onRenamed: (result: RenamedRsiState) => void;
 }
 
 export default function RsiRenamePanel({
-  path, revision, name, expectedPngRevision, onRenamed,
+  path, revision, name, expectedPngRevision, expectedMissingPng = false, onRenamed,
 }: Props) {
   const [nextName, setNextName] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<StudioError | null>(null);
-  const validName = /^[a-z0-9_-]{1,128}$/.test(nextName) && nextName !== name;
+  const validName = /^[a-z0-9_-]{1,128}$/.test(name) && /^[a-z0-9_-]{1,128}$/.test(nextName) && nextName !== name;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -29,7 +30,8 @@ export default function RsiRenamePanel({
       const result = await studio.renameRsiState({
         path,
         expected_revision: revision,
-        expected_png_revision: expectedPngRevision,
+        expected_png_revision: expectedPngRevision ?? null,
+        expected_missing_png: expectedMissingPng,
         old_name: name,
         new_name: nextName,
       });
@@ -44,9 +46,9 @@ export default function RsiRenamePanel({
   return <details className="rsi-import-panel">
     <summary><Pencil size={15}/> Переименовать состояние «{name}»</summary>
     <form onSubmit={(event) => void submit(event)}>
-      <p>Studio создаст резервную копию <code>meta.json</code> и исходного PNG,
+      {expectedMissingPng ? <p>Studio сохранит резервную копию <code>meta.json</code> и изменит имя состояния. PNG не изменяются; архив восстанавливается вручную. Остановите внешние процессы записи до завершения операции: они не блокируются и могут создать PNG со старым или новым именем после проверки, изменив связь состояния с изображением.</p> : <p>Studio создаст резервную копию <code>meta.json</code> и исходного PNG,
         затем создаст PNG с новым именем и изменит только поле <code>name</code>
-        выбранного состояния. Другие состояния, тайминги и изображения сохраняются.</p>
+        выбранного состояния. Другие состояния, тайминги и изображения сохраняются.</p>}
       <p className="rsi-warning"><AlertTriangle size={15}/>
         Ссылки на состояние «{name}» в других YAML, коде и ресурсах автоматически
         не переписываются. После переименования проверьте их вручную.</p>

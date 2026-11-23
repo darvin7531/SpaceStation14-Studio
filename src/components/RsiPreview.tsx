@@ -167,6 +167,10 @@ export default function RsiPreview({
         path={path} revision={revision} name={selectedState.name}
         expectedPngRevision={image.revision} onRenamed={onRenamed}/>}
 
+    {list && !listing && missingRsiStateNames(metadata, list.sheets.map((sheet) => sheet.name)).map((name) =>
+      <RsiRenamePanel key={'rename-missing:' + path + ':' + name + ':' + revision}
+        path={path} revision={revision} name={name} expectedMissingPng onRenamed={onRenamed}/>)}
+
     {frameLayout && selectedState && image && inspection.size && !loadingImage && !imageError && <RsiTimingPanel
       key={path + ':' + selectedState.name + ':' + revision}
       path={path} revision={revision} state={selectedState} pngRevision={image.revision}

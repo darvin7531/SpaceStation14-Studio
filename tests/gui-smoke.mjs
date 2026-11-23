@@ -316,7 +316,7 @@ try {
   assert.equal(await find('[role=tab][title="Resources/Prototypes/tabs.yml"]'), undefined, 'cancelled read opens no tab');
   await click('.resource-tree-filename[title="Resources/Prototypes/tabs.yml"]');
   await click('[role=tab][title="Resources/Prototypes/tabs.yml"]');
-  await until('returned prototype loaded', () => script("return document.querySelector('.monaco-shell .view-lines')?.textContent?.includes('SmokeSecond');"));
+  await until('returned prototype loaded', () => script("return document.querySelector('.monaco-shell .view-lines')?.textContent?.replace(/\\s+/g, ' ').includes('id: SmokeSecond');"));
   await until('returned editor cursor', () => find('.monaco-shell .cursors-layer .cursor'));
   assert.equal(await script("return document.querySelector('.monaco-shell .cursors-layer .cursor').style.top;"), '0px', 'abandoned jump must not reveal its old line');
   assert.equal(await script("return document.activeElement?.matches('.monaco-shell textarea.inputarea');"), false, 'abandoned jump must not focus the editor');

@@ -30,6 +30,7 @@ pub struct RsiRestoreRequest {
 pub struct RsiArchive {
     pub id: String,
     pub state: String,
+    pub automatic_restore: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -269,6 +270,7 @@ pub fn list(root: &Path, rsi_path: &str) -> Result<RsiArchiveList, StudioError> 
         match read_manifest(&entry.path(), rsi_path, &id) {
             Ok(manifest) => archives.push(RsiArchive {
                 id,
+                automatic_restore: manifest.original_png_revision.is_some(),
                 state: manifest.state,
             }),
             Err(_) => warnings.push(format!("Пропущен неполный архив: {id}")),
@@ -677,6 +679,7 @@ mod tests {
         assert_eq!(found.archives.len(), 1);
         assert_eq!(found.archives[0].state, "idle");
         assert_eq!(found.archives[0].id, id);
+        assert!(found.archives[0].automatic_restore);
         let restored = restore(&fixture.root, &fixture.request(id, current_revision)).unwrap();
         let meta: Value = serde_json::from_str(&restored.content).unwrap();
         assert_eq!(meta["states"][0]["name"], "idle");

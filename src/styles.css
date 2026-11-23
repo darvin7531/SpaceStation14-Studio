@@ -274,6 +274,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .resource-folder-directory[hidden] { display: none; }
 .resource-folder-directory .resource-list { min-height: 0; }
 .resource-tree { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 2px; }
+.resource-tree-entries { border: 0; margin: 0; padding: 0; min-width: 0; }
 .resource-tree-row { display: flex; align-items: center; gap: 5px; width: 100%; padding-top: 5px; padding-bottom: 5px; padding-right: 8px; border: 0; background: transparent; text-align: left; color: #bdd0e4; font-size: 11px; min-height: 27px; }
 .resource-tree-row:hover { background: #1c3045; }
 .resource-tree-row.active { background: #29435e; color: white; }

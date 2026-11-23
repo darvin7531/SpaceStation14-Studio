@@ -6,6 +6,7 @@ import { normalizeStudioError, type StudioError } from '../lib/errors';
 import { RESOURCE_TREE_MAX_DEPTH, RESOURCE_TREE_PAGE_SIZE, treePageOffset, treePrototypes, treePrototypeKey } from '../lib/resource-tree';
 
 interface Props {
+  revision: number;
   selectedPath: string | null;
   onOpen: (entry: ResourceEntry) => void;
   onOpenPrototype: (path: string, line: number, entry: PrototypeDeclaration) => void;
@@ -19,12 +20,12 @@ function TreeIcon({ kind, expanded = false }: { kind: ResourceBrowserEntry['kind
 }
 
 /** Electron sidebar tree, loaded one folder at a time by the native index. */
-function TreeDirectory({ directory, name, depth, selectedPath, onOpen, onOpenPrototype, initialOpen = false }:
+function TreeDirectory({ directory, name, depth, revision, selectedPath, onOpen, onOpenPrototype, initialOpen = false }:
   Props & { directory: string; name: string; depth: number; initialOpen?: boolean }) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(initialOpen);
   const [page, setPage] = useState(0);
-  const [loaded, setLoaded] = useState<{ directory: string; page: number; value: ResourceBrowserPage } | null>(null);
+  const [loaded, setLoaded] = useState<{ directory: string; page: number; revision: number; value: ResourceBrowserPage } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<StudioError | null>(null);
   const [retry, setRetry] = useState(0);
@@ -35,15 +36,16 @@ function TreeDirectory({ directory, name, depth, selectedPath, onOpen, onOpenPro
     setLoading(true);
     setError(null);
     void studio.browseResourceFolder(directory, treePageOffset(page), RESOURCE_TREE_PAGE_SIZE)
-      .then((value) => { if (active) setLoaded({ directory, page, value }); })
+      .then((value) => { if (active) setLoaded({ directory, page, revision, value }); })
       .catch((reason) => {
-        if (active) { setLoaded(null); setError(normalizeStudioError(reason)); }
+        if (active) setError(normalizeStudioError(reason));
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [expanded, directory, page, retry, depth]);
+  }, [expanded, directory, page, retry, depth, revision]);
 
   const result = loaded?.directory === directory && loaded.page === page ? loaded.value : null;
+  const stale = loading || !!error || loaded?.directory !== directory || loaded?.page !== page || loaded?.revision !== revision;
   const offset = treePageOffset(page);
   return <div className="resource-tree-branch">
     <button type="button" className="resource-tree-row" style={{ paddingLeft: 8 + depth * 14 }}
@@ -59,12 +61,14 @@ function TreeDirectory({ directory, name, depth, selectedPath, onOpen, onOpenPro
         <button type="button" onClick={() => setRetry((x) => x + 1)}>{t('browser.retry')}</button>
       </p>}
       {!loading && result?.total === 0 && <p className="muted">{t('browser.empty')}</p>}
+      <div className="resource-tree-entries" aria-disabled={stale}
+        onClickCapture={(event) => { if (stale) { event.preventDefault(); event.stopPropagation(); } }}>
       {result?.items.map((entry) => entry.kind === 'folder'
         ? <TreeDirectory key={entry.path} directory={entry.path} name={entry.name}
-            depth={depth + 1} selectedPath={selectedPath} onOpen={onOpen}
+            depth={depth + 1} revision={revision} selectedPath={selectedPath} onOpen={onOpen}
             onOpenPrototype={onOpenPrototype}/>
         : entry.kind === 'yaml'
-          ? <TreeYaml key={entry.path} entry={entry} depth={depth + 1}
+          ? <TreeYaml key={entry.path} entry={entry} depth={depth + 1} revision={revision}
               selectedPath={selectedPath} onOpen={onOpen} onOpenPrototype={onOpenPrototype}/>
           : <button type="button" key={entry.path} title={entry.path}
               className={'resource-tree-row' + (selectedPath === entry.path ? ' active' : '')}
@@ -73,7 +77,7 @@ function TreeDirectory({ directory, name, depth, selectedPath, onOpen, onOpenPro
               <span className="resource-tree-spacer"/><TreeIcon kind={entry.kind}/><span>{entry.name}</span>
             </button>)}
       {result && offset + result.items.length < result.total && <button type="button"
-        className="resource-tree-page" disabled={loading}
+        className="resource-tree-page"
         onClick={() => setPage((n) => n + 1)}>
         {t('browser.next')} · {t('common.countRange', {
           from: offset + result.items.length + 1,
@@ -82,9 +86,10 @@ function TreeDirectory({ directory, name, depth, selectedPath, onOpen, onOpenPro
         })}
       </button>}
       {page > 0 && <button type="button" className="resource-tree-page"
-        disabled={loading} onClick={() => setPage((n) => Math.max(0, n - 1))}>
+        onClick={() => setPage((n) => Math.max(0, n - 1))}>
         {t('browser.prev')}
       </button>}
+      </div>
     </div>}
   </div>;
 }
@@ -92,7 +97,7 @@ function TreeDirectory({ directory, name, depth, selectedPath, onOpen, onOpenPro
 /** Electron displayed prototypes inside YAML files. Read and parse only
  * when the user expands that exact indexed file; never scan all YAML at once.
  */
-function TreeYaml({ entry, depth, selectedPath, onOpen, onOpenPrototype }:
+function TreeYaml({ entry, depth, revision, selectedPath, onOpen, onOpenPrototype }:
   Props & { entry: ResourceBrowserEntry; depth: number }) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
@@ -100,10 +105,11 @@ function TreeYaml({ entry, depth, selectedPath, onOpen, onOpenPrototype }:
   const [error, setError] = useState<StudioError | null>(null);
   const [loading, setLoading] = useState(false);
   useEffect(() => {
-    if (!expanded || outline) return;
+    if (!expanded) return;
     let active = true;
     setLoading(true);
     setError(null);
+    setOutline(null);
     void (async () => {
       try {
         const document = await studio.readResource(entry.path);
@@ -115,7 +121,7 @@ function TreeYaml({ entry, depth, selectedPath, onOpen, onOpenPrototype }:
       } finally { if (active) setLoading(false); }
     })();
     return () => { active = false; };
-  }, [expanded, entry.path, outline]);
+  }, [expanded, entry.path, revision]);
 
   const declarations = outline ? treePrototypes(outline) : [];
   return <div className="resource-tree-branch">
@@ -152,10 +158,10 @@ function TreeYaml({ entry, depth, selectedPath, onOpen, onOpenPrototype }:
   </div>;
 }
 
-export default function ResourceTreeBrowser({ selectedPath, onOpen, onOpenPrototype }: Props) {
+export default function ResourceTreeBrowser({ revision, selectedPath, onOpen, onOpenPrototype }: Props) {
   const { t } = useI18n();
   return <div className="resource-tree" aria-label={t('browser.treeView')}>
-    <TreeDirectory directory="Resources" name="Resources" initialOpen depth={0}
+    <TreeDirectory directory="Resources" name="Resources" initialOpen depth={0} revision={revision}
       selectedPath={selectedPath} onOpen={onOpen} onOpenPrototype={onOpenPrototype}/>
   </div>;
 }

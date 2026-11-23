@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { studio, type ResourceDocument, type ResourceEntry } from '../lib/api';
-import { yamlCompletionContext, yamlComponentHoverTarget, yamlSpriteLinkTarget } from './yaml-completion';
+import { yamlEditorCompletionContext, yamlEditorComponentHoverTarget, yamlSpriteLinkTarget } from './yaml-completion';
 import { componentHoverMarkdown } from './component-hover';
 import { yamlLocaleClickField } from './yaml-locale-navigation';
 import { missingEntityLocaleUnderlines } from './yaml-locale-markers';
@@ -151,10 +151,7 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
               triggerCharacters: [' ', ':', '-', ',', '[', '/', '.', '"'],
               provideCompletionItems: async (source, position, _context, token) => {
                 if (source !== model || token.isCancellationRequested) return { suggestions: [] };
-                const first = Math.max(1, position.lineNumber - 64);
-                const lines = Array.from({ length: position.lineNumber - first + 1 },
-                  (_, offset) => source.getLineContent(first + offset));
-                const target = yamlCompletionContext(lines, lines.length, position.column);
+                const target = yamlEditorCompletionContext(source, position.lineNumber, position.column);
                 if (!target) return { suggestions: [] };
                 try {
                   let entries: { label: string; detail: string; insertText?: string }[] = [];
@@ -225,10 +222,7 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
             ? monaco.languages.registerHoverProvider('yaml', {
               provideHover: async (source, position, token) => {
                 if (source !== model || token.isCancellationRequested) return null;
-                const first = Math.max(1, position.lineNumber - 64);
-                const lines = Array.from({ length: position.lineNumber - first + 1 },
-                  (_, offset) => source.getLineContent(first + offset));
-                const hover = yamlComponentHoverTarget(lines, lines.length, position.column);
+                const hover = yamlEditorComponentHoverTarget(source, position.lineNumber, position.column);
                 if (!hover) return null;
                 try {
                   const batch = await studio.inspectComponentSchemas([hover.name]);

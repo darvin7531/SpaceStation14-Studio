@@ -1802,7 +1802,7 @@ export default function App() {
           <button type="button" aria-label={t('common.next')} disabled={(page + 1) * PAGE_SIZE >= results.total} onClick={() => setPage((value) => value + 1)}><ChevronRight size={17}/></button>
         </div>
         </> : <ResourceFolderBrowser
-          key={overview.project_root + ':' + workspaceRevision}
+          key={overview.project_root} revision={workspaceRevision}
           selectedPath={selected?.path ?? null} onOpen={(item) => void openResource(item)}
           onOpenPrototype={openPrototypeSource} />}
         </> : <PrototypeExplorer key={overview.project_root} workspaceKey={overview.project_root + ':' + workspaceRevision}

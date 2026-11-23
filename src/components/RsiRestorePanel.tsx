@@ -1,12 +1,32 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { AlertTriangle, RotateCcw } from 'lucide-react';
-import { studio, type RestoredRsiState, type RsiArchiveList } from '../lib/api';
+import { studio, type RestoredRsiState, type RsiArchive, type RsiArchiveList } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 
 interface Props {
   path: string;
   revision: string;
   onRestored: (result: RestoredRsiState) => void;
+}
+
+export function RsiArchiveAction({ path, selected, saving, confirmation, onConfirmation }: {
+  path: string; selected: RsiArchive | null; saving: boolean; confirmation: string;
+  onConfirmation: (value: string) => void;
+}) {
+  if (selected && !selected.automatic_restore) return <p className="rsi-warning">
+    Только ручное восстановление. Архив: <code>{path}/.ss14-studio-archive/{selected.id}/meta.json.before</code>
+  </p>;
+  return <>
+    <p className="rsi-restore-warning"><AlertTriangle size={15}/> Если в каталоге уже есть PNG или состояние с таким именем,
+      восстановление будет отклонено. Файлы не перезаписываются.</p>
+    <label>Введите имя <strong>{selected?.state ?? ''}</strong> для подтверждения
+      <input type="text" spellCheck={false} autoComplete="off" disabled={saving} value={confirmation}
+        onChange={(event) => onConfirmation(event.target.value)}/>
+    </label>
+    <button type="submit" disabled={!selected || confirmation !== selected.state || saving}>
+      <RotateCcw size={14}/>{saving ? 'Восстанавливаю…' : 'Восстановить состояние'}
+    </button>
+  </>;
 }
 
 /** Archive IDs are returned by Rust: callers never construct paths. */
@@ -43,7 +63,7 @@ export default function RsiRestorePanel({ path, revision, onRestored }: Props) {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selected || confirmation !== selected.state || saving) return;
+    if (!selected?.automatic_restore || confirmation !== selected.state || saving) return;
     setSaving(true);
     setError(null);
     try {
@@ -65,7 +85,7 @@ export default function RsiRestorePanel({ path, revision, onRestored }: Props) {
     <form onSubmit={(event) => void submit(event)}>
       <p>Восстановление добавляет исходное состояние в текущий <code>meta.json</code>
         и создаёт его PNG заново, если он был в архиве. Другие состояния и последующие изменения метаданных
-        сохраняются. Архив остаётся на диске. Архивы без PNG восстанавливаются только вручную: остановите внешние изменения и проверьте PNG. Переносите запись из архивного meta.json.before в текущий meta.json только если в обоих файлах version равен 1, size совпадает, в архиве ровно одна запись с этим именем, а в текущем файле её нет. Иначе не переносите запись. Не заменяйте meta.json целиком.</p>
+        сохраняются. Архив остаётся на диске. Архивы без PNG восстанавливаются только вручную: остановите внешние изменения и проверьте PNG. Переносите запись из архивного meta.json.before в текущий meta.json только если в обоих файлах version равен 1, size совпадает, в архиве ровно одна запись с этим именем, а в текущем файле её нет. Иначе не переносите запись. При отмене переименования не переносите архивную запись без изменений: сначала сравните её с текущей записью под новым именем и согласуйте все последующие изменения, сохранив нужные данные в восстановленной записи. Проверьте оба PNG; не удаляйте и не заменяйте текущую запись или файлы, пока изменения не сохранены и не согласованы. При неоднозначности остановитесь и сделайте резервную копию. Не заменяйте meta.json целиком.</p>
       {loading && <p>Чтение резервных копий…</p>}
       {listError && <p role="alert" className="rsi-error">
         <AlertTriangle size={15}/>{listError.message} {listError.hint}
@@ -83,26 +103,16 @@ export default function RsiRestorePanel({ path, revision, onRestored }: Props) {
               setError(null);
             }}>
             {list.archives.map((entry) => <option value={entry.id} key={entry.id}>
-              {entry.state} · {entry.id}
+              {entry.state} · {entry.id}{!entry.automatic_restore && ' · только вручную'}
             </option>)}
           </select>
         </label>
-        <p className="rsi-restore-warning">
-          <AlertTriangle size={15}/> Если в каталоге уже есть PNG или состояние с таким именем,
-          восстановление будет отклонено. Файлы не перезаписываются.
-        </p>
-        <label>Введите имя <strong>{selected?.state ?? ''}</strong> для подтверждения
-          <input type="text" spellCheck={false} autoComplete="off"
-            disabled={saving} value={confirmation}
-            onChange={(event) => setConfirmation(event.target.value)}/>
-        </label>
+        <RsiArchiveAction path={path} selected={selected} saving={saving}
+          confirmation={confirmation} onConfirmation={setConfirmation}/>
         {error && <p role="alert" className="rsi-error">
           <AlertTriangle size={15}/>{error.message} {error.hint}
           <code>{error.code}</code> {error.details && <code>{error.details}</code>}
         </p>}
-        <button type="submit" disabled={!selected || confirmation !== selected.state || saving}>
-          <RotateCcw size={14}/>{saving ? 'Восстанавливаю…' : 'Восстановить состояние'}
-        </button>
       </>}
     </form>
   </details>;

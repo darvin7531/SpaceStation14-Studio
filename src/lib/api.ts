@@ -490,6 +490,7 @@ export interface FluentInspection {
 export interface RsiArchive {
   id: string;
   state: string;
+  automatic_restore: boolean;
 }
 
 export interface RsiArchiveList {
@@ -514,7 +515,8 @@ export interface RestoredRsiState {
 export interface RsiRenameRequest {
   path: string;
   expected_revision: string;
-  expected_png_revision: string;
+  expected_png_revision: string | null;
+  expected_missing_png?: boolean;
   old_name: string;
   new_name: string;
 }
