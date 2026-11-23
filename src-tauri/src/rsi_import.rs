@@ -820,9 +820,7 @@ pub(crate) fn import_at(
             })
     })();
     drop(temp);
-    if let Err(e) = staged {
-        return Err(e);
-    }
+    staged?;
 
     let new_png = OpenOptions::new()
         .create_new(true)
