@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, Languages, RefreshCw, X } from 'lucide-react';
 import { studio, type EntityLocalizationSource, type EntityLocalizationAnalysis, type PrototypeFieldLocator, type ResourceDocument, type ResourceEntry, type NewFluentDraft } from '../lib/api';
-import { buildEntityLocalePatch, planMissingEntityTranslations, buildMissingFluentDraft, type EntityLocaleField, type EntityLocalePatch } from '../lib/entity-localization';
+import { buildEntityLocalePatch, planMissingEntityTranslations, buildMissingFluentDraft, isFluentDefinition, type EntityLocaleField, type EntityLocalePatch } from '../lib/entity-localization';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 import { localeFromFtlPath, localeResourceSearch } from '../lib/localization-settings';
 
@@ -93,7 +93,7 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, requ
       const localeRoot = target.split('/').slice(0, 3).join('/') + '/';
       const otherDefinition = matches.items.find((hit) => hit.path !== target
         && hit.path.startsWith(localeRoot)
-        && new RegExp('^' + entity.localization_id + '[ \t]*=').test(hit.preview));
+        && isFluentDefinition(hit.preview, entity.localization_id));
       if (otherDefinition) {
         throw new Error('Fluent ID уже объявлен в ' + otherDefinition.path
           + ':' + otherDefinition.line + '. Выберите этот файл вместо создания дубликата.');
@@ -159,7 +159,6 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, requ
         if (!/^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(entity.localization_id)) {
           throw new Error('Fluent ID нельзя безопасно использовать для генерации.');
         }
-        const definition = new RegExp('^' + entity.localization_id + '[ \\t]*=');
         for (const item of present) {
           if (!item.path.startsWith('Resources/Locale/') || !item.path.endsWith('.ftl')
               || localeFromFtlPath(item.path) !== item.locale) {
@@ -167,7 +166,7 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, requ
           }
           const prefix = item.path.split('/').slice(0, 3).join('/') + '/';
           const duplicate = matches.items.find((hit) =>
-            hit.path !== item.path && hit.path.startsWith(prefix) && definition.test(hit.preview));
+            hit.path !== item.path && hit.path.startsWith(prefix) && isFluentDefinition(hit.preview, entity.localization_id));
           if (duplicate) {
             throw new Error('Для ' + item.locale + ' Fluent ID уже найден в '
               + duplicate.path + ':' + duplicate.line + '. Проверьте файл перед исправлением.');
@@ -214,8 +213,7 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, requ
         const matches = await studio.searchResourceContent(entity!.localization_id, 'ftl');
         if (!matches.complete) throw new Error('Поиск определений Fluent неполный. Запись заблокирована.');
         const prefix = item.path.split('/').slice(0, 3).join('/') + '/';
-        const definition = new RegExp('^' + entity!.localization_id + '[ \t]*=');
-        if (matches.items.some((hit) => hit.path.startsWith(prefix) && definition.test(hit.preview))) {
+        if (matches.items.some((hit) => hit.path.startsWith(prefix) && isFluentDefinition(hit.preview, entity!.localization_id))) {
           throw new Error('Fluent ID уже существует в локали ' + item.locale);
         }
         const result = await onCreateBatch(item.draft, source);

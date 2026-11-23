@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildEntityLocalePatch, planMissingEntityTranslations, buildMissingFluentDraft, type EntityLocaleValues } from '../src/lib/entity-localization';
+import { buildEntityLocalePatch, planMissingEntityTranslations, buildMissingFluentDraft, isFluentDefinition, type EntityLocaleValues } from '../src/lib/entity-localization';
 
 const entity: EntityLocaleValues = {
   localization_id: 'ent-TestEntity',
@@ -36,7 +36,18 @@ test('invalid names and Fluent special syntax are rejected', () => {
   assert.throws(() => buildEntityLocalePatch('', { ...entity, description: 'line\nother = bad' }, ['description']));
 });
 
+test('Fluent definition matching uses literal IDs and spaces or tabs before equals', () => {
+  for (const separator of ['', ' ', '\t', ' \t  ']) {
+    assert.equal(isFluentDefinition(`ent.Test+${separator}= value`, 'ent.Test+'), true);
+  }
+  for (const line of ['entXTest+ = value', 'ent.Testtt= value', 'ent.Test+extra = value', ' ent.Test+ = value', '# ent.Test+ = value']) {
+    assert.equal(isFluentDefinition(line, 'ent.Test+'), false);
+  }
+  assert.equal(isFluentDefinition('ent-TestEntityt= value', 'ent-TestEntity'), false);
+});
+
 test('duplicate message ids are refused rather than silently patched', () => {
+  assert.throws(() => buildEntityLocalePatch('ent-TestEntity\t= a\nent-TestEntity = b\n', entity, ['suffix']));
   assert.throws(() => buildEntityLocalePatch('ent-TestEntity = a\nent-TestEntity = b\n', entity, ['suffix']));
 });
 

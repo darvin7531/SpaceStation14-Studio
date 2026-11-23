@@ -20,6 +20,10 @@ export interface EntityLocalePatch {
 
 const KEY = /^[A-Za-z][A-Za-z0-9_-]{0,127}$/;
 
+export function isFluentDefinition(line: string, id: string): boolean {
+  return line.startsWith(id) && /^[ \t]*=/.test(line.slice(id.length));
+}
+
 function safeValue(value: string): string {
   const trimmed = value.trim();
   if (!trimmed || trimmed.length > 4096 || new TextEncoder().encode(trimmed).length > 8192 || /[{}\r\n\x00-\x1f\x7f]/.test(trimmed)) {
@@ -38,8 +42,7 @@ export function buildEntityLocalePatch(
   if (original.length > 4 * 1024 * 1024) throw new Error('FTL слишком большой для безопасного изменения.');
   const eol = original.includes('\r\n') ? '\r\n' : '\n';
   const lines = original.split(/\r?\n/);
-  const keyLine = new RegExp('^' + key + '[ \t]*=');
-  const indices = lines.flatMap((line, index) => keyLine.test(line) ? [index] : []);
+  const indices = lines.flatMap((line, index) => isFluentDefinition(line, key) ? [index] : []);
   if (indices.length > 1) throw new Error('Fluent ID объявлен несколько раз в выбранном файле. Исправьте дубликаты вручную.');
   const start = indices.length ? indices[0] : -1;
   const present = new Set<EntityLocaleField>();
