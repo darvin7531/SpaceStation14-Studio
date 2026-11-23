@@ -509,8 +509,11 @@ fn restore_with_save(
                 "Восстановление прервано; PNG может остаться в каталоге.",
                 "Проверьте PNG вручную перед повторным восстановлением; архив сохранён.",
             )
-            .with_details(format!("Ошибка: {failure:?}; PNG: {}; архив: {}", png_path.display(), archive.display())));
-
+            .with_details(format!(
+                "Ошибка: {failure:?}; PNG: {}; архив: {}",
+                png_path.display(),
+                archive.display()
+            )));
         }
     };
     let mut warnings = Vec::new();
@@ -601,15 +604,26 @@ mod tests {
         let png = fixture.root.join(&fixture.path).join("idle.png");
         let replacement = fixture.root.join(&fixture.path).join("external.png");
         fs::write(&replacement, b"external PNG").unwrap();
-        let error = restore_with_save(&fixture.root, &fixture.request(id.clone(), revision), |_, _, _, _| {
-            fs::rename(&replacement, &png).unwrap();
-            Err(issue("INJECTED", "save failed", "retry").with_details("disk failure"))
-        }).unwrap_err();
+        let error = restore_with_save(
+            &fixture.root,
+            &fixture.request(id.clone(), revision),
+            |_, _, _, _| {
+                fs::rename(&replacement, &png).unwrap();
+                Err(issue("INJECTED", "save failed", "retry").with_details("disk failure"))
+            },
+        )
+        .unwrap_err();
         assert_eq!(fs::read(&png).unwrap(), b"external PNG");
         let details = error.details.unwrap();
         assert!(details.contains("disk failure"));
         assert!(details.contains(&id));
-        assert!(fixture.root.join(&fixture.path).join(ARCHIVE_DIR).join(id).join("idle.png").exists());
+        assert!(fixture
+            .root
+            .join(&fixture.path)
+            .join(ARCHIVE_DIR)
+            .join(id)
+            .join("idle.png")
+            .exists());
     }
 
     #[test]

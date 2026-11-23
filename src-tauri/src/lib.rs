@@ -129,10 +129,17 @@ fn project_for_rsi_write(
     Ok(index)
 }
 
-fn project_for_operation(state: &WorkspaceState, expected: Option<&str>) -> Result<Arc<ProjectIndex>, StudioError> {
+fn project_for_operation(
+    state: &WorkspaceState,
+    expected: Option<&str>,
+) -> Result<Arc<ProjectIndex>, StudioError> {
     let project = current_project(state)?;
     if expected.is_some_and(|root| root != project.overview().project_root) {
-        return Err(StudioError::new("PROJECT_CHANGED", "Проект изменился.", "Повторите действие для исходного проекта."));
+        return Err(StudioError::new(
+            "PROJECT_CHANGED",
+            "Проект изменился.",
+            "Повторите действие для исходного проекта.",
+        ));
     }
     Ok(project)
 }
@@ -775,7 +782,14 @@ async fn save_ftl_resource_bound(
     expected_project_root: String,
     state: State<'_, WorkspaceState>,
 ) -> Result<SaveResult, StudioError> {
-    save_ftl_resource_impl(path, expected_revision, content, Some(expected_project_root), state).await
+    save_ftl_resource_impl(
+        path,
+        expected_revision,
+        content,
+        Some(expected_project_root),
+        state,
+    )
+    .await
 }
 
 async fn save_ftl_resource_impl(
@@ -1337,7 +1351,14 @@ async fn analyze_entity_localization_bound(
     expected_project_root: String,
     state: State<'_, WorkspaceState>,
 ) -> Result<EntityLocalizationAnalysis, StudioError> {
-    analyze_entity_localization_impl(locator, source, required_locales, Some(expected_project_root), state).await
+    analyze_entity_localization_impl(
+        locator,
+        source,
+        required_locales,
+        Some(expected_project_root),
+        state,
+    )
+    .await
 }
 
 async fn analyze_entity_localization_impl(
