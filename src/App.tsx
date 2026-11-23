@@ -1366,7 +1366,7 @@ export default function App() {
           ? 'Размер кадра RSI сохранён. PNG не изменены.'
         : action === 'timing'
           ? 'Сохранены задержки RSI: ' + result.name + '. PNG не изменены.'
-          : 'Добавлено состояние RSI: ' + result.name + '. PNG и meta.json записаны.';
+          : 'Сохранено состояние RSI: ' + result.name + '. Метаданные обновлены.';
     setNotice(result.warning ? baseNotice + '. ' + result.warning : baseNotice);
   }
 

@@ -51,7 +51,7 @@ fn issue(code: &'static str, message: &str, hint: &str) -> StudioError {
     StudioError::new(code, message, hint)
 }
 
-pub(crate) fn validate_request(request: &RsiStateImport) -> Result<(), StudioError> {
+fn validate_common(request: &RsiStateImport) -> Result<(), StudioError> {
     if request.expected_revision.len() != 64
         || !request
             .expected_revision
@@ -105,6 +105,11 @@ pub(crate) fn validate_request(request: &RsiStateImport) -> Result<(), StudioErr
             ));
         }
     }
+    Ok(())
+}
+
+pub(crate) fn validate_request(request: &RsiStateImport) -> Result<(), StudioError> {
+    validate_common(request)?;
     if !request.data_url.starts_with(PNG_DATA_PREFIX) || request.data_url.len() > MAX_DATA_URL_CHARS
     {
         return Err(issue(
@@ -264,7 +269,7 @@ pub(crate) fn validate_png(
 pub(crate) fn updated_metadata_at(
     bytes: &[u8],
     request: &RsiStateImport,
-    png: &[u8],
+    png: Option<&[u8]>,
     insert_at: Option<usize>,
     preserve_state: Option<&Value>,
 ) -> Result<String, StudioError> {
@@ -312,23 +317,25 @@ pub(crate) fn updated_metadata_at(
             "Используйте размер кадра до 2048×2048.",
         ));
     }
-    let total_frames = request.directions * request.frames_per_direction;
-    let expected_cells = total_frames;
-    // Accept row-major sheets containing exactly total_frames cells, not an
-    // arbitrary pack with unused padding. Rows and columns can vary.
-    let (png_width, png_height) = png_dimensions(png)?;
-    if png_width % width != 0
-        || png_height % height != 0
-        || u64::from(png_width / width) * u64::from(png_height / height)
-            != u64::from(expected_cells)
-    {
-        return Err(issue(
-            "RSI_IMPORT_PNG_SIZE_MISMATCH",
-            "Сетка PNG не совпадает с указанными кадрами.",
-            "Используйте PNG с точным числом ячеек по направлениям (без пустых слотов).",
-        ));
+    if let Some(png) = png {
+        let total_frames = request.directions * request.frames_per_direction;
+        let expected_cells = total_frames;
+        // Accept row-major sheets containing exactly total_frames cells, not an
+        // arbitrary pack with unused padding. Rows and columns can vary.
+        let (png_width, png_height) = png_dimensions(png)?;
+        if png_width % width != 0
+            || png_height % height != 0
+            || u64::from(png_width / width) * u64::from(png_height / height)
+                != u64::from(expected_cells)
+        {
+            return Err(issue(
+                "RSI_IMPORT_PNG_SIZE_MISMATCH",
+                "Сетка PNG не совпадает с указанными кадрами.",
+                "Используйте PNG с точным числом ячеек по направлениям (без пустых слотов).",
+            ));
+        }
+        validate_png(png, png_width, png_height)?;
     }
-    validate_png(png, png_width, png_height)?;
     let states = meta
         .get_mut("states")
         .and_then(Value::as_array_mut)
@@ -441,6 +448,33 @@ pub(crate) fn safe_import_directory(
     directory(root, relative)
 }
 
+/// Create only metadata; a PNG can be supplied separately later.
+pub fn create_metadata_only(root: &Path, request: &RsiStateImport) -> Result<ImportedRsiState, StudioError> {
+    validate_common(request)?;
+    let folder = safe_import_directory(root, &request.path)?;
+    let original = bounded_metadata(&folder.join("meta.json"))?;
+    if revision(&original) != request.expected_revision {
+        return Err(issue("RSI_IMPORT_CONFLICT", "meta.json изменился после открытия.", "Обновите RSI."));
+    }
+    let content = updated_metadata_at(&original, request, None, None, None)?;
+    // Do not silently associate an existing orphan PNG with a new state.
+    match fs::symlink_metadata(folder.join(format!("{}.png", request.name))) {
+        Ok(_) => return Err(issue("RSI_IMPORT_PNG_EXISTS", "PNG с таким именем уже существует.", "Выберите другое имя состояния.")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+        Err(error) => return Err(issue("RSI_IMPORT_WRITE_FAILED", "Не удалось проверить PNG.", "Проверьте каталог RSI.").with_details(error.to_string())),
+    }
+    let saved = crate::resource_edit::save_rsi_metadata(
+        root, &format!("{}/meta.json", request.path), &request.expected_revision, content,
+    )?;
+    Ok(ImportedRsiState {
+        name: request.name.clone(),
+        content: saved.document.content,
+        revision: saved.document.revision,
+        warning: saved.durability_warning,
+        archive_path: None,
+    })
+}
+
 /// The caller serializes actions in a project-local mutex. A second precommit
 /// revision check catches external edits during PNG staging. Power loss can
 /// leave an orphan PNG, which is intentionally never deleted on startup.
@@ -475,7 +509,7 @@ pub(crate) fn import_at(
         .with_details(e.to_string())
     })?;
     let content =
-        updated_metadata_at(&original, request, &png, insert_at, preserve_state.as_ref())?;
+        updated_metadata_at(&original, request, Some(&png), insert_at, preserve_state.as_ref())?;
     let target_png = folder.join(format!("{}.png", request.name));
     if target_png.exists() {
         return Err(issue(
@@ -702,6 +736,36 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+
+    #[test]
+    fn creates_metadata_only_and_rejects_duplicates_and_stale_revisions() {
+        let fx = Fixture::new();
+        let mut request = fx.request();
+        request.data_url.clear();
+        let created = create_metadata_only(&fx.root, &request).unwrap();
+        assert!(!fx.root.join(&fx.rel).join("idle.png").exists());
+        let metadata: Value = serde_json::from_str(&created.content).unwrap();
+        assert_eq!(metadata["states"][0]["name"], "idle");
+        assert_eq!(metadata["states"][0]["delays"][0][0], 0.1);
+        assert_eq!(create_metadata_only(&fx.root, &request).unwrap_err().code, "RSI_IMPORT_CONFLICT");
+        request.expected_revision = created.revision;
+        assert_eq!(create_metadata_only(&fx.root, &request).unwrap_err().code, "RSI_IMPORT_STATE_EXISTS");
+        assert_eq!(fs::read_to_string(fx.root.join(&fx.rel).join("meta.json")).unwrap(), created.content);
+    }
+
+    #[test]
+    fn metadata_creation_rejects_invalid_names_and_orphan_png_without_writes() {
+        let fx = Fixture::new();
+        let mut request = fx.request();
+        let meta_path = fx.root.join(&fx.rel).join("meta.json");
+        let original = fs::read(&meta_path).unwrap();
+        request.name = "../bad".into();
+        assert_eq!(create_metadata_only(&fx.root, &request).unwrap_err().code, "RSI_IMPORT_NAME_INVALID");
+        request.name = "idle".into();
+        fs::write(fx.root.join(&fx.rel).join("idle.png"), Fixture::png()).unwrap();
+        assert_eq!(create_metadata_only(&fx.root, &request).unwrap_err().code, "RSI_IMPORT_PNG_EXISTS");
+        assert_eq!(fs::read(meta_path).unwrap(), original);
     }
 
     #[test]

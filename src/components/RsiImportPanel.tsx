@@ -31,6 +31,7 @@ export default function RsiImportPanel({
   path, revision, onImported, replaceState, expectedPngRevision,
 }: Props) {
   const replacing = Boolean(replaceState);
+  const [metadataOnly, setMetadataOnly] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [name, setName] = useState(replaceState?.name ?? '');
   const [directions, setDirections] = useState<1 | 4 | 8>(replaceState?.directions ?? 1);
@@ -90,9 +91,9 @@ export default function RsiImportPanel({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!file || uploading) return;
+    if ((!file && !metadataOnly) || uploading) return;
     setError(null);
-    if (file.size > PNG_LIMIT || file.size === 0) {
+    if (file && (file.size > PNG_LIMIT || file.size === 0)) {
       setError({
         code: 'RSI_IMPORT_PNG_TOO_LARGE',
         message: 'Выберите непустой PNG не больше 8 МиБ.',
@@ -110,7 +111,7 @@ export default function RsiImportPanel({
     }
     setUploading(true);
     try {
-      const data_url = await fileToDataUrl(file);
+      const data_url = !metadataOnly && file ? await fileToDataUrl(file) : '';
       const preserveDelays = Boolean(replaceState
         && directions === replaceState.directions
         && replaceState.delays.length === directions
@@ -128,7 +129,7 @@ export default function RsiImportPanel({
       };
       const result = replacing
         ? await studio.replaceRsiState(request)
-        : await studio.importRsiState(request);
+        : metadataOnly ? await studio.createRsiState(request) : await studio.importRsiState(request);
       onImported(result);
       setFile(null);
       if (input.current) input.current.value = '';
@@ -142,14 +143,19 @@ export default function RsiImportPanel({
   return <details className="rsi-import-panel">
     <summary><ImagePlus size={15}/>{replacing
       ? 'Заменить PNG и перестроить кадры: ' + replaceState?.name
-      : 'Импортировать PNG как новое состояние'}</summary>
+      : 'Добавить состояние RSI'}</summary>
     <form onSubmit={(event) => void submit(event)}>
       {replacing
         ? <p>Старая версия состояния и PNG сначала попадут в <code>.ss14-studio-archive</code>.
             Новая сетка может изменить число направлений и кадров. При ошибке Studio попытается
             восстановить прежнее состояние; внешние изменения не перезаписываются.</p>
-        : <p>Импорт добавляет состояние в <code>meta.json</code> и создаёт новый
-            <code> state.png</code>. Существующие изображения и состояния не перезаписываются.</p>}
+        : <p>Добавление записывает состояние в <code>meta.json</code>; PNG создаётся только при импорте.
+            Существующие изображения и состояния не перезаписываются.</p>}
+      {!replacing && <label><input type="checkbox" checked={metadataOnly} disabled={uploading}
+        onChange={(event) => setMetadataOnly(event.target.checked)}/> Только метаданные, без PNG</label>}
+      {metadataOnly && <p>PNG не создаётся. Чтобы добавить изображение позже, поместите файл
+        с именем состояния и расширением .png в папку RSI и обновите просмотр.</p>}
+      {!metadataOnly && <>
       <div className={'rsi-dropzone' + (dragging ? ' dragging' : '')}
         role="group" aria-label="Перетащить PNG для импорта"
         onDragOver={(event) => { event.preventDefault(); if (!uploading) setDragging(true); }}
@@ -162,6 +168,8 @@ export default function RsiImportPanel({
           <input ref={input} type="file" accept="image/png,.png" disabled={uploading}
             onChange={(event) => chooseFile(event.target.files?.[0] ?? null)}/>
         </label>
+      </div></>}
+      <div className="rsi-import-fields">
         {replacing
           ? <label>Состояние<strong>{replaceState?.name}</strong></label>
           : <label>Имя состояния
@@ -193,16 +201,16 @@ export default function RsiImportPanel({
         PNG должен содержать ровно направления × кадры ячеек. Если сетка не меняется,
         покадровые задержки исходного состояния сохраняются.
       </p>
-      {file && <small>Выбран: {file.name} · {Math.ceil(file.size / 1024)} КиБ</small>}
+      {!metadataOnly && file && <small>Выбран: {file.name} · {Math.ceil(file.size / 1024)} КиБ</small>}
       {error && <div className="rsi-error" role="alert"><AlertCircle size={16}/>
         <span>{error.message} {error.hint} <code>{error.code}</code></span>
       </div>}
-      <button type="submit" disabled={uploading || !file || (!replacing && !name)
+      <button type="submit" disabled={uploading || (!metadataOnly && !file) || (!replacing && !name)
           || !Number.isInteger(frames) || frames < 1 || frames > 128 || frames * directions > 256
           || (replacing && !expectedPngRevision)}>
         <ImagePlus size={15}/>{uploading
           ? (replacing ? 'Заменяю…' : 'Импортирую…')
-          : (replacing ? 'Заменить PNG и перестроить кадры' : 'Добавить новое состояние')}
+          : (replacing ? 'Заменить PNG и перестроить кадры' : metadataOnly ? 'Создать без PNG' : 'Добавить новое состояние')}
       </button>
     </form>
   </details>;

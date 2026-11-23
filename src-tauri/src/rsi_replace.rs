@@ -127,7 +127,7 @@ fn prevalidate(root: &Path, request: &RsiStateImport) -> Result<(usize, Value), 
     rsi_import::updated_metadata_at(
         &base_bytes,
         request,
-        &new_png,
+        Some(&new_png),
         Some(original_index),
         Some(&preserved_state),
     )?;

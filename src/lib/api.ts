@@ -861,6 +861,9 @@ export const studio = {
   importRsiState(request: RsiImportRequest): Promise<ImportedRsiState> {
     return invoke('import_rsi_state', { request });
   },
+  createRsiState(request: RsiImportRequest): Promise<ImportedRsiState> {
+    return invoke('create_rsi_state', { request });
+  },
   replaceRsiState(request: RsiImportRequest): Promise<ImportedRsiState> {
     return invoke('replace_rsi_state', { request });
   },

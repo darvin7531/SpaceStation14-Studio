@@ -392,6 +392,17 @@ async fn import_rsi_state(
 }
 
 #[tauri::command]
+async fn create_rsi_state(
+    request: RsiStateImport,
+    state: State<'_, WorkspaceState>,
+) -> Result<ImportedRsiState, StudioError> {
+    let index = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || index.create_rsi_state(&request))
+        .await
+        .map_err(interrupted)?
+}
+
+#[tauri::command]
 async fn rename_rsi_state(
     request: RsiRenameRequest,
     state: State<'_, WorkspaceState>,
@@ -1266,6 +1277,7 @@ pub fn run() -> Result<(), tauri::Error> {
             list_rsi_sheets,
             read_rsi_sheet,
             import_rsi_state,
+            create_rsi_state,
             replace_rsi_state,
             rename_rsi_state,
             update_rsi_timing,
