@@ -326,6 +326,7 @@ try {
   assert.equal(await script("return document.activeElement?.matches('.monaco-shell textarea.inputarea');"), false, 'abandoned jump must not focus the editor');
   await click('[role=tab][title="Resources/Prototypes/smoke.yml"]');
   await click('.explorer-switch button:first-child');
+  await click('.explorer-switch:has([data-testid=folder-view]) button:first-child');
   await edit(saved, 'SmokeSaved');
   await click('[data-testid=save-resource]');
   try {
