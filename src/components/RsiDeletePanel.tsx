@@ -37,9 +37,9 @@ export default function RsiDeletePanel({ path, revision, name, onDeleted }: Prop
     <summary><Trash2 size={15}/> Убрать состояние «{name}» из RSI</summary>
     <form onSubmit={(event) => void submit(event)}>
       <p><AlertTriangle size={16}/>
-        Studio предварительно сохранит исходные PNG и meta.json в скрытую папку
+        Studio предварительно сохранит исходный meta.json и PNG (если он есть) в скрытую папку
         <code> .ss14-studio-archive</code> внутри RSI.
-        После этого состояние будет исключено из meta.json, а оригинальный PNG удалён
+        После этого состояние будет исключено из meta.json, а существующий PNG удалён
         только при совпадении контрольной суммы.
       </p>
       <p>Это не корзина ОС. Восстановить удалённое состояние можно в панели
