@@ -318,7 +318,11 @@ try {
   await click('[role=tab][title="Resources/Prototypes/tabs.yml"]');
   await until('returned prototype loaded', () => script("return document.querySelector('.monaco-shell .view-lines')?.textContent?.replace(/\\s+/g, ' ').includes('id: SmokeSecond');"));
   await until('returned editor cursor', () => find('.monaco-shell .cursors-layer .cursor'));
-  assert.equal(await script("return document.querySelector('.monaco-shell .cursors-layer .cursor').style.top;"), '0px', 'abandoned jump must not reveal its old line');
+  assert.ok(await script(`
+    const cursor = document.querySelector('.monaco-shell .cursors-layer .cursor').getBoundingClientRect();
+    const firstLine = document.querySelector('.monaco-shell .view-line').getBoundingClientRect();
+    return Math.abs(cursor.top - firstLine.top) < 2;
+  `), 'abandoned jump must leave the cursor on the first line');
   assert.equal(await script("return document.activeElement?.matches('.monaco-shell textarea.inputarea');"), false, 'abandoned jump must not focus the editor');
   await click('[role=tab][title="Resources/Prototypes/smoke.yml"]');
   await click('.explorer-switch button:first-child');
