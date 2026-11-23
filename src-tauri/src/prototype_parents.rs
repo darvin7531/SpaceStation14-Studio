@@ -367,7 +367,11 @@ mod tests {
 
     #[test]
     fn inspection_notice_has_stable_code_and_fallback() {
-        let result = inspect("- type: entity\n  id: Child\n  parent: Base\n", &locator(1, "Child")).unwrap();
+        let result = inspect(
+            "- type: entity\n  id: Child\n  parent: Base\n",
+            &locator(1, "Child"),
+        )
+        .unwrap();
         let notice = serde_json::to_value(result.notice).unwrap();
         assert_eq!(notice["code"], "PARENT_INSPECTION_NOTICE");
         assert!(notice["message"].as_str().unwrap().contains("Ctrl+S"));

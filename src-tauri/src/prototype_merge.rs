@@ -769,7 +769,11 @@ const MAX_INHERIT_WARNINGS: usize = 48;
 #[serde(untagged)]
 pub enum PrototypeWarning {
     Raw(String),
-    Structured { code: &'static str, message: String, params: serde_json::Value },
+    Structured {
+        code: &'static str,
+        message: String,
+        params: serde_json::Value,
+    },
 }
 
 /// Structural source projection only. Unlike engine deserialization, this does
@@ -823,7 +827,11 @@ impl<F: FnMut(&str) -> Result<String, StudioError>> InheritanceSolver<'_, F> {
 
     fn warn_structured(&mut self, code: &'static str, message: String, params: serde_json::Value) {
         if self.warnings.len() < MAX_INHERIT_WARNINGS {
-            self.warnings.push(PrototypeWarning::Structured { code, message, params });
+            self.warnings.push(PrototypeWarning::Structured {
+                code,
+                message,
+                params,
+            });
         }
     }
 
@@ -1120,7 +1128,11 @@ pub fn preview_inheritance(
     }
     if fields.len() >= MAX_PREVIEW_FIELDS || components.len() >= MAX_PREVIEW_COMPONENTS {
         structural_complete = false;
-        solver.warn_structured("INHERIT_OUTPUT_LIMIT", "Вывод ограничен 96 полями и 128 компонентами.".into(), serde_json::json!({"fields": MAX_PREVIEW_FIELDS, "components": MAX_PREVIEW_COMPONENTS}));
+        solver.warn_structured(
+            "INHERIT_OUTPUT_LIMIT",
+            "Вывод ограничен 96 полями и 128 компонентами.".into(),
+            serde_json::json!({"fields": MAX_PREVIEW_FIELDS, "components": MAX_PREVIEW_COMPONENTS}),
+        );
     }
     Ok(PrototypeInheritancePreview {
         kind: kind.to_owned(),
@@ -1294,7 +1306,11 @@ pub fn linked_prototypes(
         .is_some_and(|value| value.index_complete);
     let source_complete = snapshot.complete && index_complete && !collector.limited;
     if !index_complete {
-        solver.warn_structured("LINKS_INDEX_INCOMPLETE", "Часть YAML-файлов не вошла в индекс: некоторые ссылки могут отсутствовать.".into(), serde_json::json!({}));
+        solver.warn_structured(
+            "LINKS_INDEX_INCOMPLETE",
+            "Часть YAML-файлов не вошла в индекс: некоторые ссылки могут отсутствовать.".into(),
+            serde_json::json!({}),
+        );
     }
     if collector.limited {
         solver.warn_structured("LINKS_OUTPUT_LIMIT", "В Electron показывались первые 24 ссылки; просмотр ограничен 24 результатами и 8192 YAML-узлами.".into(), serde_json::json!({"rows": MAX_LINKED_ROWS, "nodes": MAX_LINKED_VISITS}));
@@ -1325,7 +1341,10 @@ mod tests {
         assert_eq!(value["code"], "INHERIT_MULTIPLE_PARENTS");
         assert_eq!(value["params"]["count"], 2);
         assert_eq!(value["message"], "original");
-        assert_eq!(serde_json::to_value(PrototypeWarning::Raw("unknown".into())).unwrap(), "unknown");
+        assert_eq!(
+            serde_json::to_value(PrototypeWarning::Raw("unknown".into())).unwrap(),
+            "unknown"
+        );
     }
 
     fn node(src: &str) -> Node {
