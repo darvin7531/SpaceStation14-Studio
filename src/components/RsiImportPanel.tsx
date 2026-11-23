@@ -4,6 +4,7 @@ import { studio, type ImportedRsiState } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 import type { RsiState } from '../lib/rsi-layout';
 import { toggleRsiImportMode } from '../lib/rsi-import-mode';
+import { readPngAsDataUrl } from '../lib/rsi-png-data-url';
 
 interface Props {
   path: string;
@@ -17,18 +18,6 @@ interface Props {
 }
 
 const PNG_LIMIT = 8 * 1024 * 1024;
-
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') resolve(reader.result);
-      else reject(new Error('Не удалось прочитать PNG как Data URL.'));
-    };
-    reader.onerror = () => reject(reader.error ?? new Error('Ошибка чтения PNG.'));
-    reader.readAsDataURL(file);
-  });
-}
 
 /** Append a new state or replace an existing PNG through an archived, conflict-aware operation. */
 export default function RsiImportPanel({
@@ -118,7 +107,7 @@ export default function RsiImportPanel({
     }
     setUploading(true);
     try {
-      const data_url = !metadataOnly && file ? await fileToDataUrl(file) : '';
+      const data_url = !metadataOnly && file ? await readPngAsDataUrl(file) : '';
       const preserveDelays = Boolean(replaceState
         && directions === replaceState.directions
         && replaceState.delays.length === directions

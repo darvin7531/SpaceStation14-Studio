@@ -1,11 +1,11 @@
 import { useI18n } from '../i18n';
-import { uiText, type Language } from '../lib/ui-language';
 import { useRef, useState, type DragEvent, type FormEvent } from 'react';
 import { AlertCircle, Upload } from 'lucide-react';
 import { studio, type ImportedRsiState } from '../lib/api';
 import { normalizeStudioError } from '../lib/errors';
 import { parseRsiMetadata } from '../lib/rsi-layout';
 import { planRsiBatch, pngHeaderSize } from '../lib/rsi-batch-plan';
+import { readPngAsDataUrl } from '../lib/rsi-png-data-url';
 
 interface Props {
   path: string;
@@ -15,19 +15,6 @@ interface Props {
   metadata: string;
   onImported: (result: ImportedRsiState) => void;
   onBatchOutcome: (message: string) => void;
-}
-
-function readPngAsDataUrl(file: File, language: Language): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') resolve(reader.result);
-      else reject(new Error(uiText(language, 'rsi.bulk.read', { name: file.name })));
-    };
-    reader.onerror = () => reject(reader.error ?? new Error(uiText(language, 'rsi.bulk.readFailed', { name: file.name })));
-    // Old PNG assets may have an empty MIME type; Rust still requires PNG Data URL.
-    reader.readAsDataURL(new Blob([file], { type: 'image/png' }));
-  });
 }
 
 /** Restore Electron's multi-PNG drag/drop, using the safe native one-state write
