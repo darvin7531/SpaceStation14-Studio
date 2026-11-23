@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, FileCode2, GitBranch, Layers, Search } from 'lucide-react';
 import {
-  studio, type EntityLocalizationAnalysis, type PrototypeDeclaration, type SourceOutline,
+  studio, type EntityLocalizationAnalysis, type PrototypeDeclaration, type SourceOutline, type SourceOutlineEntry, type PrototypeInheritancePreview,
 } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 import SpriteLayerInspector from './SpriteLayerInspector';
@@ -9,6 +9,8 @@ import LinkedPrototypePanel from './LinkedPrototypePanel';
 import InheritancePreviewPanel from './InheritancePreviewPanel';
 import { missingLocaleFiles } from '../lib/localization-navigation';
 import { outlineDeclarationKey, outlineKeyAtLine } from '../lib/outline-selection';
+import { prototypeNotice } from '../lib/prototype-notices';
+import { useI18n } from '../i18n';
 
 type EditorPanel = 'fields' | 'components' | 'localization' | 'parents';
 
@@ -92,6 +94,39 @@ function SelectedEntityLocaleStatus({
                 </div>
               </div>}
   </div>;
+}
+
+function InheritedSpriteInspector({ entry, workspaceKey, busy, onOpenRsi, onOpenSource }: {
+  entry: SourceOutlineEntry; workspaceKey: string; busy: boolean;
+  onOpenRsi: (path: string, state: string | null) => void;
+  onOpenSource: (file: string, line: number) => void;
+}) {
+  const { language } = useI18n();
+  const [report, setReport] = useState<PrototypeInheritancePreview | null>(null);
+  const [failure, setFailure] = useState<StudioError | null>(null);
+  useEffect(() => {
+    let active = true;
+    setReport(null); setFailure(null);
+    void studio.prototypeInheritancePreview(entry.declaration.kind, entry.declaration.id)
+      .then((value) => { if (active) setReport(value); })
+      .catch((error: unknown) => { if (active) setFailure(normalizeStudioError(error)); });
+    return () => { active = false; };
+  }, [entry.declaration.kind, entry.declaration.id, workspaceKey]);
+  const projection = report?.sprite;
+  return <>
+    {!report && !failure && <p role="status">Загрузка структурного Sprite…</p>}
+    {failure && <p role="alert">Не удалось разрешить Sprite: {failure.message} [{failure.code}]</p>}
+    {report && <>
+      <p className="prototype-outline-warning">Структурный Sprite из сохранённых источников; не итоговая композиция игры.
+        {!report.structural_complete && ' Цепочка неоднозначна или неполна — результат приблизителен.'}</p>
+      {report.warnings.map((warning, index) => <p className="prototype-outline-warning" key={index}>{prototypeNotice(language, warning)}</p>)}
+      {projection?.source && <button type="button" onClick={() => onOpenSource(projection.source!.file, projection.source!.line)}>
+        Последний источник компонента: {projection.source.file}:{projection.source.line}
+      </button>}
+      {projection && <SpriteLayerInspector sprite={projection.sprite} layers={projection.layers}
+        total={projection.layers_total} busy={busy} onOpenRsi={onOpenRsi}/>}
+    </>}
+  </>;
 }
 
 /** Parses the currently visible YAML draft, not the last saved catalog copy. */
@@ -208,11 +243,16 @@ export default function PrototypeOutlinePanel({
         {selected.declaration.parents.length > 0 && <p>
           <GitBranch size={13}/> Прямые родители: {selected.declaration.parents.join(', ')}
         </p>}
-        {(selected.sprite || selected.sprite_layers.length > 0) && <SpriteLayerInspector
-          key={selected.declaration.document_index + ':' + selected.declaration.item_index + ':'
-            + (selected.declaration.variant_index ?? 'base')}
-          sprite={selected.sprite} layers={selected.sprite_layers}
-          total={selected.sprite_layers_total} busy={busy} onOpenRsi={onOpenRsi}/>}
+        {!sourceDirty && selected.declaration.kind === 'entity' && selected.declaration.mode === 'normal'
+          && selected.declaration.variant_index === null && selected.declaration.parents.length > 0
+          ? <InheritedSpriteInspector key={outlineDeclarationKey(selected.declaration)} entry={selected}
+              workspaceKey={workspaceKey} busy={busy} onOpenRsi={onOpenRsi} onOpenSource={onOpenSource}/>
+          : <>{sourceDirty && selected.declaration.parents.length > 0 && <p className="prototype-outline-warning">
+              Сохраните YAML для просмотра унаследованного Sprite; сейчас показан только черновик.
+            </p>}
+            {(selected.sprite || selected.sprite_layers.length > 0) && <SpriteLayerInspector
+              key={outlineDeclarationKey(selected.declaration)} sprite={selected.sprite} layers={selected.sprite_layers}
+              total={selected.sprite_layers_total} busy={busy} onOpenRsi={onOpenRsi}/>}</>}
         <div className="prototype-outline-actions">
           {editable ? <>
             <button type="button" disabled={busy} onClick={() => onEdit(selected.declaration, 'fields')}>Поля</button>

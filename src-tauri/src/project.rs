@@ -681,6 +681,9 @@ impl ProjectIndex {
                 ));
             }
             self.read_resource(path).map(|document| document.content)
+        }, |rsi| {
+            self.positions.get(rsi).and_then(|index| self.resources.get(*index))
+                .is_some_and(|entry| entry.kind == "rsi")
         })
     }
 
@@ -1806,6 +1809,38 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+
+    #[test]
+    fn inherited_sprite_preview_respects_overrides_and_reports_ambiguity() {
+        let fx = Fixture::new();
+        fx.write("Resources/Prototypes/parent.yml", "- type: entity\n  id: Parent\n  components:\n  - type: Sprite\n    sprite: Objects/parent.rsi\n    state: base\n    layers:\n    - state: parent-layer\n");
+        fx.write("Resources/Prototypes/child.yml", "- type: entity\n  id: Child\n  parent: Parent\n  components:\n  - type: Sprite\n    state: child\n    layers:\n    - state: child-layer\n");
+        fx.write("Resources/Prototypes/other.yml", "- type: entity\n  id: Other\n  components:\n  - type: Sprite\n    sprite: Objects/other.rsi\n- type: entity\n  id: Inherited\n  parent: Parent\n- type: entity\n  id: Multi\n  parent: [Parent, Other]\n- type: entity\n  id: Missing\n  parent: Absent\n");
+        let project = ProjectIndex::open(fx.root_str()).unwrap();
+        let report = project.prototype_inheritance_preview("entity", "Child").unwrap();
+        assert!(report.structural_complete);
+        assert!(!report.runtime_exact);
+        let sprite = report.sprite.unwrap();
+        let link = sprite.sprite.unwrap();
+        assert_eq!(link.path, "Resources/Textures/Objects/parent.rsi");
+        assert_eq!(link.state.as_deref(), Some("child"));
+        assert_eq!(sprite.layers_total, 1);
+        assert_eq!(sprite.layers[0].state.as_deref(), Some("child-layer"));
+        assert_eq!(sprite.layers[0].path.as_deref(), Some(link.path.as_str()));
+        let source = sprite.source.unwrap();
+        assert_eq!(source.file, "Resources/Prototypes/child.yml");
+        assert_eq!(source.line, 1);
+        let inherited = project.prototype_inheritance_preview("entity", "Inherited").unwrap();
+        let parent_sprite = inherited.sprite.unwrap();
+        assert_eq!(parent_sprite.sprite.unwrap().state.as_deref(), Some("base"));
+        assert_eq!(parent_sprite.source.unwrap().file, "Resources/Prototypes/parent.yml");
+        let multi = project.prototype_inheritance_preview("entity", "Multi").unwrap();
+        assert!(!multi.structural_complete);
+        assert!(!multi.warnings.is_empty());
+        let missing = project.prototype_inheritance_preview("entity", "Missing").unwrap();
+        assert!(!missing.structural_complete);
+        assert!(!missing.warnings.is_empty());
     }
 
     #[test]

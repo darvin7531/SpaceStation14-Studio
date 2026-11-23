@@ -10,7 +10,7 @@ use yaml_rust2::scanner::Marker;
 use yaml_rust2::Event;
 
 use crate::error::StudioError;
-use crate::prototypes::{PrototypeCatalog, PrototypeDeclaration};
+use crate::prototypes::{normalize_sprite_path, PrototypeCatalog, PrototypeDeclaration, SourceSpriteLayer, SourceSpriteLink, MAX_LIVE_SPRITE_LAYERS};
 
 const MAX_PREVIEW_FIELDS: usize = 96;
 const MAX_PREVIEW_COMPONENTS: usize = 128;
@@ -793,7 +793,49 @@ pub struct PrototypeInheritancePreview {
     pub fields: Vec<MergeField>,
     pub components: Vec<MergeComponent>,
     pub total_partials: usize,
+    pub sprite: Option<InheritedSpritePreview>,
     pub warnings: Vec<PrototypeWarning>,
+}
+
+/// Structural Sprite fields, not a rendered runtime composition.
+#[derive(Debug, Serialize)]
+pub struct InheritedSpritePreview {
+    pub sprite: Option<SourceSpriteLink>,
+    pub layers: Vec<SourceSpriteLayer>,
+    pub layers_total: usize,
+    /// Last component contributor, not necessarily the origin of every field.
+    pub source: Option<PrototypeDeclaration>,
+}
+
+fn inherited_sprite(
+    node: &Node,
+    source: Option<PrototypeDeclaration>,
+    indexed: &impl Fn(&str) -> bool,
+) -> Option<InheritedSpritePreview> {
+    let Value::Seq(components) = &node.field("components")?.value else { return None };
+    let component = components.iter().find(|item| item.field("type").and_then(Node::scalar) == Some("Sprite"))?;
+    let sprite = component.field("sprite").and_then(Node::scalar).and_then(normalize_sprite_path).map(|path| SourceSpriteLink {
+        indexed: indexed(&path), path, state: component.field("state").and_then(Node::scalar).map(str::to_owned),
+    });
+    let layers = match component.field("layers").map(|node| &node.value) {
+        Some(Value::Seq(layers)) => layers.as_slice(),
+        _ => &[],
+    };
+    let items = layers.iter().take(MAX_LIVE_SPRITE_LAYERS).enumerate().map(|(index, layer)| {
+        let explicit = layer.field("sprite");
+        let path = match explicit {
+            Some(value) => value.scalar().and_then(normalize_sprite_path),
+            None => sprite.as_ref().map(|value| value.path.clone()),
+        };
+        SourceSpriteLayer {
+            index, indexed: path.as_deref().is_some_and(indexed), path,
+            state: layer.field("state").and_then(Node::scalar).map(str::to_owned),
+            visible: match layer.field("visible") { None => Some(true), Some(value) => match value.scalar() { Some("true") => Some(true), Some("false") => Some(false), _ => None } },
+            shader: layer.field("shader").and_then(Node::scalar).map(str::to_owned),
+            default_path: explicit.is_none() && sprite.is_some(),
+        }
+    }).collect();
+    Some(InheritedSpritePreview { sprite, layers: items, layers_total: layers.len(), source })
 }
 
 #[derive(Clone)]
@@ -1092,6 +1134,7 @@ pub fn preview_inheritance(
     kind: &str,
     id: &str,
     read: impl FnMut(&str) -> Result<String, StudioError>,
+    indexed: impl Fn(&str) -> bool,
 ) -> Result<PrototypeInheritancePreview, StudioError> {
     if !catalog.has_identity(kind, id) {
         return Err(StudioError::new(
@@ -1134,6 +1177,18 @@ pub fn preview_inheritance(
             serde_json::json!({"fields": MAX_PREVIEW_FIELDS, "components": MAX_PREVIEW_COMPONENTS}),
         );
     }
+    let source_file = result.sources.get("components/Sprite");
+    let candidates: Vec<_> = result.lineage.iter().flat_map(|ancestor| catalog.source_declarations(kind, ancestor))
+        .filter(|declaration| source_file == Some(&declaration.file))
+        .filter(|declaration| solver.file_cache.get(&declaration.file)
+            .and_then(|text| parse(text).ok())
+            .and_then(|docs| row(&docs, declaration).cloned())
+            .and_then(|item| item.field("components").cloned())
+            .is_some_and(|components| matches!(components.value, Value::Seq(items)
+                if items.iter().any(|item| item.field("type").and_then(Node::scalar) == Some("Sprite")))))
+        .collect();
+    let source = if candidates.len() == 1 { candidates.into_iter().next() } else { None };
+    let sprite = inherited_sprite(&result.node, source, &indexed);
     Ok(PrototypeInheritancePreview {
         kind: kind.to_owned(),
         id: id.to_owned(),
@@ -1144,6 +1199,7 @@ pub fn preview_inheritance(
         fields,
         components,
         total_partials: result.partials_by_identity.values().sum(),
+        sprite,
         warnings: solver.warnings,
     })
 }

@@ -172,7 +172,7 @@ export default function SpriteLayerInspector({ sprite, layers, total, busy, onOp
     </div>}
     <p className="sprite-layer-hint">
       Предпросмотр показывает один исходный слой/состояние, а не итоговую композицию:
-      наследование, смещения, shader, map и runtime-анимации не вычисляются.
+      смещения, shader, map и runtime-анимации не вычисляются.
     </p>
   </div>;
 }

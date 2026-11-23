@@ -344,6 +344,7 @@ export interface PrototypeInheritancePreview {
   fields: { key: string; preview: string; source_file: string }[];
   components: { type_name: string; keys: string[]; source_file: string }[];
   total_partials: number;
+  sprite: { sprite: SourceSpriteLink | null; layers: SourceSpriteLayer[]; layers_total: number; source: PrototypeDeclaration | null } | null;
   warnings: PrototypeNotice[];
 }
 

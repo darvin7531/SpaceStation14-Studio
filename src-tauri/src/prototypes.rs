@@ -109,7 +109,7 @@ pub struct SourceSpriteLayer {
     pub default_path: bool,
 }
 
-const MAX_LIVE_SPRITE_LAYERS: usize = 32;
+pub(crate) const MAX_LIVE_SPRITE_LAYERS: usize = 32;
 
 /// Reuse the exact catalogue parser on unsaved text. Partial/tagged and
 /// CreateVariants declarations remain visible, but are never implicitly
