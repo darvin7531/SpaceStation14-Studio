@@ -17,6 +17,7 @@ export WEBKIT_DISABLE_COMPOSITING_MODE=1
 mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME" "$root/project/Resources/Prototypes" "$root/project/Resources/Textures" "$root/project/Resources/Locale"
 export SMOKE_PROJECT="$root/project"
 printf '%s\n' '[{type: entity, id: SmokeOriginal}]' > "$SMOKE_PROJECT/Resources/Prototypes/smoke.yml"
+printf '%s\n' '- type: entity' '  id: SmokeFirst' '- type: entity' '  id: SmokeSecond' > "$SMOKE_PROJECT/Resources/Prototypes/tabs.yml"
 tauri-driver > "$root/driver.log" 2>&1 &
 driver_pid=$!
 if ! node tests/gui-smoke.mjs; then

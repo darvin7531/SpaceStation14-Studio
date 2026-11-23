@@ -9,6 +9,9 @@ const file = join(process.env.SMOKE_PROJECT, 'Resources/Prototypes/smoke.yml');
 const saved = '[{type: entity, id: SmokeSaved}]';
 const draft = '[{type: entity, id: SmokeDraft}]';
 const external = '[{type: entity, id: SmokeExternal}]\n';
+const tabsPath = 'Resources/Prototypes/tabs.yml';
+const tabsFile = join(process.env.SMOKE_PROJECT, tabsPath);
+const tabsDraft = '[{type: entity, id: SmokeFirst, name: SharedDraft}, {type: entity, id: SmokeSecond}]';
 let session;
 
 async function request(method, path, body) {
@@ -84,6 +87,37 @@ try {
       && button?.disabled && editor && !editor.readOnly;
   `));
 
+  const originalTabsFile = await readFile(tabsFile, 'utf8');
+  await click('[data-testid=folder-view]');
+  await click('.resource-tree-row[title="Resources/Prototypes"]');
+  await click('.resource-tree-toggle[data-resource-path="Resources/Prototypes/tabs.yml"]');
+  await click('[data-testid=tree-prototype][data-resource-path="Resources/Prototypes/tabs.yml"][data-prototype-id="SmokeFirst"]');
+  await until('first prototype selected', () => find('[role=tab][data-prototype-id="SmokeFirst"][aria-selected=true]'));
+  await until('prototype file loaded', () => script("return document.querySelector('.monaco-shell .view-lines')?.textContent?.includes('SmokeFirst');"));
+  await edit(tabsDraft, 'SharedDraft');
+  await click('[data-testid=tree-prototype][data-resource-path="Resources/Prototypes/tabs.yml"][data-prototype-id="SmokeSecond"]');
+  await until('second prototype selected with shared draft', () => script(`
+    return document.querySelector('[role=tab][data-prototype-id="SmokeSecond"][aria-selected=true]')
+      && document.querySelector('.monaco-shell .view-lines')?.textContent?.includes('SharedDraft')
+      && !document.querySelector('[data-testid=save-resource]')?.disabled;
+  `));
+  await click('[role=tab][data-prototype-id="SmokeFirst"]');
+  await until('first prototype retains shared draft', () => script(`
+    return document.querySelector('[role=tab][data-prototype-id="SmokeFirst"][aria-selected=true]')
+      && document.querySelector('.monaco-shell .view-lines')?.textContent?.includes('SharedDraft');
+  `));
+  await click('.tab[data-prototype-id="SmokeFirst"] .tab-close');
+  await until('remaining prototype retains shared draft', () => script(`
+    return !document.querySelector('[role=tab][data-prototype-id="SmokeFirst"]')
+      && document.querySelector('[role=tab][data-prototype-id="SmokeSecond"][aria-selected=true]')
+      && document.querySelector('.monaco-shell .view-lines')?.textContent?.includes('SharedDraft')
+      && !document.querySelector('[data-testid=save-resource]')?.disabled;
+  `));
+  assert.equal(await readFile(tabsFile, 'utf8'), originalTabsFile, 'switching and closing tabs must not save the draft');
+  await click('[role=tab][title="Resources/Prototypes/smoke.yml"]');
+  await until('original file selected', () => find('[role=tab][title="Resources/Prototypes/smoke.yml"][aria-selected=true]'));
+  await until('original file loaded', () => script("return document.querySelector('.monaco-shell .view-lines')?.textContent?.includes('SmokeSaved');"));
+
   await edit(draft, 'SmokeDraft');
   await writeFile(file, external);
   // Wait for the watcher to reconcile the external revision with the dirty draft.
@@ -104,7 +138,7 @@ try {
   }
   assert.equal(await readFile(file, 'utf8'), external, 'conflict must not overwrite external disk contents');
   assert.ok(await script("return document.querySelector('.monaco-shell .view-lines')?.textContent?.includes('SmokeDraft');"), 'conflict must retain the editor draft');
-  console.log('GUI smoke passed: project opened, YAML saved, conflicting disk and draft preserved');
+  console.log('GUI smoke passed: shared prototype draft survives switching and close; YAML save and conflict protected');
 } finally {
   if (session) {
     try { await call('DELETE', ''); } catch (error) { console.error('WebDriver cleanup:', error.message); }

@@ -121,14 +121,14 @@ export default function ResourceTabStrip({
       const targetPosition = isTarget
         ? (draggedIndex < dragView!.targetIndex ? ' tab-drop-after' : ' tab-drop-before')
         : '';
-      return <div key={tabId(tab)}
+      return <div key={tabId(tab)} data-prototype-id={tab.prototype?.id}
         ref={(node) => {
           if (node) tabNodes.current.set(tabId(tab), node);
           else tabNodes.current.delete(tabId(tab));
         }}
         className={'tab' + (activePath === tabId(tab) ? ' active' : '')
           + (isDragging ? ' tab-dragging' : '') + targetPosition}>
-        <button type="button" role="tab" title={tab.path}
+        <button type="button" role="tab" title={tab.path} data-prototype-id={tab.prototype?.id}
           aria-selected={activePath === tabId(tab)}
           className="tab-focus" disabled={disabled}
           onPointerDown={(event) => pointerDown(event, tab)}

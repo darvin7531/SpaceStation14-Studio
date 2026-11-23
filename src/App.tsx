@@ -1659,7 +1659,7 @@ export default function App() {
         <div className="explorer-switch" role="group" aria-label={t('app.fileView')}>
           <button type="button" className={fileView === 'search' ? 'selected' : ''}
             onClick={() => setFileView('search')}>{t('app.search')}</button>
-          <button type="button" className={fileView === 'folders' ? 'selected' : ''}
+          <button type="button" data-testid="folder-view" className={fileView === 'folders' ? 'selected' : ''}
             onClick={() => setFileView('folders')}>{t('app.folders')}</button>
         </div>
         {fileView === 'search' ? <>

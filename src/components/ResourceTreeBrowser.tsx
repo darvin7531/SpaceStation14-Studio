@@ -121,7 +121,7 @@ function TreeYaml({ entry, depth, selectedPath, onOpen, onOpenPrototype }:
   return <div className="resource-tree-branch">
     <div className={'resource-tree-row' + (selectedPath === entry.path ? ' active' : '')}
       style={{ paddingLeft: 8 + depth * 14 }}>
-      <button type="button" className="resource-tree-toggle" aria-expanded={expanded}
+      <button type="button" className="resource-tree-toggle" aria-expanded={expanded} data-resource-path={entry.path}
         title={expanded ? t('browser.collapse') : t('browser.expand')}
         onClick={() => setExpanded((value) => !value)}>
         {expanded ? <ChevronDown size={13}/> : <ChevronRight size={13}/>}
@@ -139,6 +139,7 @@ function TreeYaml({ entry, depth, selectedPath, onOpen, onOpenPrototype }:
       {!loading && !error && outline && declarations.length === 0
         && <p className="muted">{t('browser.noPrototypes')}</p>}
       {declarations.map((item) => <button type="button" className="resource-tree-row"
+        data-testid="tree-prototype" data-prototype-id={item.id} data-resource-path={item.file}
         key={treePrototypeKey(item)}
         style={{ paddingLeft: 8 + (depth + 1) * 14 }}
         title={item.file + ':' + item.line}
