@@ -1,8 +1,37 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  buildRsiFrameLayout, isRsiLayoutError, parseRsiMetadata, regroupRsiDelays, RSI_DIRECTIONS, selectRsiPreviewState,
+  buildRsiFrameLayout, isRsiLayoutError, missingRsiStateNames, invalidPresentRsiStateNames, parseRsiMetadata, regroupRsiDelays, RSI_DIRECTIONS, selectRsiPreviewState,
 } from '../src/lib/rsi-layout';
+
+import type { RsiDeleteRequest } from '../src/lib/api';
+
+const legacyDeleteRequest: RsiDeleteRequest = { path: 'sprite.rsi', expected_revision: 'revision', name: 'idle' };
+
+test('legacy delete requests do not require the missing PNG flag', () => {
+  assert.equal(legacyDeleteRequest.expected_missing_png, undefined);
+});
+
+test('missing state deletion includes invalid layouts but excludes duplicates and present sheets', () => {
+  const metadata = JSON.stringify({ version: 1, states: [
+    { name: 'bad_direction', directions: 2 }, { name: 'bad_time', delays: [[0]] },
+    { name: 'present' }, { name: 'duplicate' }, { name: 'duplicate', directions: 2 },
+    { name: '../unsafe' }, { name: 'valid' },
+  ] });
+  assert.deepEqual(missingRsiStateNames(metadata, ['present.png']), ['bad_direction', 'bad_time', 'valid']);
+  assert.deepEqual(missingRsiStateNames('{', []), []);
+  assert.deepEqual(missingRsiStateNames('{"version":2,"states":[{"name":"x"}]}', []), []);
+});
+
+test('invalid states with PNG remain eligible for metadata-only deletion', () => {
+  const metadata = JSON.stringify({ version: 1, states: [
+    { name: 'bad_direction', directions: 2 }, { name: 'bad_time', delays: [[0]] },
+    { name: 'bad_null', directions: null }, { name: 'valid' }, { name: 'duplicate' }, { name: 'duplicate' }, { name: 'missing', directions: 2 },
+  ] });
+  assert.deepEqual(invalidPresentRsiStateNames(metadata, ['bad_direction.png', 'bad_time.png', 'bad_null.png', 'valid.png', 'duplicate.png']),
+    ['bad_direction', 'bad_time', 'bad_null']);
+  assert.deepEqual(invalidPresentRsiStateNames('{', ['bad_direction.png']), []);
+});
 
 test('selects requested valid state or first valid metadata state for preview', () => {
   const { states } = parseRsiMetadata(JSON.stringify({

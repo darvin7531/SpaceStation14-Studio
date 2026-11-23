@@ -24,6 +24,8 @@ pub struct RsiDeleteRequest {
     pub path: String,
     pub expected_revision: String,
     pub name: String,
+    #[serde(default)]
+    pub expected_missing_png: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -304,9 +306,16 @@ pub(crate) fn delete_checked(
     }
     let updated = metadata_after_deletion(&original, &request.name)?;
     let png_path = folder.join(format!("{}.png", request.name));
-    let png = read_png(&png_path)?;
-    let png_revision = revision(&png);
-    if expected_png_revision.is_some_and(|expected| expected != png_revision) {
+    let png = if request.expected_missing_png {
+        if expected_png_revision.is_some() {
+            return Err(issue("RSI_DELETE_PNG_REVISION_INVALID", "Противоречивые ожидания PNG.", "Обновите RSI."));
+        }
+        None
+    } else {
+        Some(read_png(&png_path)?)
+    };
+    let png_revision = png.as_ref().map(|bytes| revision(bytes));
+    if expected_png_revision.is_some_and(|expected| Some(expected) != png_revision.as_deref()) {
         return Err(issue(
             "RSI_DELETE_PNG_CONFLICT",
             "PNG изменился после открытия и не будет заменён.",
@@ -316,9 +325,11 @@ pub(crate) fn delete_checked(
 
     let backup_path = archive_dir(&folder, &request.name)?;
     write_backup_file(&backup_path.join("meta.json.before"), &original)?;
-    write_backup_file(&backup_path.join(format!("{}.png", request.name)), &png)?;
+    if let Some(png) = &png {
+        write_backup_file(&backup_path.join(format!("{}.png", request.name)), png)?;
+    }
     let manifest = serde_json::to_vec_pretty(&json!({
-        "format": "ss14-studio-rsi-delete-backup-v1",
+        "format": if png.is_some() { "ss14-studio-rsi-delete-backup-v1" } else { "ss14-studio-rsi-delete-backup-metadata-v1" },
         "rsi": request.path,
         "state": request.name,
         "original_meta_revision": request.expected_revision,
@@ -371,28 +382,27 @@ pub(crate) fn delete_checked(
     if let Some(warning) = result.durability_warning {
         warnings.push(warning);
     }
-    let directory_still_safe =
-        safe_import_directory(root, &request.path).is_ok_and(|current| current == folder);
-    let png_still_safe = directory_still_safe
-        && fs::symlink_metadata(&png_path).is_ok_and(|stat| {
-            !stat.file_type().is_symlink() && stat.is_file() && stat.len() <= MAX_PNG_BYTES
-        });
-    if !png_still_safe {
-        warnings.push(
-            "Исходный PNG изменился или исчез: файл не удалён. Резервная копия сохранена."
-                .to_string(),
-        );
+    if request.expected_missing_png {
+        // ponytail: cross-process PNG creation cannot be locked; never inspect or unlink it.
+        warnings.push("PNG не проверялся и не удалялся: внешний процесс мог создать его во время операции. Архив метаданных восстанавливается только вручную.".into());
     } else {
-        match read_png(&png_path) {
-            Ok(current) if revision(&current) == png_revision => {
-                if let Err(error) = fs::remove_file(&png_path) {
-                    warnings.push(format!(
-                        "Состояние удалено из meta.json, но PNG остался: {error}"
-                    ));
+        let directory_still_safe =
+            safe_import_directory(root, &request.path).is_ok_and(|current| current == folder);
+        let png_still_safe = directory_still_safe
+            && fs::symlink_metadata(&png_path).is_ok_and(|stat| {
+                !stat.file_type().is_symlink() && stat.is_file() && stat.len() <= MAX_PNG_BYTES
+            });
+        if !png_still_safe {
+            warnings.push("Исходный PNG изменился или исчез: файл не удалён. Резервная копия сохранена.".to_string());
+        } else {
+            match read_png(&png_path) {
+                Ok(current) if Some(revision(&current)) == png_revision => {
+                    if let Err(error) = fs::remove_file(&png_path) {
+                        warnings.push(format!("Состояние удалено из meta.json, но PNG остался: {error}"));
+                    }
                 }
+                _ => warnings.push("Исходный PNG изменился во время операции: он оставлен на месте.".into()),
             }
-            _ => warnings
-                .push("Исходный PNG изменился во время операции: он оставлен на месте.".into()),
         }
     }
     if let Err(error) = sync_directory(&folder) {
@@ -443,6 +453,7 @@ mod tests {
                 path: self.path.clone(),
                 name: "idle".into(),
                 expected_revision: revision(&original),
+                expected_missing_png: false,
             }
         }
     }
@@ -565,17 +576,72 @@ mod tests {
     }
 
     #[test]
-    fn refuses_missing_png_and_preserves_meta() {
+    fn metadata_only_deletes_invalid_state_without_touching_present_png() {
         let fixture = Fixture::new();
-        let metadata = fs::read(fixture.root.join(&fixture.path).join("meta.json")).unwrap();
-        fs::remove_file(fixture.root.join(&fixture.path).join("idle.png")).unwrap();
-        assert_eq!(
-            delete(&fixture.root, &fixture.request()).unwrap_err().code,
-            "RSI_DELETE_PNG_MISSING"
-        );
-        assert_eq!(
-            fs::read(fixture.root.join(&fixture.path).join("meta.json")).unwrap(),
-            metadata
-        );
+        let folder = fixture.root.join(&fixture.path);
+        let original = br#"{"version":1,"size":{"x":1,"y":1},"states":[{"name":"idle","directions":"bad"}]}"#;
+        fs::write(folder.join("meta.json"), original).unwrap();
+        let mut request = fixture.request();
+        request.expected_missing_png = true;
+        let deleted = delete(&fixture.root, &request).unwrap();
+        assert_eq!(fs::read(folder.join("idle.png")).unwrap(), b"original sprite");
+        assert_eq!(fs::read(fixture.root.join(deleted.archive_path).join("meta.json.before")).unwrap(), original);
+        assert!(serde_json::from_str::<Value>(&deleted.content).unwrap()["states"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn metadata_only_never_touches_a_late_png() {
+        let fixture = Fixture::new();
+        let png = fixture.root.join(&fixture.path).join("idle.png");
+        fs::remove_file(&png).unwrap();
+        let mut request = fixture.request();
+        request.expected_missing_png = true;
+        // Simulate a PNG arriving after the UI observed its absence.
+        fs::write(&png, b"late external PNG").unwrap();
+        let deleted = delete(&fixture.root, &request).unwrap();
+        assert_eq!(fs::read(&png).unwrap(), b"late external PNG");
+        let archive = fixture.root.join(&deleted.archive_path);
+        assert!(!archive.join("idle.png").exists());
+        assert!(archive.join("meta.json.before").exists());
+        assert!(deleted.warning.is_some());
+        let id = archive.file_name().unwrap().to_str().unwrap().to_string();
+        let request = crate::rsi_restore::RsiRestoreRequest {
+            path: fixture.path.clone(), expected_revision: deleted.revision, archive_id: id,
+        };
+        assert_eq!(crate::rsi_restore::restore(&fixture.root, &request).unwrap_err().code, "RSI_RESTORE_MANUAL_REQUIRED");
+        assert_eq!(fs::read(&png).unwrap(), b"late external PNG");
+        assert!(archive.join("meta.json.before").exists());
+    }
+
+    #[test]
+    fn metadata_only_restore_requires_manual_recovery() {
+        let fixture = Fixture::new();
+        let folder = fixture.root.join(&fixture.path);
+        fs::remove_file(folder.join("idle.png")).unwrap();
+        let mut request = fixture.request();
+        assert_eq!(delete_checked(&fixture.root, &request, Some(&revision(b"old"))).unwrap_err().code, "RSI_DELETE_PNG_MISSING");
+        request.expected_missing_png = true;
+        let deleted = delete(&fixture.root, &request).unwrap();
+        let archive = fixture.root.join(&deleted.archive_path);
+        assert!(!archive.join("idle.png").exists());
+        let id = archive.file_name().unwrap().to_str().unwrap().to_string();
+        assert_eq!(crate::rsi_restore::list(&fixture.root, &fixture.path).unwrap().archives.len(), 1);
+        let restore_request = crate::rsi_restore::RsiRestoreRequest {
+            path: fixture.path.clone(), expected_revision: deleted.revision.clone(), archive_id: id,
+        };
+        let stale = crate::rsi_restore::RsiRestoreRequest {
+            path: fixture.path.clone(), expected_revision: request.expected_revision.clone(), archive_id: restore_request.archive_id.clone(),
+        };
+        assert_eq!(crate::rsi_restore::restore(&fixture.root, &stale).unwrap_err().code, "RSI_RESTORE_CONFLICT");
+        let error = crate::rsi_restore::restore(&fixture.root, &restore_request).unwrap_err();
+        assert_eq!(error.code, "RSI_RESTORE_MANUAL_REQUIRED");
+        assert!(error.hint.contains("version"));
+        assert!(error.hint.contains("size"));
+        assert!(error.hint.contains("дубликат"));
+        assert_eq!(fs::read_to_string(folder.join("meta.json")).unwrap(), deleted.content);
+        fs::write(folder.join("idle.png"), b"external").unwrap();
+        assert_eq!(crate::rsi_restore::restore(&fixture.root, &restore_request).unwrap_err().code, "RSI_RESTORE_MANUAL_REQUIRED");
+        assert_eq!(fs::read(folder.join("idle.png")).unwrap(), b"external");
+        assert!(archive.join("meta.json.before").exists());
     }
 }

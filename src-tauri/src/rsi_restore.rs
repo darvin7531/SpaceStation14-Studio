@@ -53,7 +53,7 @@ struct Manifest {
     rsi: String,
     state: String,
     original_meta_revision: String,
-    original_png_revision: String,
+    original_png_revision: Option<String>,
 }
 
 fn issue(code: &'static str, message: &str, hint: &str) -> StudioError {
@@ -159,12 +159,12 @@ fn read_manifest(
         )
         .with_details(error.to_string())
     })?;
-    if manifest.format != FORMAT
+    if !((manifest.format == FORMAT && manifest.original_png_revision.as_deref().is_some_and(valid_sha))
+        || (manifest.format == "ss14-studio-rsi-delete-backup-metadata-v1" && manifest.original_png_revision.is_none()))
         || manifest.rsi != rsi_path
         || !valid_state(&manifest.state)
         || !archive_id.starts_with(&format!("deleted-{}-", manifest.state))
         || !valid_sha(&manifest.original_meta_revision)
-        || !valid_sha(&manifest.original_png_revision)
     {
         return Err(issue(
             "RSI_RESTORE_MANIFEST_INVALID",
@@ -412,24 +412,33 @@ fn restore_with_save(
             "Обновите RSI и повторите восстановление.",
         ));
     }
+    if manifest.original_png_revision.is_none() {
+        // ponytail: no cross-process lock can guarantee PNG absence until metadata publication.
+        return Err(issue(
+            "RSI_RESTORE_MANUAL_REQUIRED",
+            "Автоматическое восстановление архива без PNG небезопасно.",
+            "Остановите внешние изменения и проверьте PNG. Переносите состояние вручную только если version в обоих файлах равен 1, size совпадает, в meta.json.before ровно одна запись с этим именем, а в текущем meta.json её нет (нет дубликатов). Иначе не переносите состояние. Не заменяйте meta.json целиком; архив сохранён.",
+        ).with_details(format!("Архив: {}", archive.display())));
+    }
     let original = read_regular(
         &archive.join("meta.json.before"),
         MAX_METADATA_BYTES as u64,
         "meta.json.before",
     )?;
-    let png = read_regular(
-        &archive.join(format!("{}.png", manifest.state)),
-        MAX_PNG_BYTES,
-        "PNG",
-    )?;
-    if revision(&original) != manifest.original_meta_revision
-        || revision(&png) != manifest.original_png_revision
-    {
-        return Err(issue(
-            "RSI_RESTORE_ARCHIVE_CORRUPTED",
-            "Контрольные суммы архивных файлов не совпадают с манифестом.",
-            "Не изменяйте архивные файлы. Восстановление остановлено.",
-        ));
+    let png = if let Some(expected) = &manifest.original_png_revision {
+        let png = read_regular(&archive.join(format!("{}.png", manifest.state)), MAX_PNG_BYTES, "PNG")?;
+        if revision(&png) != *expected {
+            return Err(issue("RSI_RESTORE_ARCHIVE_CORRUPTED", "Контрольная сумма архивного PNG не совпадает.", "Проверьте архив."));
+        }
+        Some(png)
+    } else {
+        match fs::symlink_metadata(archive.join(format!("{}.png", manifest.state))) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            _ => return Err(issue("RSI_RESTORE_ARCHIVE_UNSAFE", "Архив метаданных содержит неожиданный PNG.", "Проверьте архив.")),
+        }
+    };
+    if revision(&original) != manifest.original_meta_revision {
+        return Err(issue("RSI_RESTORE_ARCHIVE_CORRUPTED", "Контрольная сумма архивных метаданных не совпадает.", "Проверьте архив."));
     }
     let updated = restored_metadata(&current, &original, &manifest.state)?;
     let png_path = folder.join(format!("{}.png", manifest.state));
@@ -452,28 +461,33 @@ fn restore_with_save(
             .with_details(error.to_string()))
         }
     }
-    let mut new_png = OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .open(&png_path)
-        .map_err(|error| {
-            if error.kind() == std::io::ErrorKind::AlreadyExists {
-                issue(
-                    "RSI_RESTORE_PNG_EXISTS",
-                    "PNG появился во время восстановления.",
-                    "Обновите RSI.",
-                )
-            } else {
-                issue(
-                    "RSI_RESTORE_PNG_WRITE_FAILED",
-                    "Невозможно создать PNG.",
-                    "Проверьте свободное место и права.",
-                )
-                .with_details(error.to_string())
-            }
-        })?;
-    let write_result = new_png.write_all(&png).and_then(|_| new_png.sync_all());
-    drop(new_png);
+    let write_result = if let Some(png) = &png {
+        let mut new_png = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&png_path)
+            .map_err(|error| {
+                if error.kind() == std::io::ErrorKind::AlreadyExists {
+                    issue(
+                        "RSI_RESTORE_PNG_EXISTS",
+                        "PNG появился во время восстановления.",
+                        "Обновите RSI.",
+                    )
+                } else {
+                    issue(
+                        "RSI_RESTORE_PNG_WRITE_FAILED",
+                        "Невозможно создать PNG.",
+                        "Проверьте свободное место и права.",
+                    )
+                    .with_details(error.to_string())
+                }
+            })?;
+        let write_result = new_png.write_all(png).and_then(|_| new_png.sync_all());
+        drop(new_png);
+        write_result
+    } else {
+        Ok(())
+    };
     let metadata_result = write_result
         .map_err(|error| {
             issue(
@@ -501,6 +515,7 @@ fn restore_with_save(
         });
     let result = match metadata_result {
         Ok(result) => result,
+        Err(failure) if png.is_none() => return Err(failure),
         Err(failure) => {
             // ponytail: leave the pathname untouched; unlink is not conditional on
             // inode identity. Manual cleanup is required after a failed restore.
@@ -573,6 +588,7 @@ mod tests {
                     path: self.path.clone(),
                     expected_revision: revision,
                     name: "idle".into(),
+                    expected_missing_png: false,
                 },
             )
             .unwrap();

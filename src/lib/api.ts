@@ -529,6 +529,7 @@ export interface RenamedRsiState {
 }
 
 export interface RsiDeleteRequest {
+  expected_missing_png?: boolean;
   path: string;
   expected_revision: string;
   name: string;

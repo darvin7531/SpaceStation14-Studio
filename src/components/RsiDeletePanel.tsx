@@ -7,11 +7,12 @@ interface Props {
   path: string;
   revision: string;
   name: string;
+  expectedMissingPng?: boolean;
   onDeleted: (result: DeletedRsiState) => void;
 }
 
 /** Intentional, name-confirmed deletion; backups are never silently removed. */
-export default function RsiDeletePanel({ path, revision, name, onDeleted }: Props) {
+export default function RsiDeletePanel({ path, revision, name, expectedMissingPng = false, onDeleted }: Props) {
   const [confirmation, setConfirmation] = useState('');
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState<StudioError | null>(null);
@@ -23,7 +24,7 @@ export default function RsiDeletePanel({ path, revision, name, onDeleted }: Prop
     setError(null);
     try {
       const result = await studio.deleteRsiState({
-        path, expected_revision: revision, name,
+        path, expected_revision: revision, name, expected_missing_png: expectedMissingPng,
       });
       onDeleted(result);
     } catch (failure) {
@@ -37,13 +38,10 @@ export default function RsiDeletePanel({ path, revision, name, onDeleted }: Prop
     <summary><Trash2 size={15}/> Убрать состояние «{name}» из RSI</summary>
     <form onSubmit={(event) => void submit(event)}>
       <p><AlertTriangle size={16}/>
-        Studio предварительно сохранит исходные PNG и meta.json в скрытую папку
-        <code> .ss14-studio-archive</code> внутри RSI.
-        После этого состояние будет исключено из meta.json, а оригинальный PNG удалён
-        только при совпадении контрольной суммы.
-      </p>
-      <p>Это не корзина ОС. Восстановить удалённое состояние можно в панели
-        архивов ниже, если его имя и PNG ещё не заняты.
+        {expectedMissingPng
+          ? 'Studio сохранит meta.json в архив и удалит только запись состояния. PNG не проверяется и не удаляется, даже если он уже существует или появится извне. Восстановление архива — только вручную.'
+          : 'Studio сохранит meta.json и PNG в архив, затем удалит запись и PNG при совпадении контрольной суммы. Внешний процесс может изменить PNG между проверкой и удалением.'}
+        <code> .ss14-studio-archive</code>
       </p>
       <label>Введите точное имя <strong>{name}</strong> для подтверждения
         <input type="text" autoComplete="off" spellCheck={false}

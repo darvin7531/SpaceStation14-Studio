@@ -196,6 +196,7 @@ fn replace_with_import(
             path: request.path.clone(),
             expected_revision: request.expected_revision.clone(),
             name: request.name.clone(),
+            expected_missing_png: false,
         },
         Some(expected_png),
     )?;
@@ -432,6 +433,7 @@ mod tests {
                 path: fixture.path.clone(),
                 expected_revision: replaced.revision.clone(),
                 name: "idle".into(),
+                expected_missing_png: false,
             },
         )
         .unwrap();

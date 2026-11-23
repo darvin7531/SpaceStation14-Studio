@@ -66,6 +66,28 @@ function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** Unique safe names eligible for metadata-only deletion. */
+function deletableRsiStateNames(text: string): string[] {
+  let parsed: unknown;
+  try { parsed = JSON.parse(text); } catch { return []; }
+  if (!record(parsed) || parsed.version !== 1 || !Array.isArray(parsed.states)
+    || parsed.states.length > MAX_STATES) return [];
+  const names = parsed.states.flatMap((state: unknown) =>
+    record(state) && typeof state.name === 'string' ? [state.name] : []);
+  return names.filter((name, index) => /^[a-z0-9_-]{1,128}$/.test(name)
+    && names.indexOf(name) === index && names.lastIndexOf(name) === index);
+}
+
+export function missingRsiStateNames(text: string, sheets: string[]): string[] {
+  return deletableRsiStateNames(text).filter((name) => !sheets.includes(name + '.png'));
+}
+
+export function invalidPresentRsiStateNames(text: string, sheets: string[]): string[] {
+  const playable = parseRsiMetadata(text).states;
+  return deletableRsiStateNames(text).filter((name) => sheets.includes(name + '.png')
+    && !playable.some((state) => state.name === name));
+}
+
 /** Invalid states are skipped individually; the sheet remains viewable. */
 export function parseRsiMetadata(text: string, language: Language = 'ru'): RsiMetadata {
   const errors: string[] = [];
@@ -120,7 +142,7 @@ export function parseRsiMetadata(text: string, language: Language = 'ru'): RsiMe
       continue;
     }
     seen.add(name);
-    const dir = input.directions ?? 1;
+    const dir = input.directions === undefined ? 1 : input.directions;
     if (dir !== 1 && dir !== 4 && dir !== 8) {
       warnings.push(uiText(language, 'rsi.layout.directions', { name }));
       continue;

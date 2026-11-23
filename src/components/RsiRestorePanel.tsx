@@ -64,8 +64,8 @@ export default function RsiRestorePanel({ path, revision, onRestored }: Props) {
     </summary>
     <form onSubmit={(event) => void submit(event)}>
       <p>Восстановление добавляет исходное состояние в текущий <code>meta.json</code>
-        и создаёт его PNG заново. Другие состояния и последующие изменения метаданных
-        сохраняются. Архив остаётся на диске.</p>
+        и создаёт его PNG заново, если он был в архиве. Другие состояния и последующие изменения метаданных
+        сохраняются. Архив остаётся на диске. Архивы без PNG восстанавливаются только вручную: остановите внешние изменения и проверьте PNG. Переносите запись из архивного meta.json.before в текущий meta.json только если в обоих файлах version равен 1, size совпадает, в архиве ровно одна запись с этим именем, а в текущем файле её нет. Иначе не переносите запись. Не заменяйте meta.json целиком.</p>
       {loading && <p>Чтение резервных копий…</p>}
       {listError && <p role="alert" className="rsi-error">
         <AlertTriangle size={15}/>{listError.message} {listError.hint}
@@ -98,7 +98,7 @@ export default function RsiRestorePanel({ path, revision, onRestored }: Props) {
         </label>
         {error && <p role="alert" className="rsi-error">
           <AlertTriangle size={15}/>{error.message} {error.hint}
-          <code>{error.code}</code>
+          <code>{error.code}</code> {error.details && <code>{error.details}</code>}
         </p>}
         <button type="submit" disabled={!selected || confirmation !== selected.state || saving}>
           <RotateCcw size={14}/>{saving ? 'Восстанавливаю…' : 'Восстановить состояние'}

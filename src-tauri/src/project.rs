@@ -3368,6 +3368,7 @@ mod tests {
             path: path.into(),
             expected_revision: doc.revision,
             name: "idle".into(),
+            expected_missing_png: false,
         };
         let removed = index.delete_rsi_state(&request).unwrap();
         assert_eq!(removed.name, "idle");
@@ -3404,6 +3405,7 @@ mod tests {
                 path: path.into(),
                 expected_revision: original.revision,
                 name: "idle".into(),
+                expected_missing_png: false,
             })
             .unwrap();
         let archives = index.list_rsi_archives(path).unwrap();

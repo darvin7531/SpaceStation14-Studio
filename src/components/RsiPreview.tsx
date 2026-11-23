@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import { studio, type DeletedRsiState, type ImportedRsiState, type RestoredRsiState, type RenamedRsiState, type RsiSheetImage, type RsiSheetList } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
-import { buildRsiFrameLayout, isRsiLayoutError, parseRsiMetadata } from '../lib/rsi-layout';
+import { buildRsiFrameLayout, isRsiLayoutError, invalidPresentRsiStateNames, missingRsiStateNames, parseRsiMetadata } from '../lib/rsi-layout';
 import RsiStatePlayer from './RsiStatePlayer';
 import RsiImportPanel from './RsiImportPanel';
 import RsiBulkImportPanel from './RsiBulkImportPanel';
@@ -174,6 +174,12 @@ export default function RsiPreview({
     {selectedState && <RsiDeletePanel
       key={'delete:' + path + ':' + selectedState.name + ':' + revision}
       path={path} revision={revision} name={selectedState.name} onDeleted={onDeleted}/>}
+    {list && !listing && missingRsiStateNames(metadata, list.sheets.map((sheet) => sheet.name)).map((name) =>
+      <RsiDeletePanel key={'delete-missing:' + path + ':' + name + ':' + revision}
+        path={path} revision={revision} name={name} expectedMissingPng onDeleted={onDeleted}/>)}
+    {list && !listing && invalidPresentRsiStateNames(metadata, list.sheets.map((sheet) => sheet.name)).map((name) =>
+      <RsiDeletePanel key={'delete-invalid:' + path + ':' + name + ':' + revision}
+        path={path} revision={revision} name={name} expectedMissingPng onDeleted={onDeleted}/>)}
     <RsiRestorePanel path={path} revision={revision} onRestored={onRestored}/>
 
     <div className="rsi-stage">
