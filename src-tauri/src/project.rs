@@ -3142,6 +3142,23 @@ mod tests {
     }
 
     #[test]
+    fn sprite_diagnostics_follow_index_snapshot_and_filesystem_case() {
+        let fx = Fixture::new();
+        fx.write("Resources/Textures/Present.rsi/meta.json", "{}");
+        fx.write("Resources/Prototypes/sprites.yml", "- type: entity\n  id: Case\n  components:\n  - type: Sprite\n    sprite: present.rsi\n- type: entity\n  id: Later\n  components:\n  - type: Sprite\n    sprite: Later.rsi\n");
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        fx.write("Resources/Textures/Later.rsi/meta.json", "{}");
+        let issues = index.prototypes().unwrap().diagnostics(0, 200).items;
+        let missing: Vec<_> = issues.iter().filter(|item| item.code == "SPRITE_RSI_MISSING").collect();
+        let case_sensitive = !fx.root.join("Resources/Textures/present.rsi").exists();
+        assert_eq!(missing.iter().any(|item| item.message.contains("present.rsi")), case_sensitive);
+        let later = missing.iter().find(|item| item.message.contains("Later.rsi")).unwrap();
+        assert!(later.message.contains("текущем индексе"));
+        let (fresh, _) = index.refresh().unwrap();
+        assert!(!fresh.prototypes().unwrap().diagnostics(0, 200).items.iter().any(|item| item.code == "SPRITE_RSI_MISSING" && item.message.contains("Later.rsi")));
+    }
+
+    #[test]
     fn sprite_diagnostics_are_bounded() {
         let fx = Fixture::new();
         fx.write("Resources/Textures/Present.rsi/meta.json", "{}");
