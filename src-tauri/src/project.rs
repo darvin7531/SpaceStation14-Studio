@@ -2983,10 +2983,11 @@ mod tests {
         assert!(warnings
             .iter()
             .any(|w| w.contains("Missing.rsi") && w.contains("индекс")));
-        assert_eq!(
-            index.preview_append_prototype(&draft).unwrap().warnings,
-            warnings
-        );
+        let append_warnings = index.preview_append_prototype(&draft).unwrap().warnings;
+        assert!(warnings
+            .iter()
+            .all(|warning| append_warnings.contains(warning)));
+        assert_eq!(append_warnings.len(), warnings.len() + 1);
         draft.sprite = "Resources/Textures/Test.rsi".into();
         assert!(!index
             .preview_new_prototype(&draft)
