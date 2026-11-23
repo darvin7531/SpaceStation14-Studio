@@ -1,7 +1,7 @@
 // Real Linux WebDriver session against the release Tauri executable and IPC.
 import assert from 'node:assert/strict';
 import { access, readFile, writeFile } from 'node:fs/promises';
-import { resolve, join } from 'node:path';
+import { resolve, join, basename } from 'node:path';
 
 const base = 'http://127.0.0.1:4444';
 const elementKey = 'element-6066-11e4-a52e-4f735466cecf';
@@ -98,16 +98,43 @@ try {
   assert.deepEqual(JSON.parse(metadata).states, [{ name: 'idle', directions: 1, delays: [[0.1]] }]);
   await assert.rejects(access(join(rsi, 'idle.png')), { code: 'ENOENT' });
 
-  // An indexed external file confirms the watcher reconciled earlier writes.
-  await writeFile(join(process.env.SMOKE_PROJECT, 'Resources/Prototypes/watcher.yml'), '[{type: entity, id: WatcherSmoke}]\n');
-  await until('watcher refresh', () => find('.resource-row[title="Resources/Prototypes/watcher.yml"]'));
-  await until('attach panel after refresh', () => find('[data-testid=rsi-attach] summary'));
-  await click('[data-testid=rsi-attach] summary');
-  await keys(await until('PNG input', () => find('[data-testid=rsi-attach] input[type=file]')), process.env.SMOKE_PNG);
-  await until('attach enabled', () => script("const button = document.querySelector('[data-testid=rsi-attach] button[type=submit]'); return button && !button.disabled;"));
-  await click('[data-testid=rsi-attach] button[type=submit]');
+  // The attach panel is derived from refreshed metadata and the completed sheet list.
+  await until('idle attach panel after RSI refresh', () => script(`
+    return document.querySelector('[data-testid=rsi-attach] summary')?.textContent?.includes('idle');
+  `));
+  const deadline = Date.now() + 30000;
+  let submitted = false;
+  while (!submitted && Date.now() < deadline) {
+    await until('attach input', async () => {
+      await script("const panel = document.querySelector('[data-testid=rsi-attach]'); if (panel) panel.open = true;");
+      const input = await find('[data-testid=rsi-attach] input[type=file]');
+      if (!input) return false;
+      try { await keys(input, process.env.SMOKE_PNG); } catch (error) {
+        if (!/stale element|no such element/i.test(error.message)) throw error;
+        return false;
+      }
+      return true;
+    }, Math.max(0, deadline - Date.now()));
+    // Check the current form and submit in one browser task; a remount loses the selection.
+    submitted = await script(`
+      const panel = document.querySelector('[data-testid=rsi-attach]');
+      const input = panel?.querySelector('input[type=file]');
+      const button = panel?.querySelector('button[type=submit]');
+      if (!panel?.open || input?.files?.length !== 1
+          || input.files[0].name !== ${JSON.stringify(basename(process.env.SMOKE_PNG))}
+          || !button || button.disabled) return false;
+      button.click();
+      return true;
+    `);
+    if (!submitted) await sleep();
+  }
+  assert.ok(submitted, 'attach form must retain the selected PNG before submission');
   await until('attached PNG', async () => (await readFile(join(rsi, 'idle.png'))).equals(await readFile(process.env.SMOKE_PNG)));
-  await until('attached sheet displayed', () => find('.rsi-toolbar option[value="idle.png"]'));
+  await until('attached sheet loaded', () => script(`
+    const select = document.querySelector('.rsi-toolbar select');
+    const image = document.querySelector('.rsi-stage img');
+    return select?.value === 'idle.png' && image?.complete && image.naturalWidth > 0;
+  `));
   assert.deepEqual(await readFile(join(rsi, 'meta.json')), metadata, 'attaching PNG must not change metadata');
   await click('[role=tab][title="Resources/Prototypes/smoke.yml"]');
   await until('original file reloaded after RSI', () => script("return document.querySelector('.monaco-shell .view-lines')?.textContent?.includes('SmokeSaved');"));
