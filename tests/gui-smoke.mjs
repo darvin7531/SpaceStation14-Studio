@@ -216,21 +216,9 @@ try {
   await keys(await find('.content-search-modal input[type=search]'), '\uE00C');
   await until('tab limit search closed', async () => !(await find('.content-search-modal')));
   for (let i = 1; i <= 9; i++) {
-    await script(`document.querySelector('.tab:has([role=tab][title="Resources/Prototypes/filler${i}.yml"]) .tab-close').scrollIntoView({ block: 'nearest', inline: 'center' });`);
-    try {
-      await click(`.tab:has([role=tab][title="Resources/Prototypes/filler${i}.yml"]) .tab-close`);
-    } catch (error) {
-      console.error('Tab close diagnostic:', await script(`
-        const button = document.querySelector('.tab:has([role=tab][title="Resources/Prototypes/filler${i}.yml"]) .tab-close');
-        const rect = button.getBoundingClientRect();
-        const style = getComputedStyle(button);
-        return JSON.stringify({ rect: rect.toJSON(), viewport: [innerWidth, innerHeight], disabled: button.disabled,
-          visibility: style.visibility, display: style.display, opacity: style.opacity,
-          target: document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.outerHTML,
-          strip: document.querySelector('.tab-strip').getBoundingClientRect().toJSON() });
-      `));
-      throw error;
-    }
+    const close = await find(`.tab:has([role=tab][title="Resources/Prototypes/filler${i}.yml"]) .tab-close`);
+    await script(`document.querySelector('.tab:has([role=tab][title="Resources/Prototypes/filler${i}.yml"]) .tab-close').focus();`);
+    await keys(close, '\uE007');
     await until('filler tab closed', async () => !(await find(`[role=tab][title="Resources/Prototypes/filler${i}.yml"]`)));
   }
 
