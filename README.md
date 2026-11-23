@@ -92,3 +92,5 @@ For the continuously updated task-level checklist and development cycles, see [R
 Rules: prevent data loss, do not hide errors or fake success, do not silently overwrite external changes, keep CI green, and measure performance before promising speedups.
 
 License: GNU AGPL v3.0 or later.
+
+**Concurrent RSI edits:** Revision checks followed by rename are not atomic compare-and-swap: an external writer can race between the check and rename. PNG deletion also checks content before unlinking, so a concurrent pathname replacement can still race that check; avoid concurrent edits during RSI operations. Failed restore/import leaves uncertain PNGs untouched for manual inspection; retain the reported archive and restore after resolving conflicts.

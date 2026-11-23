@@ -717,8 +717,8 @@ export const studio = {
   probeOpenRevisions(opened: OpenRevision[]): Promise<ResourceDriftReport> {
     return invoke('probe_open_revisions', { opened });
   },
-  refreshProject(changedPaths?: string[]): Promise<ProjectRefresh> {
-    return invoke('refresh_project', { changedPaths });
+  refreshProject(changedPaths?: string[], expectedProjectRoot?: string): Promise<ProjectRefresh> {
+    return invoke(expectedProjectRoot === undefined ? 'refresh_project' : 'refresh_project_bound', { changedPaths, ...(expectedProjectRoot === undefined ? {} : { expectedProjectRoot }) });
   },
   searchResources(query: string, kind: ResourceKind, offset: number, limit = 100): Promise<ResourcePage> {
     return invoke('search_resources', { query, kind, offset, limit });
@@ -732,8 +732,8 @@ export const studio = {
   readUiSource(path: string): Promise<ResourceDocument> {
     return invoke('read_ui_source', { path });
   },
-  searchResourceContent(query: string, kind: ResourceKind): Promise<ContentSearchResults> {
-    return invoke('search_resource_content', { query, kind });
+  searchResourceContent(query: string, kind: ResourceKind, expectedProjectRoot?: string): Promise<ContentSearchResults> {
+    return invoke(expectedProjectRoot === undefined ? 'search_resource_content' : 'search_resource_content_bound', { query, kind, ...(expectedProjectRoot === undefined ? {} : { expectedProjectRoot }) });
   },
   searchCSharpDefinitions(query: string, kind: 'all' | 'component' | 'prototype', offset: number, limit = 50): Promise<CSharpPage> {
     return invoke('search_csharp_definitions', { query, kind, offset, limit });
@@ -756,8 +756,8 @@ export const studio = {
   inspectEntityLocalization(locator: PrototypeFieldLocator, source: string): Promise<EntityLocalizationSource> {
     return invoke('inspect_entity_localization', { locator, source });
   },
-  analyzeEntityLocalization(locator: PrototypeFieldLocator, source: string, requiredLocales: string[]): Promise<EntityLocalizationAnalysis> {
-    return invoke('analyze_entity_localization', { locator, source, requiredLocales });
+  analyzeEntityLocalization(locator: PrototypeFieldLocator, source: string, requiredLocales: string[], expectedProjectRoot?: string): Promise<EntityLocalizationAnalysis> {
+    return invoke(expectedProjectRoot === undefined ? 'analyze_entity_localization' : 'analyze_entity_localization_bound', { locator, source, requiredLocales, ...(expectedProjectRoot === undefined ? {} : { expectedProjectRoot }) });
   },
   inspectPrototypeParents(locator: PrototypeFieldLocator, source: string): Promise<ParentInspection> {
     return invoke('inspect_prototype_parents', { locator, source });
@@ -801,8 +801,8 @@ export const studio = {
   saveYamlResource(path: string, expectedRevision: string, content: string): Promise<SaveResult> {
     return invoke('save_yaml_resource', { path, expectedRevision, content });
   },
-  saveFtlResource(path: string, expectedRevision: string, content: string): Promise<SaveResult> {
-    return invoke('save_ftl_resource', { path, expectedRevision, content });
+  saveFtlResource(path: string, expectedRevision: string, content: string, expectedProjectRoot?: string): Promise<SaveResult> {
+    return invoke(expectedProjectRoot === undefined ? 'save_ftl_resource' : 'save_ftl_resource_bound', { path, expectedRevision, content, ...(expectedProjectRoot === undefined ? {} : { expectedProjectRoot }) });
   },
   analyzeFluentResource(path: string, content: string): Promise<FluentInspection> {
     return invoke('analyze_fluent_resource', { path, content });
@@ -831,8 +831,8 @@ export const studio = {
   previewNewFluent(draft: NewFluentDraft): Promise<NewFluentPreview> {
     return invoke('preview_new_fluent', { draft });
   },
-  createNewFluent(draft: NewFluentDraft): Promise<CreatedFluent> {
-    return invoke('create_new_fluent', { draft });
+  createNewFluent(draft: NewFluentDraft, expectedProjectRoot?: string): Promise<CreatedFluent> {
+    return invoke(expectedProjectRoot === undefined ? 'create_new_fluent' : 'create_new_fluent_bound', { draft, ...(expectedProjectRoot === undefined ? {} : { expectedProjectRoot }) });
   },
   createExternalFluent(draft: NewFluentDraft): Promise<ExternalCreatedFluent | null> {
     return invoke('create_external_fluent', { draft });
@@ -855,8 +855,8 @@ export const studio = {
   listRsiSheets(path: string): Promise<RsiSheetList> {
     return invoke('list_rsi_sheets', { path });
   },
-  readRsiSheet(path: string, name: string): Promise<RsiSheetImage> {
-    return invoke('read_rsi_sheet', { path, name });
+  readRsiSheet(path: string, name: string, expectedProjectRoot?: string): Promise<RsiSheetImage> {
+    return invoke(expectedProjectRoot === undefined ? 'read_rsi_sheet' : 'read_rsi_sheet_bound', { path, name, ...(expectedProjectRoot === undefined ? {} : { expectedProjectRoot }) });
   },
   importRsiState(request: RsiImportRequest, expectedProjectRoot: string): Promise<ImportedRsiState> {
     return invoke('import_rsi_state', { request, expectedProjectRoot });
@@ -891,7 +891,7 @@ export const studio = {
   restoreRsiState(request: RsiRestoreRequest): Promise<RestoredRsiState> {
     return invoke('restore_rsi_state', { request });
   },
-  readResource(path: string): Promise<ResourceDocument> {
-    return invoke('read_resource', { path });
+  readResource(path: string, expectedProjectRoot?: string): Promise<ResourceDocument> {
+    return invoke(expectedProjectRoot === undefined ? 'read_resource' : 'read_resource_bound', { path, ...(expectedProjectRoot === undefined ? {} : { expectedProjectRoot }) });
   },
 };

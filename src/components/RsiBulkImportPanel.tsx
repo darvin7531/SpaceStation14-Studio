@@ -1,19 +1,16 @@
 import { useI18n } from '../i18n';
 import { useRef, useState, type DragEvent, type FormEvent } from 'react';
 import { AlertCircle, Upload } from 'lucide-react';
-import { studio, type ImportedRsiState } from '../lib/api';
-import { normalizeStudioError } from '../lib/errors';
 import { parseRsiMetadata } from '../lib/rsi-layout';
-import { planRsiBatch, pngHeaderSize } from '../lib/rsi-batch-plan';
 import { readPngAsDataUrl } from '../lib/rsi-png-data-url';
+import { importRsiBatch } from '../lib/rsi-batch-import';
 
 interface Props {
-  path: string;
   projectRoot: string;
-  onAttempt: (failure?: unknown) => void;
+  path: string;
   revision: string;
   metadata: string;
-  onImported: (result: ImportedRsiState) => void;
+  onBatchRefresh: (projectRoot: string) => Promise<void>;
   onBatchOutcome: (message: string) => void;
 }
 
@@ -21,7 +18,7 @@ interface Props {
  * repeatedly. All PNG dimensions and names are checked before the first write.
  */
 export default function RsiBulkImportPanel({
-  path, revision, metadata, onImported, onBatchOutcome, projectRoot, onAttempt,
+  projectRoot, path, revision, metadata, onBatchRefresh, onBatchOutcome,
 }: Props) {
   const { t, language } = useI18n();
   const [files, setFiles] = useState<File[]>([]);
@@ -31,12 +28,16 @@ export default function RsiBulkImportPanel({
   const [progress, setProgress] = useState('');
   const [dragging, setDragging] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  const [replaceExisting, setReplaceExisting] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const inspection = parseRsiMetadata(metadata, language);
+  const collisions = files.map((file) => file.name.replace(/\.png$/, ''))
+    .filter((name) => inspection.states.some((state) => state.name === name));
 
   function selectFiles(next: File[]) {
     setFailure(null);
     setProgress('');
+    setReplaceExisting(false);
     setFiles(next);
   }
 
@@ -52,74 +53,14 @@ export default function RsiBulkImportPanel({
     setFailure(null);
     setProgress(t('rsi.bulk.checking'));
     setImporting(true);
-    let last: ImportedRsiState | null = null;
-    let imported = 0;
-    let attempted = false;
-    let operationFailure: unknown;
-    try {
-      if (!inspection.size || inspection.errors.length) {
-        throw new Error(t('rsi.bulk.invalidMeta'));
-      }
-      const headers = await Promise.all(files.map(async (file) => {
-        const head = new Uint8Array(await file.slice(0, 24).arrayBuffer());
-        const dimensions = pngHeaderSize(head);
-        if (!dimensions) throw new Error(t('rsi.bulk.invalidHeader', { name: file.name }));
-        return {
-          name: file.name, bytes: file.size,
-          width: dimensions.width, height: dimensions.height,
-        };
-      }));
-      const plan = planRsiBatch(
-        headers, inspection.size, directions,
-        new Set(inspection.states.map((state) => state.name)), language,
-      );
-      if (!Number.isFinite(delay) || delay < 0.01 || delay > 60) {
-        throw new Error(t('rsi.bulk.invalidDelay'));
-      }
-      let expectedRevision = revision;
-      for (let i = 0; i < plan.length; i++) {
-        const item = plan[i];
-        setProgress(t('rsi.bulk.progress', { current: i + 1, total: plan.length, name: item.name }));
-        const data_url = await readPngAsDataUrl(files[i], language);
-        let result: ImportedRsiState;
-        try {
-          attempted = true;
-          result = await studio.importRsiState({
-          path,
-          expected_revision: expectedRevision,
-          name: item.name,
-          directions: item.directions,
-          frames_per_direction: item.frames,
-          delay_seconds: delay,
-          data_url,
-          }, projectRoot);
-        } catch (failure) {
-          operationFailure = failure;
-          throw failure;
-        }
-        expectedRevision = result.revision;
-        last = result;
-        imported++;
-      }
-      if (last) {
-        onImported(last);
-        onBatchOutcome(t('rsi.bulk.success', { count: imported, path }));
-      }
-    } catch (error) {
-      if (attempted) operationFailure = error;
-      const normalized = normalizeStudioError(error);
-      const detail = error instanceof Error ? error.message : [normalized.message, normalized.hint, normalized.code, normalized.details].filter(Boolean).join(' ');
-      if (last) {
-        onImported(last);
-        onBatchOutcome(t('rsi.bulk.partial', { count: imported, total: files.length, detail }));
-      } else {
-        setFailure(detail);
-      }
-    } finally {
-      if (attempted) onAttempt(operationFailure);
-      setImporting(false);
-      setProgress('');
-    }
+    const { attempted, outcome } = await importRsiBatch({
+      projectRoot, path, revision, inspection, files, directions, delay, replaceExisting,
+      language, readPng: (file) => readPngAsDataUrl(file, language), refresh: onBatchRefresh, onProgress: setProgress,
+    });
+    if (attempted) onBatchOutcome(outcome);
+    else if (outcome) setFailure(outcome);
+    setImporting(false);
+    setProgress('');
   }
 
   return <details className="rsi-import-panel">
@@ -152,6 +93,11 @@ export default function RsiBulkImportPanel({
       </div>
       {files.length > 0 && <p>{t('rsi.bulk.selected', { count: files.length, names: files.slice(0, 12).map((file) => file.name).join(', '), suffix: files.length > 12 ? '…' : '' })}</p>}
       <p>{t('rsi.bulk.help')}</p>
+      {collisions.length > 0 && <label>
+        <input type="checkbox" checked={replaceExisting} disabled={importing}
+          onChange={(event) => setReplaceExisting(event.target.checked)}/>
+        {t('rsi.bulk.confirmReplace', { names: collisions.join(', ') })}
+      </label>}
       {progress && <p role="status">{progress}</p>}
       {failure && <div className="rsi-error" role="alert">
         <AlertCircle size={15}/><span>{failure}</span>

@@ -38,6 +38,7 @@ export function planRsiBatch(
   directions: 1 | 4 | 8,
   existingNames: ReadonlySet<string>,
   language: Language = 'ru',
+  replaceExisting = false,
 ): BatchEntry[] {
   if (!Number.isSafeInteger(cell.x) || !Number.isSafeInteger(cell.y) ||
     cell.x < 1 || cell.y < 1 || cell.x > 2048 || cell.y > 2048) {
@@ -47,7 +48,7 @@ export function planRsiBatch(
     throw new Error(uiText(language, 'rsi.batch.count'));
   }
   if (![1, 4, 8].includes(directions)) throw new Error(uiText(language, 'rsi.batch.directions'));
-  const names = new Set(existingNames);
+  const names = new Set<string>();
   let bytes = 0;
   return files.map((file) => {
     if (file.bytes < 1 || file.bytes > MAX_FILE_BYTES) {
@@ -60,6 +61,9 @@ export function planRsiBatch(
     }
     const name = file.name.slice(0, -4);
     if (names.has(name)) throw new Error(uiText(language, 'rsi.batch.duplicate', { name }));
+    if (existingNames.has(name) && !replaceExisting) {
+      throw new Error(uiText(language, 'rsi.batch.confirmReplace', { name }));
+    }
     names.add(name);
     if (!Number.isSafeInteger(file.width) || !Number.isSafeInteger(file.height) ||
       file.width < 1 || file.height < 1 ||

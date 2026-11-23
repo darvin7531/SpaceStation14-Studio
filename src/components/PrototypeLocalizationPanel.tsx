@@ -6,13 +6,14 @@ import { normalizeStudioError, type StudioError } from '../lib/errors';
 import { localeFromFtlPath, localeResourceSearch } from '../lib/localization-settings';
 
 interface Props {
+  projectRoot: string;
   locator: PrototypeFieldLocator;
   source: string;
   busy: boolean;
   requiredLocales: readonly string[];
   onCreateMissing: (draft: NewFluentDraft) => void;
-  onCreateBatch: (draft: NewFluentDraft, sourceSnapshot: string) => Promise<import('../lib/api').CreatedFluent>;
-  onApply: (file: string, original: ResourceDocument, content: string, keepSource?: boolean, sourceSnapshot?: string) => Promise<boolean>;
+  onCreateBatch: (draft: NewFluentDraft, sourceSnapshot: string, projectRoot: string) => Promise<import('../lib/api').CreatedFluent>;
+  onApply: (file: string, original: ResourceDocument, content: string, keepSource?: boolean, sourceSnapshot?: string, projectRoot?: string) => Promise<boolean>;
   onClose: () => void;
 }
 
@@ -22,7 +23,7 @@ const FIELDS: { field: EntityLocaleField; label: string }[] = [
   { field: 'suffix', label: 'suffix → .suffix' },
 ];
 
-export default function PrototypeLocalizationPanel({ locator, source, busy, requiredLocales, onCreateMissing, onApply, onCreateBatch, onClose }: Props) {
+export default function PrototypeLocalizationPanel({ projectRoot, locator, source, busy, requiredLocales, onCreateMissing, onApply, onCreateBatch, onClose }: Props) {
   const [entity, setEntity] = useState<EntityLocalizationSource | null>(null);
   const [analysis, setAnalysis] = useState<EntityLocalizationAnalysis | null>(null);
   const [files, setFiles] = useState<ResourceEntry[]>([]);
@@ -33,6 +34,7 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, requ
   const [preview, setPreview] = useState<{ baseline: ResourceDocument; patch: EntityLocalePatch; sourceSnapshot: string } | null>(null);
   const [batchPreview, setBatchPreview] = useState<{
     sourceSnapshot: string;
+    projectRoot: string;
     entries: { locale: string; baseline: ResourceDocument; patch: EntityLocalePatch }[];
     missingFiles: { locale: string; path: string; draft: NewFluentDraft }[];
   } | null>(null);
@@ -136,8 +138,8 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, requ
     setError(null);
     setBatchPreview(null);
     try {
-      await studio.refreshProject();
-      const fresh = await studio.analyzeEntityLocalization(locator, source, [...requiredLocales]);
+      await studio.refreshProject(undefined, projectRoot);
+      const fresh = await studio.analyzeEntityLocalization(locator, source, [...requiredLocales], projectRoot);
       setAnalysis(fresh);
       if (!fresh.complete) throw new Error('Индекс игровых локалей неполон. Массовое исправление заблокировано.');
       const plan = planMissingEntityTranslations(fresh, chosen);
@@ -154,7 +156,7 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, requ
       });
       const entries: { locale: string; baseline: ResourceDocument; patch: EntityLocalePatch }[] = [];
       if (present.length) {
-        const matches = await studio.searchResourceContent(entity.localization_id, 'ftl');
+        const matches = await studio.searchResourceContent(entity.localization_id, 'ftl', projectRoot);
         if (!matches.complete) throw new Error('Поиск определений Fluent неполный. Запись заблокирована.');
         if (!/^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(entity.localization_id)) {
           throw new Error('Fluent ID нельзя безопасно использовать для генерации.');
@@ -171,13 +173,13 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, requ
             throw new Error('Для ' + item.locale + ' Fluent ID уже найден в '
               + duplicate.path + ':' + duplicate.line + '. Проверьте файл перед исправлением.');
           }
-          const baseline = await studio.readResource(item.path);
+          const baseline = await studio.readResource(item.path, projectRoot);
           if (baseline.path !== item.path) throw new Error('FTL изменился во время проверки: ' + item.path);
           const patch = buildEntityLocalePatch(baseline.content, entity, item.fields);
           if (patch.changed) entries.push({ locale: item.locale, baseline, patch });
         }
       }
-      setBatchPreview({ sourceSnapshot: source, entries, missingFiles });
+      setBatchPreview({ sourceSnapshot: source, projectRoot, entries, missingFiles });
       setNotice('Предпросмотр готов: существующих FTL: ' + entries.length + ', новых FTL: ' + missingFiles.length + '.');
     } catch (failure) {
       setError(normalizeStudioError(failure));
@@ -187,14 +189,14 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, requ
   }
 
   async function applyBatch() {
-    if (!batchPreview || (!batchPreview.entries.length && !batchPreview.missingFiles.length) || batchPreview.sourceSnapshot !== source || disabled) return;
+    if (!batchPreview || (!batchPreview.entries.length && !batchPreview.missingFiles.length) || batchPreview.sourceSnapshot !== source || batchPreview.projectRoot !== projectRoot || disabled) return;
     setApplying(true);
     setError(null);
     let saved = 0;
     try {
       for (const entry of batchPreview.entries) {
         // Every file keeps its preview SHA-256 revision and the normal unsaved-draft guard.
-        const success = await onApply(entry.baseline.path, entry.baseline, entry.patch.content, true, source);
+        const success = await onApply(entry.baseline.path, entry.baseline, entry.patch.content, true, source, batchPreview.projectRoot);
         if (!success) throw new Error('Запись не подтверждена: ' + entry.baseline.path);
         saved++;
         setBatchPreview((current) => current ? {
@@ -203,20 +205,20 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, requ
       }
       for (const item of batchPreview.missingFiles) {
         // Recheck the indexed locale and search before each exclusive create.
-        await studio.refreshProject();
-        const fresh = await studio.analyzeEntityLocalization(locator, source, [...requiredLocales]);
+        await studio.refreshProject(undefined, projectRoot);
+        const fresh = await studio.analyzeEntityLocalization(locator, source, [...requiredLocales], projectRoot);
         const plan = planMissingEntityTranslations(fresh, chosen);
         const candidate = plan.find((entry) => entry.locale === item.locale && entry.path === item.path && !entry.fileExists);
         if (!fresh.complete || !candidate || JSON.stringify(buildMissingFluentDraft(item.path, entity!, candidate.fields)) !== JSON.stringify(item.draft)) {
           throw new Error('Локализация изменилась. Повторите предварительный просмотр: ' + item.path);
         }
-        const matches = await studio.searchResourceContent(entity!.localization_id, 'ftl');
+        const matches = await studio.searchResourceContent(entity!.localization_id, 'ftl', projectRoot);
         if (!matches.complete) throw new Error('Поиск определений Fluent неполный. Запись заблокирована.');
         const prefix = item.path.split('/').slice(0, 3).join('/') + '/';
         if (matches.items.some((hit) => hit.path.startsWith(prefix) && isFluentDefinition(hit.preview, entity!.localization_id))) {
           throw new Error('Fluent ID уже существует в локали ' + item.locale);
         }
-        const result = await onCreateBatch(item.draft, source);
+        const result = await onCreateBatch(item.draft, source, batchPreview.projectRoot);
         saved++;
         setBatchPreview((current) => current ? {
           ...current, missingFiles: current.missingFiles.filter((entry) => entry.path !== item.path),
@@ -228,7 +230,7 @@ export default function PrototypeLocalizationPanel({ locator, source, busy, requ
       setBatchPreview(null);
       setNotice('Сохранено и создано FTL: ' + saved + '.');
       try {
-        setAnalysis(await studio.analyzeEntityLocalization(locator, source, [...requiredLocales]));
+        setAnalysis(await studio.analyzeEntityLocalization(locator, source, [...requiredLocales], projectRoot));
       } catch {
         setNotice('Сохранено FTL: ' + saved + '. Повторите проверку локалей после обновления индекса.');
       }

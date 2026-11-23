@@ -129,6 +129,14 @@ fn project_for_rsi_write(
     Ok(index)
 }
 
+fn project_for_operation(state: &WorkspaceState, expected: Option<&str>) -> Result<Arc<ProjectIndex>, StudioError> {
+    let project = current_project(state)?;
+    if expected.is_some_and(|root| root != project.overview().project_root) {
+        return Err(StudioError::new("PROJECT_CHANGED", "Проект изменился.", "Повторите действие для исходного проекта."));
+    }
+    Ok(project)
+}
+
 #[tauri::command]
 async fn check_app_updates(
     app: tauri::AppHandle,
@@ -187,7 +195,24 @@ async fn refresh_project(
     changed_paths: Option<Vec<String>>,
     state: State<'_, WorkspaceState>,
 ) -> Result<ProjectRefresh, StudioError> {
-    let original = current_project(&state)?;
+    refresh_project_impl(changed_paths, None, state).await
+}
+
+#[tauri::command]
+async fn refresh_project_bound(
+    changed_paths: Option<Vec<String>>,
+    expected_project_root: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<ProjectRefresh, StudioError> {
+    refresh_project_impl(changed_paths, Some(expected_project_root), state).await
+}
+
+async fn refresh_project_impl(
+    changed_paths: Option<Vec<String>>,
+    expected_project_root: Option<String>,
+    state: State<'_, WorkspaceState>,
+) -> Result<ProjectRefresh, StudioError> {
+    let original = project_for_operation(&state, expected_project_root.as_deref())?;
     let source = original.clone();
     let (rebuilt, summary) = tauri::async_runtime::spawn_blocking(move || match changed_paths {
         Some(paths) => source.refresh_paths(&paths),
@@ -293,7 +318,26 @@ async fn search_resource_content(
     kind: Option<String>,
     state: State<'_, WorkspaceState>,
 ) -> Result<ContentSearchResults, StudioError> {
-    let index = current_project(&state)?;
+    search_resource_content_impl(query, kind, None, state).await
+}
+
+#[tauri::command]
+async fn search_resource_content_bound(
+    query: String,
+    kind: Option<String>,
+    expected_project_root: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<ContentSearchResults, StudioError> {
+    search_resource_content_impl(query, kind, Some(expected_project_root), state).await
+}
+
+async fn search_resource_content_impl(
+    query: String,
+    kind: Option<String>,
+    expected_project_root: Option<String>,
+    state: State<'_, WorkspaceState>,
+) -> Result<ContentSearchResults, StudioError> {
+    let index = project_for_operation(&state, expected_project_root.as_deref())?;
     tauri::async_runtime::spawn_blocking(move || index.search_content(&query, kind.as_deref()))
         .await
         .map_err(interrupted)?
@@ -352,7 +396,24 @@ async fn read_resource(
     path: String,
     state: State<'_, WorkspaceState>,
 ) -> Result<ResourceDocument, StudioError> {
-    let index = current_project(&state)?;
+    read_resource_impl(path, None, state).await
+}
+
+#[tauri::command]
+async fn read_resource_bound(
+    path: String,
+    expected_project_root: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<ResourceDocument, StudioError> {
+    read_resource_impl(path, Some(expected_project_root), state).await
+}
+
+async fn read_resource_impl(
+    path: String,
+    expected_project_root: Option<String>,
+    state: State<'_, WorkspaceState>,
+) -> Result<ResourceDocument, StudioError> {
+    let index = project_for_operation(&state, expected_project_root.as_deref())?;
     tauri::async_runtime::spawn_blocking(move || index.read_resource(&path))
         .await
         .map_err(interrupted)?
@@ -375,7 +436,26 @@ async fn read_rsi_sheet(
     name: String,
     state: State<'_, WorkspaceState>,
 ) -> Result<RsiSheetImage, StudioError> {
-    let index = current_project(&state)?;
+    read_rsi_sheet_impl(path, name, None, state).await
+}
+
+#[tauri::command]
+async fn read_rsi_sheet_bound(
+    path: String,
+    name: String,
+    expected_project_root: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<RsiSheetImage, StudioError> {
+    read_rsi_sheet_impl(path, name, Some(expected_project_root), state).await
+}
+
+async fn read_rsi_sheet_impl(
+    path: String,
+    name: String,
+    expected_project_root: Option<String>,
+    state: State<'_, WorkspaceState>,
+) -> Result<RsiSheetImage, StudioError> {
+    let index = project_for_operation(&state, expected_project_root.as_deref())?;
     tauri::async_runtime::spawn_blocking(move || index.read_rsi_sheet(&path, &name))
         .await
         .map_err(interrupted)?
@@ -684,7 +764,28 @@ async fn save_ftl_resource(
     content: String,
     state: State<'_, WorkspaceState>,
 ) -> Result<SaveResult, StudioError> {
-    let index = current_project(&state)?;
+    save_ftl_resource_impl(path, expected_revision, content, None, state).await
+}
+
+#[tauri::command]
+async fn save_ftl_resource_bound(
+    path: String,
+    expected_revision: String,
+    content: String,
+    expected_project_root: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<SaveResult, StudioError> {
+    save_ftl_resource_impl(path, expected_revision, content, Some(expected_project_root), state).await
+}
+
+async fn save_ftl_resource_impl(
+    path: String,
+    expected_revision: String,
+    content: String,
+    expected_project_root: Option<String>,
+    state: State<'_, WorkspaceState>,
+) -> Result<SaveResult, StudioError> {
+    let index = project_for_operation(&state, expected_project_root.as_deref())?;
     tauri::async_runtime::spawn_blocking(move || index.save_ftl(&path, &expected_revision, content))
         .await
         .map_err(interrupted)?
@@ -906,7 +1007,24 @@ async fn create_new_fluent(
     draft: FluentDraft,
     state: State<'_, WorkspaceState>,
 ) -> Result<CreateFluentResult, StudioError> {
-    let original = current_project(&state)?;
+    create_new_fluent_impl(draft, None, state).await
+}
+
+#[tauri::command]
+async fn create_new_fluent_bound(
+    draft: FluentDraft,
+    expected_project_root: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<CreateFluentResult, StudioError> {
+    create_new_fluent_impl(draft, Some(expected_project_root), state).await
+}
+
+async fn create_new_fluent_impl(
+    draft: FluentDraft,
+    expected_project_root: Option<String>,
+    state: State<'_, WorkspaceState>,
+) -> Result<CreateFluentResult, StudioError> {
+    let original = project_for_operation(&state, expected_project_root.as_deref())?;
     let project = original.clone();
     let (created, refreshed) = tauri::async_runtime::spawn_blocking(move || {
         let created = project.create_new_fluent(&draft)?;
@@ -1208,7 +1326,28 @@ async fn analyze_entity_localization(
     required_locales: Vec<String>,
     state: State<'_, WorkspaceState>,
 ) -> Result<EntityLocalizationAnalysis, StudioError> {
-    let project = current_project(&state)?;
+    analyze_entity_localization_impl(locator, source, required_locales, None, state).await
+}
+
+#[tauri::command]
+async fn analyze_entity_localization_bound(
+    locator: FieldLocator,
+    source: String,
+    required_locales: Vec<String>,
+    expected_project_root: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<EntityLocalizationAnalysis, StudioError> {
+    analyze_entity_localization_impl(locator, source, required_locales, Some(expected_project_root), state).await
+}
+
+async fn analyze_entity_localization_impl(
+    locator: FieldLocator,
+    source: String,
+    required_locales: Vec<String>,
+    expected_project_root: Option<String>,
+    state: State<'_, WorkspaceState>,
+) -> Result<EntityLocalizationAnalysis, StudioError> {
+    let project = project_for_operation(&state, expected_project_root.as_deref())?;
     tauri::async_runtime::spawn_blocking(move || {
         project.analyze_entity_localization(&locator, &source, &required_locales)
     })
@@ -1284,6 +1423,7 @@ pub fn run() -> Result<(), tauri::Error> {
         .invoke_handler(tauri::generate_handler![
             open_project,
             refresh_project,
+            refresh_project_bound,
             check_app_updates,
             install_app_update,
             search_resources,
@@ -1292,6 +1432,7 @@ pub fn run() -> Result<(), tauri::Error> {
             read_ui_source,
             probe_open_revisions,
             search_resource_content,
+            search_resource_content_bound,
             search_csharp_definitions,
             read_csharp_source,
             inspect_component_schemas,
@@ -1304,8 +1445,10 @@ pub fn run() -> Result<(), tauri::Error> {
             prototype_linked_references,
             list_prototype_diagnostics,
             read_resource,
+            read_resource_bound,
             list_rsi_sheets,
             read_rsi_sheet,
+            read_rsi_sheet_bound,
             import_rsi_state,
             create_rsi_state,
             attach_rsi_state,
@@ -1324,8 +1467,10 @@ pub fn run() -> Result<(), tauri::Error> {
             save_yaml_resource,
             analyze_fluent_resource,
             save_ftl_resource,
+            save_ftl_resource_bound,
             preview_new_fluent,
             create_new_fluent,
+            create_new_fluent_bound,
             create_external_fluent,
             preview_new_prototype,
             create_new_prototype,
@@ -1338,6 +1483,7 @@ pub fn run() -> Result<(), tauri::Error> {
             patch_prototype_parents,
             inspect_entity_localization,
             analyze_entity_localization,
+            analyze_entity_localization_bound,
             patch_prototype_fields,
             inspect_prototype_components,
             patch_prototype_components,

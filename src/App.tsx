@@ -24,6 +24,7 @@ import { reconcileWorkspaceRefresh } from './lib/workspace-refresh';
 import MonacoPreview from './editor/MonacoPreview';
 import { directEntityLocaleField } from './editor/yaml-locale-navigation';
 import RsiPreview from './components/RsiPreview';
+import { publishBatchOutcome } from './lib/rsi-batch-import';
 import CreateRsiWizard from './components/CreateRsiWizard';
 import PrototypeExplorer from './components/PrototypeExplorer';
 import PrototypeFieldsPanel from './components/PrototypeFieldsPanel';
@@ -1178,14 +1179,17 @@ export default function App() {
   /** Explicit localization write: never clobber an open FTL draft or stale file. */
   async function applyEntityLocalization(
     file: string, baseline: ResourceDocument, content: string, keepSource = false,
-    sourceSnapshot?: string,
+    sourceSnapshot?: string, expectedProjectRoot?: string,
   ): Promise<boolean> {
     if (!overview || !file.startsWith('Resources/Locale/') || !file.endsWith('.ftl')
         || baseline.path !== file || saving || opening || refreshing || transitioning) {
       throw new Error('Невозможно записать FTL во время другой операции.');
     }
     const root = overview.project_root;
-    if (keepSource) checkLocalizationSource(sourceSnapshot);
+    if (keepSource) {
+      checkLocalizationSource(sourceSnapshot);
+      if (expectedProjectRoot !== root) throw new Error('Проект изменился.');
+    }
     const opened = documents.current.get(file);
     if (opened && (draftsRef.current[file] ?? opened.content) !== opened.content) {
       throw new Error('У выбранного FTL уже есть несохранённый черновик. Сохраните или закройте его перед генерацией локализации.');
@@ -1197,7 +1201,7 @@ export default function App() {
     try {
       if (projectRootRef.current !== root) throw new Error('Проект изменился. Повторите действие.');
       // Rust requires the exact revision observed during the preview.
-      const result = await studio.saveFtlResource(file, baseline.revision, content);
+      const result = await studio.saveFtlResource(file, baseline.revision, content, expectedProjectRoot);
       if (projectRootRef.current !== root) return false;
       documents.current.set(file, result.document);
       setDrafts((previous) => {
@@ -1225,10 +1229,11 @@ export default function App() {
     }
   }
 
-  async function createBatchLocalization(draft: NewFluentDraft, sourceSnapshot: string): Promise<CreatedFluent> {
+  async function createBatchLocalization(draft: NewFluentDraft, sourceSnapshot: string, expectedProjectRoot: string): Promise<CreatedFluent> {
     if (!overview || saving || opening || refreshing || transitioning) throw new Error('Другая операция уже выполняется.');
     checkLocalizationSource(sourceSnapshot);
     const root = overview.project_root;
+    if (root !== expectedProjectRoot) throw new Error('Проект изменился.');
     const opened = documents.current.get(draft.file);
     if (draftsRef.current[draft.file] !== undefined || draftBasesRef.current[draft.file] !== undefined || opened) {
       throw new Error('У FTL есть открытый документ или черновик. Разрешите конфликт перед созданием.');
@@ -1236,7 +1241,7 @@ export default function App() {
     if (projectRootRef.current !== root) throw new Error('Проект изменился.');
     setSaving(true);
     try {
-      const result = await studio.createNewFluent(draft);
+      const result = await studio.createNewFluent(draft, expectedProjectRoot);
       if (projectRootRef.current === root && result.overview) {
         setOverview(result.overview);
         setWorkspaceRevision((value) => value + 1);
@@ -1347,6 +1352,25 @@ export default function App() {
     setNotice(result.warning
       ? 'Прототип ' + result.kind + ':' + result.id + ' ' + verb + ' ' + result.file + '. ' + result.warning
       : 'Прототип ' + result.kind + ':' + result.id + ' ' + verb + ' ' + result.file);
+  }
+
+  async function refreshRsiBatch(path: string, root: string) {
+    try {
+      const disk = await studio.readResource(path, root);
+      if (projectRootRef.current !== root || !documents.current.has(path)) return;
+      const result = reconcileWorkspaceRefresh(
+        [{ path, kind: 'rsi' }], documents.current, draftsRef.current, draftBasesRef.current,
+        [{ path, document: disk }],
+      );
+      documents.current = result.documents;
+      draftsRef.current = result.drafts;
+      setDrafts(result.drafts);
+      setDraftBases(result.draftBases);
+      setDocument((current) => current?.path === path ? disk : current);
+    } finally {
+      // PNGs can change even when metadata and its revision do not.
+      if (projectRootRef.current === root) setWorkspaceRevision((value) => value + 1);
+    }
   }
 
   function onRsiImported(path: string, result: ImportedRsiState, action: 'import' | 'timing' | 'credits' | 'size' = 'import') {
@@ -1782,7 +1806,7 @@ export default function App() {
                     locator={fieldTarget} source={activeText} busy={saving || transitioning || refreshing}
                     onApply={applyPrototypeFields} onClose={() => setFieldTarget(null)}/>
               : prototypePanel === 'localization'
-                ? <PrototypeLocalizationPanel
+                ? <PrototypeLocalizationPanel projectRoot={overview.project_root}
                     key={fieldTarget.file + ':' + fieldTarget.document_index + ':' + fieldTarget.item_index}
                     locator={fieldTarget} source={activeText} busy={saving || transitioning || refreshing}
                     requiredLocales={localizationSettings.requiredLocales}
@@ -1803,8 +1827,7 @@ export default function App() {
             onClose={closeComparison}/>}
           {reading ? <div className="placeholder">Чтение ресурса…</div> :
             document && selected.kind === 'rsi'
-              ? <RsiPreview key={document.path + ':' + document.revision + ':' + workspaceRevision}
-                projectRoot={overview.project_root}
+              ? <RsiPreview projectRoot={overview.project_root} key={document.path + ':' + document.revision + ':' + workspaceRevision}
                 initialState={rsiRequested?.path === selected.path ? rsiRequested.state : null}
                 path={selected.path} metadata={document.content} revision={document.revision}
                 onImported={(result) => { if (projectRootRef.current === overview.project_root) onRsiImported(selected.path, result); }}
@@ -1813,13 +1836,14 @@ export default function App() {
                   const path = selected.path;
                   if (projectRootRef.current === root) setWorkspaceRevision((value) => value + 1);
                   void refreshAfterRsiImport(root, () => projectRootRef.current,
-                    () => studio.readResource(path), (loaded) => {
+                    () => studio.readResource(path, root), (loaded) => {
                       documents.current.set(path, loaded);
                       setDrafts((previous) => ({ ...previous, [path]: loaded.content }));
                       setDocument((current) => current?.path === path ? loaded : current);
                     }, setError, failure);
                 }}
-                onBatchOutcome={(message) => { if (projectRootRef.current === overview.project_root) setNotice(message); }}
+                onBatchRefresh={(root) => refreshRsiBatch(selected.path, root)}
+                onBatchOutcome={(message) => publishBatchOutcome(overview.project_root, projectRootRef.current, message, setNotice)}
                 onTimingUpdated={(result) => onRsiImported(selected.path, result, 'timing')}
                 onCreditsUpdated={(result) => onRsiImported(selected.path, result, 'credits')}
                 onSizeUpdated={(result) => onRsiImported(selected.path, result, 'size')}

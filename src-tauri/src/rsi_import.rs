@@ -800,11 +800,11 @@ pub(crate) fn import_at(
         ));
     };
     let staged = (|| -> Result<(), StudioError> {
-        fs::set_permissions(&temp_path, metadata_permissions).map_err(|e| {
+        temp.set_permissions(metadata_permissions).map_err(|e| {
             issue(
                 "RSI_IMPORT_TEMP_FAILED",
                 "Не удалось установить права временного файла.",
-                "Проверьте каталог RSI.",
+                "Проверьте каталог RSI; временный файл может остаться на месте.",
             )
             .with_details(e.to_string())
         })?;
@@ -814,14 +814,13 @@ pub(crate) fn import_at(
                 issue(
                     "RSI_IMPORT_TEMP_FAILED",
                     "Не удалось записать временный meta.json.",
-                    "Проверьте диск.",
+                    "Проверьте диск; временный файл может остаться на месте.",
                 )
                 .with_details(e.to_string())
             })
     })();
     drop(temp);
     if let Err(e) = staged {
-        let _ = fs::remove_file(&temp_path);
         return Err(e);
     }
 
@@ -832,18 +831,17 @@ pub(crate) fn import_at(
     let mut new_png = match new_png {
         Ok(handle) => handle,
         Err(e) => {
-            let _ = fs::remove_file(&temp_path);
             return Err(if e.kind() == std::io::ErrorKind::AlreadyExists {
                 issue(
                     "RSI_IMPORT_PNG_EXISTS",
                     "PNG появился до завершения импорта.",
-                    "Обновите RSI.",
+                    "Обновите RSI; временный файл meta.json может остаться в каталоге.",
                 )
             } else {
                 issue(
                     "RSI_IMPORT_WRITE_FAILED",
                     "Невозможно создать PNG.",
-                    "Проверьте права на каталог.",
+                    "Проверьте права на каталог; временный файл meta.json может остаться на месте.",
                 )
                 .with_details(e.to_string())
             });
@@ -872,28 +870,22 @@ pub(crate) fn import_at(
             }
         });
     if let Err(error) = precommit {
-        let png_cleanup = fs::remove_file(&target_png);
-        let _ = fs::remove_file(&temp_path);
-        if let Err(cleanup_error) = png_cleanup {
-            return Err(issue(
-                "RSI_IMPORT_CLEANUP_FAILED",
-                "Импорт прерван, но неполный PNG не удалось удалить.",
-                "Проверьте PNG вручную, прежде чем повторять импорт.",
-            )
-            .with_details(format!("{error:?}; очистка PNG: {cleanup_error}")));
-        }
-        return Err(error);
+        // A different process can replace either pathname: never unlink on failure.
+        return Err(issue(
+            "RSI_IMPORT_CLEANUP_FAILED",
+            "Импорт прерван; PNG и временный файл могут остаться в каталоге.",
+            "Проверьте файлы вручную перед повторным импортом.",
+        )
+        .with_details(format!("{error:?}")));
     }
 
     if let Err(error) = fs::rename(&temp_path, &meta_path) {
-        let png_cleanup = fs::remove_file(&target_png);
-        let _ = fs::remove_file(&temp_path);
         return Err(issue(
             "RSI_IMPORT_COMMIT_FAILED",
             "Не удалось атомарно заменить meta.json.",
-            "Проверьте права и свободное место.",
+            "Проверьте права, свободное место и оставшиеся PNG и временный meta.json.",
         )
-        .with_details(format!("{error}; удаление PNG: {png_cleanup:?}")));
+        .with_details(error.to_string()));
     }
 
     let warning = sync_dir(&folder)
@@ -1197,6 +1189,36 @@ mod tests {
         request.data_url = format!("{PNG_DATA_PREFIX}{}", STANDARD.encode(data));
         assert_eq!(
             import(&fx.root, &request).unwrap_err().code,
+            "RSI_IMPORT_PNG_INVALID"
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_compressed_data_with_valid_chunk_crc() {
+        let fx = Fixture::new();
+        let mut request = fx.request();
+        let mut data = Fixture::png();
+        // Replace the zlib header but retain a valid IDAT chunk CRC.
+        data[41] = 0;
+        let crc = crc32(&data[37..54]);
+        data[54..58].copy_from_slice(&crc.to_be_bytes());
+        request.data_url = format!("{PNG_DATA_PREFIX}{}", STANDARD.encode(data));
+        assert_eq!(
+            import(&fx.root, &request).unwrap_err().code,
+            "RSI_IMPORT_PNG_INVALID"
+        );
+        assert!(!fx.root.join(&fx.rel).join("idle.png").exists());
+    }
+
+    #[test]
+    fn rejects_truncated_idat_with_valid_chunk_crc() {
+        let mut data = Fixture::png();
+        data.drain(52..54);
+        data[33..37].copy_from_slice(&11_u32.to_be_bytes());
+        let crc = crc32(&data[37..52]);
+        data[52..56].copy_from_slice(&crc.to_be_bytes());
+        assert_eq!(
+            validate_png(&data, 1, 1).unwrap_err().code,
             "RSI_IMPORT_PNG_INVALID"
         );
     }

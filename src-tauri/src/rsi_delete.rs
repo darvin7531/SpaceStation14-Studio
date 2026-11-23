@@ -352,7 +352,14 @@ pub(crate) fn delete_checked(
         &format!("{}/meta.json", request.path),
         &request.expected_revision,
         updated,
-    )?;
+    ).map_err(|error| {
+        issue(
+            "RSI_DELETE_ARCHIVED_SAVE_FAILED",
+            "Архив создан, но обновить meta.json не удалось.",
+            "Не удаляйте архив; проверьте текущие файлы перед повторной попыткой.",
+        )
+        .with_details(format!("Ошибка: {error:?}; архив: {}", backup_path.display()))
+    })?;
 
     // Best effort removal of the now-unreferenced file. If another process
     // has replaced it, leave it on disk and report a warning instead.

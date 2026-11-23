@@ -1,6 +1,5 @@
 //! Restore an archived RSI state without replacing existing files.
-//! Archive snapshots are retained; rollback is best-effort if metadata
-//! publication fails, and a power loss may leave an unreferenced PNG.
+//! Archive snapshots are retained; failed metadata publication may leave a PNG.
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -373,36 +372,6 @@ fn restored_metadata(current: &[u8], original: &[u8], name: &str) -> Result<Stri
     Ok(result)
 }
 
-fn remove_only_own_png(path: &Path, contents: &[u8]) -> Result<(), StudioError> {
-    let stat = fs::symlink_metadata(path).map_err(|error| {
-        issue(
-            "RSI_RESTORE_CLEANUP_FAILED",
-            "Восстановленный PNG нельзя проверить.",
-            "Проверьте каталог вручную.",
-        )
-        .with_details(error.to_string())
-    })?;
-    if stat.file_type().is_symlink()
-        || !stat.is_file()
-        || stat.len() != contents.len() as u64
-        || revision(&read_regular(path, MAX_PNG_BYTES, "new PNG")?) != revision(contents)
-    {
-        return Err(issue(
-            "RSI_RESTORE_CLEANUP_FAILED",
-            "PNG изменился после записи и оставлен на месте.",
-            "Проверьте оставшийся файл вручную.",
-        ));
-    }
-    fs::remove_file(path).map_err(|error| {
-        issue(
-            "RSI_RESTORE_CLEANUP_FAILED",
-            "Не удалось откатить созданный PNG.",
-            "Проверьте файл вручную.",
-        )
-        .with_details(error.to_string())
-    })
-}
-
 #[cfg(unix)]
 fn sync_directory(path: &Path) -> std::io::Result<()> {
     fs::File::open(path)?.sync_all()
@@ -415,6 +384,16 @@ fn sync_directory(_path: &Path) -> std::io::Result<()> {
 /// Stages only a new PNG; never replaces existing PNG or archive files.
 /// After successful commit it updates only meta.json, retaining the archive.
 pub fn restore(root: &Path, request: &RsiRestoreRequest) -> Result<RestoredRsiState, StudioError> {
+    restore_with_save(root, request, |root, path, revision, updated| {
+        resource_edit::save_rsi_metadata(root, path, revision, updated)
+    })
+}
+
+fn restore_with_save(
+    root: &Path,
+    request: &RsiRestoreRequest,
+    save: impl FnOnce(&Path, &str, &str, String) -> Result<resource_edit::SaveResult, StudioError>,
+) -> Result<RestoredRsiState, StudioError> {
     if !valid_sha(&request.expected_revision) {
         return Err(issue(
             "RSI_RESTORE_REVISION_INVALID",
@@ -513,7 +492,7 @@ pub fn restore(root: &Path, request: &RsiRestoreRequest) -> Result<RestoredRsiSt
                     "Обновите RSI перед повторной попыткой.",
                 ));
             }
-            resource_edit::save_rsi_metadata(
+            save(
                 root,
                 &format!("{}/meta.json", request.path),
                 &request.expected_revision,
@@ -523,17 +502,15 @@ pub fn restore(root: &Path, request: &RsiRestoreRequest) -> Result<RestoredRsiSt
     let result = match metadata_result {
         Ok(result) => result,
         Err(failure) => {
-            if let Err(cleanup) = remove_only_own_png(&png_path, &png) {
-                return Err(issue(
-                    "RSI_RESTORE_CLEANUP_FAILED",
-                    "Восстановление прервано, но созданный PNG остался в каталоге.",
-                    "Проверьте файл вручную перед повторным восстановлением.",
-                )
-                .with_details(format!(
-                    "ошибка записи: {failure:?}; ошибка отката: {cleanup:?}"
-                )));
-            }
-            return Err(failure);
+            // ponytail: leave the pathname untouched; unlink is not conditional on
+            // inode identity. Manual cleanup is required after a failed restore.
+            return Err(issue(
+                "RSI_RESTORE_CLEANUP_FAILED",
+                "Восстановление прервано; PNG может остаться в каталоге.",
+                "Проверьте PNG вручную перед повторным восстановлением; архив сохранён.",
+            )
+            .with_details(format!("Ошибка: {failure:?}; PNG: {}; архив: {}", png_path.display(), archive.display())));
+
         }
     };
     let mut warnings = Vec::new();
@@ -615,6 +592,24 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+
+    #[test]
+    fn failed_save_preserves_a_concurrently_replaced_png() {
+        let fixture = Fixture::new();
+        let (id, revision) = fixture.archive();
+        let png = fixture.root.join(&fixture.path).join("idle.png");
+        let replacement = fixture.root.join(&fixture.path).join("external.png");
+        fs::write(&replacement, b"external PNG").unwrap();
+        let error = restore_with_save(&fixture.root, &fixture.request(id.clone(), revision), |_, _, _, _| {
+            fs::rename(&replacement, &png).unwrap();
+            Err(issue("INJECTED", "save failed", "retry").with_details("disk failure"))
+        }).unwrap_err();
+        assert_eq!(fs::read(&png).unwrap(), b"external PNG");
+        let details = error.details.unwrap();
+        assert!(details.contains("disk failure"));
+        assert!(details.contains(&id));
+        assert!(fixture.root.join(&fixture.path).join(ARCHIVE_DIR).join(id).join("idle.png").exists());
     }
 
     #[test]

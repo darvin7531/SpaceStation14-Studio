@@ -26,6 +26,17 @@ test('refuses duplicate states, unsafe filenames and oversize batches before any
     cell, 1, new Set()), /16 PNG/);
 });
 
+test('existing states require explicit replacement approval; duplicate inputs remain forbidden', () => {
+  const existing = new Set(['idle']);
+  assert.throws(() => planRsiBatch([file('idle.png')], cell, 1, existing), /уже существует/);
+  assert.deepEqual(planRsiBatch([file('idle.png'), file('walk.png')], cell, 1, existing, 'ru', true), [
+    { name: 'idle', directions: 1, frames: 1 },
+    { name: 'walk', directions: 1, frames: 1 },
+  ]);
+  assert.throws(() => planRsiBatch([file('idle.png'), file('idle.png')], cell, 1, existing, 'ru', true), /повторяется/);
+  assert.throws(() => planRsiBatch([file('idle.png', 33)], cell, 1, existing, 'ru', true), /не кратен/);
+});
+
 test('preflight catches incompatible PNG grids and per-direction frame overflow', () => {
   assert.throws(() => planRsiBatch([file('bad.png', 34)], cell, 1, new Set()), /не кратен/);
   assert.throws(() => planRsiBatch([file('bad.png')], cell, 4, new Set()), /направлениям/);

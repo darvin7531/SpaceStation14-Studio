@@ -155,8 +155,7 @@ fn recovery_error(
             "Не удаляйте каталог резервной копии. Проверьте текущий PNG и восстановите архив после устранения конфликта.",
         )
         .with_details(format!(
-            "Ошибка замены: {} [{}]. Ошибка восстановления: {} [{}]. Архив: {}",
-            failure.message, failure.code, rollback.message, rollback.code, archive_path
+            "Ошибка замены: {failure:?}. Ошибка восстановления: {rollback:?}. Архив: {archive_path}"
         )),
         None => issue(
             "RSI_REPLACE_ROLLED_BACK",
@@ -164,13 +163,20 @@ fn recovery_error(
             "Перечитайте RSI после отката и повторите замену. Резервная копия исходной версии сохранена.",
         )
         .with_details(format!(
-            "Причина замены: {} [{}]. Архив: {}",
-            failure.message, failure.code, archive_path
+            "Причина замены: {failure:?}. Архив: {archive_path}"
         )),
     }
 }
 
 pub fn replace(root: &Path, request: &RsiStateImport) -> Result<ImportedRsiState, StudioError> {
+    replace_with_import(root, request, rsi_import::import_at)
+}
+
+fn replace_with_import(
+    root: &Path,
+    request: &RsiStateImport,
+    import: impl FnOnce(&Path, &RsiStateImport, Option<usize>, Option<Value>) -> Result<ImportedRsiState, StudioError>,
+) -> Result<ImportedRsiState, StudioError> {
     let (original_index, preserved_state) = prevalidate(root, request)?;
     let expected_png = request.expected_png_revision.as_deref().ok_or_else(|| {
         issue(
@@ -189,7 +195,13 @@ pub fn replace(root: &Path, request: &RsiStateImport) -> Result<ImportedRsiState
         Some(expected_png),
     )?;
 
-    let folder = safe_import_directory(root, &request.path)?;
+    let folder = safe_import_directory(root, &request.path).map_err(|error| {
+        issue(
+            "RSI_REPLACE_RECOVERY_REQUIRED",
+            "Не удалось проверить каталог после архивирования.",
+            "Не удаляйте архив; проверьте текущие файлы и восстановите состояние вручную.",
+        ).with_details(format!("Ошибка: {error:?}; архив: {}", deleted.archive_path))
+    })?;
     let target = folder.join(format!("{}.png", request.name));
     match fs::symlink_metadata(&target) {
         Ok(_) => {
@@ -222,13 +234,13 @@ pub fn replace(root: &Path, request: &RsiStateImport) -> Result<ImportedRsiState
                 "RSI_REPLACE_ARCHIVE_INVALID",
                 "Не удалось определить ID резервной копии.",
                 "Исходные файлы сохранены в каталоге архива; не удаляйте его.",
-            )
+            ).with_details(format!("Архив: {}", deleted.archive_path))
         })?;
     let mut import_request = request.clone();
     import_request.expected_revision = deleted.revision.clone();
     import_request.expected_png_revision = None;
 
-    match rsi_import::import_at(
+    match import(
         root,
         &import_request,
         Some(original_index),
@@ -324,6 +336,38 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+
+    #[test]
+    fn failed_import_before_png_restores_original_and_reports_archive() {
+        let fixture = Fixture::new();
+        let error = replace_with_import(&fixture.root, &fixture.request(), |_, _, _, _| {
+            Err(issue("INJECTED", "import failed", "retry").with_details("injected detail"))
+        }).unwrap_err();
+        assert_eq!(error.code, "RSI_REPLACE_ROLLED_BACK");
+        assert_eq!(fs::read(fixture.root.join(&fixture.path).join("idle.png")).unwrap(), fixture.old_png);
+        let details = error.details.unwrap();
+        assert!(details.contains("injected detail"));
+        assert!(details.contains(".ss14-studio-archive"));
+    }
+
+    #[test]
+    fn partial_import_keeps_png_and_reports_archive_for_manual_recovery() {
+        let fixture = Fixture::new();
+        let png = fixture.root.join(&fixture.path).join("idle.png");
+        let error = replace_with_import(&fixture.root, &fixture.request(), |_, _, _, _| {
+            fs::write(&png, b"partial or external PNG").unwrap();
+            Err(issue("INJECTED", "import failed", "retry").with_details("partial write"))
+        }).unwrap_err();
+        assert_eq!(error.code, "RSI_REPLACE_RECOVERY_REQUIRED");
+        assert_eq!(fs::read(&png).unwrap(), b"partial or external PNG");
+        let details = error.details.unwrap();
+        assert!(details.contains("partial write"));
+        assert!(details.contains("RSI_RESTORE_PNG_EXISTS"));
+        assert!(details.contains(".ss14-studio-archive"));
+        let archives = rsi_restore::list(&fixture.root, &fixture.path).unwrap();
+        assert_eq!(archives.archives.len(), 1);
+        assert_eq!(fs::read(fixture.root.join(&fixture.path).join(".ss14-studio-archive").join(&archives.archives[0].id).join("idle.png")).unwrap(), fixture.old_png);
     }
 
     #[test]
@@ -454,5 +498,19 @@ mod tests {
             .join(&fixture.path)
             .join(".ss14-studio-archive")
             .exists());
+    }
+
+    #[test]
+    fn corrupt_idat_is_rejected_before_archiving() {
+        let fixture = Fixture::new();
+        let mut request = fixture.request();
+        request.directions = 1;
+        request.data_url = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQAnGP4z8DwHwAFAAH/aW6S9AAAAABJRU5ErkJggg==".into();
+        let folder = fixture.root.join(&fixture.path);
+        let metadata = fs::read(folder.join("meta.json")).unwrap();
+        assert_eq!(replace(&fixture.root, &request).unwrap_err().code, "RSI_IMPORT_PNG_INVALID");
+        assert_eq!(fs::read(folder.join("meta.json")).unwrap(), metadata);
+        assert_eq!(fs::read(folder.join("idle.png")).unwrap(), fixture.old_png);
+        assert!(!folder.join(".ss14-studio-archive").exists());
     }
 }

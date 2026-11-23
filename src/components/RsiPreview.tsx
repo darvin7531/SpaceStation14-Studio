@@ -24,7 +24,7 @@ function Failure({ error }: { error: StudioError }) {
 
 /** Load one PNG at a time; do not expose project paths to the webview filesystem. */
 export default function RsiPreview({
-  projectRoot, path, metadata, revision, initialState, onImported, onBatchOutcome, onImportAttempt, onTimingUpdated, onCreditsUpdated, onSizeUpdated, onDeleted, onRestored, onRenamed,
+  projectRoot, path, metadata, revision, initialState, onImported, onBatchRefresh, onBatchOutcome, onImportAttempt, onTimingUpdated, onCreditsUpdated, onSizeUpdated, onDeleted, onRestored, onRenamed,
 }: {
   projectRoot: string;
   path: string;
@@ -32,6 +32,7 @@ export default function RsiPreview({
   revision: string;
   initialState?: string | null;
   onImported: (updated: ImportedRsiState) => void;
+  onBatchRefresh: (projectRoot: string) => Promise<void>;
   onBatchOutcome: (message: string) => void;
   onImportAttempt: (failure?: unknown) => void;
   onTimingUpdated: (updated: ImportedRsiState) => void;
@@ -147,8 +148,6 @@ export default function RsiPreview({
     <RsiCreditsPanel key={'credits:' + path + ':' + revision}
       path={path} revision={revision} metadata={metadata} onSaved={onCreditsUpdated}/>
     <RsiImportPanel projectRoot={projectRoot} onAttempt={onImportAttempt} path={path} revision={revision} onImported={onImported}/>
-    <RsiBulkImportPanel projectRoot={projectRoot} onAttempt={onImportAttempt} path={path} revision={revision} metadata={metadata}
-      onImported={onImported} onBatchOutcome={onBatchOutcome}/>
     {list && !listing && inspection.states.filter((state) =>
       !list.sheets.some((sheet) => sheet.name === state.name + '.png')).map((state) =>
       <RsiImportPanel key={'attach:' + path + ':' + state.name + ':' + revision}
@@ -156,6 +155,8 @@ export default function RsiPreview({
           onImported(result);
           setRefresh((value) => value + 1);
         }}/>)}
+    <RsiBulkImportPanel projectRoot={projectRoot} path={path} revision={revision} metadata={metadata}
+      onBatchRefresh={onBatchRefresh} onBatchOutcome={onBatchOutcome}/>
     {selectedState && image?.revision && list?.sheets.some((sheet) => sheet.name === selectedState.name + '.png')
       && <RsiImportPanel key={'replace:' + path + ':' + selectedState.name + ':' + revision}
         projectRoot={projectRoot} onAttempt={onImportAttempt} path={path} revision={revision} replaceState={selectedState}
