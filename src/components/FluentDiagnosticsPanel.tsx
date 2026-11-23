@@ -61,7 +61,7 @@ export default function FluentDiagnosticsPanel({ path, source, onRevealLine, onR
   const locale = visible?.locale;
   const metadata = ftlInspectorDetails(path, source, syntax?.entry_count ?? null);
 
-  return <section className="fluent-diagnostics" aria-label="Диагностика Fluent">
+  return <section className="fluent-diagnostics" aria-label={t('fluentDiagnostics.label')}>
     <div className="fluent-resource-summary" aria-label={t('ftl.inspector')}>
       <strong>{t('ftl.inspector')}</strong>
       <dl>
@@ -73,16 +73,16 @@ export default function FluentDiagnosticsPanel({ path, source, onRevealLine, onR
     </div>
     <div className="fluent-diagnostics-heading">
       <FileWarning size={16}/>
-      <strong>Проверка Fluent</strong>
-      <small>Только текущий текст · файл не изменяется</small>
+      <strong>{t('fluentDiagnostics.heading')}</strong>
+      <small>{t('fluentDiagnostics.current')}</small>
       {!enabled && <button type="button" className="fluent-check-now"
         onClick={() => setManual((old) => ({ path, source, token: (old?.token ?? 0) + 1 }))}>
-        Проверить сейчас
+        {t('fluentDiagnostics.checkNow')}
       </button>}
       {syntax && <span>
         {syntax.diagnostic_count === 0
-          ? 'Синтаксис: без ошибок'
-          : 'Синтаксис: ' + syntax.diagnostic_count + ' ошибок'}
+          ? t('fluentDiagnostics.syntaxOk')
+          : t('fluentDiagnostics.syntaxCount', { count: syntax.diagnostic_count })}
       </span>}
     </div>
     {syntax ? syntax.diagnostics.length > 0
@@ -99,27 +99,26 @@ export default function FluentDiagnosticsPanel({ path, source, onRevealLine, onR
             </span>
           </button>)}
         {syntax.truncated && <p className="fluent-diagnostics-more">
-          Показаны первые {syntax.diagnostics.length} ошибок из {syntax.diagnostic_count}.
-          Исправьте их, чтобы увидеть остальные.
+          {t('fluentDiagnostics.syntaxTruncated', { shown: syntax.diagnostics.length, total: syntax.diagnostic_count })}
         </p>}
       </div>
       : <div className="fluent-diagnostics-ok" role="status">
         <CheckCircle2 size={15}/>
-        Синтаксических ошибок не обнаружено · объявлений: {syntax.entry_count}.
+        {t('fluentDiagnostics.syntaxSuccess', { count: syntax.entry_count })}
       </div>
       : !shouldRun
-        ? <p className="fluent-diagnostics-loading">Автопроверка отключена. Для проверки нажмите «Проверить сейчас».</p>
+        ? <p className="fluent-diagnostics-loading">{t('fluentDiagnostics.disabled')}</p>
         : failure
         ? <div className="fluent-diagnostics-failure" role="alert">
           <AlertCircle size={15}/>{failure.message} {failure.hint}
-          {failure.details && <details><summary>Техническая ошибка</summary>{failure.details}</details>}
+          {failure.details && <details><summary>{t('fluentDiagnostics.technical')}</summary>{failure.details}</details>}
         </div>
-        : <p className="fluent-diagnostics-loading" role="status">Проверяю текущую версию…</p>}
-    {locale && <div className="fluent-locale-panel" aria-label="Ключи и ссылки Fluent">
+        : <p className="fluent-diagnostics-loading" role="status">{t('fluentDiagnostics.loading')}</p>}
+    {locale && <div className="fluent-locale-panel" aria-label={t('fluentDiagnostics.keys')}>
       <div className="fluent-locale-heading">
-        <strong>Ключи и ссылки · {locale.locale}</strong>
-        <span>{locale.file_count} файлов · {locale.declaration_count} объявлений · {locale.reference_count} ссылок</span>
-        <span>{locale.complete ? 'Индекс полный' : 'Индекс неполный'}</span>
+        <strong>{t('fluentDiagnostics.localeHeading', { locale: locale.locale })}</strong>
+        <span>{t('fluentDiagnostics.counts', { files: locale.file_count, declarations: locale.declaration_count, references: locale.reference_count })}</span>
+        <span>{locale.complete ? t('fluentDiagnostics.complete') : t('fluentDiagnostics.incomplete')}</span>
       </div>
       {locale.warnings.map((warning, index) =>
         <p className="fluent-locale-warning" key={index}>{warning}</p>)}
@@ -135,22 +134,20 @@ export default function FluentDiagnosticsPanel({ path, source, onRevealLine, onR
             </button>
             {issue.related_file && <button type="button" className="fluent-related-source"
               onClick={() => onRevealSource(issue.related_file!, issue.related_line ?? 1)}>
-              Открыть другое объявление: {issue.related_file}{issue.related_line ? ':' + issue.related_line : ''}
+              {t('fluentDiagnostics.related', { path: issue.related_file, line: issue.related_line ? ':' + issue.related_line : '' })}
             </button>}
           </div>)}
         {locale.truncated && <p className="fluent-diagnostics-more">
-          Показаны первые {locale.issues.length} проблем из {locale.issue_count}.
+          {t('fluentDiagnostics.issuesTruncated', { shown: locale.issues.length, total: locale.issue_count })}
         </p>}
       </div> : <p className="fluent-diagnostics-ok">
         {locale.complete
-          ? 'Дубликатов и отсутствующих ссылок в этой локали не обнаружено.'
-          : 'Среди проверенных объявлений дубликаты не обнаружены. Ссылки проверены частично.'}
+          ? t('fluentDiagnostics.localeOk')
+          : t('fluentDiagnostics.localePartial')}
       </p>}
     </div>}
     <p className="fluent-diagnostics-notice">
-      Проверяются определения и ссылки в рамках одной локали. Отчёт не учитывает
-      правила загрузки ресурсов SS14 и fallback между языками. Номер строки у ссылки
-      соответствует началу объявления. Проверка не блокирует сохранение черновика.
+      {t('fluentDiagnostics.notice')}
     </p>
   </section>;
 }
