@@ -1803,9 +1803,10 @@ export default function App() {
           {reading ? <div className="placeholder">Чтение ресурса…</div> :
             document && selected.kind === 'rsi'
               ? <RsiPreview key={document.path + ':' + document.revision + ':' + workspaceRevision}
+                projectRoot={overview.project_root}
                 initialState={rsiRequested?.path === selected.path ? rsiRequested.state : null}
                 path={selected.path} metadata={document.content} revision={document.revision}
-                onImported={(result) => onRsiImported(selected.path, result)}
+                onImported={(result) => { if (projectRootRef.current === overview.project_root) onRsiImported(selected.path, result); }}
                 onBatchOutcome={(message) => setNotice(message)}
                 onTimingUpdated={(result) => onRsiImported(selected.path, result, 'timing')}
                 onCreditsUpdated={(result) => onRsiImported(selected.path, result, 'credits')}

@@ -158,8 +158,7 @@ pub(crate) fn bounded_metadata(path: &Path) -> Result<Vec<u8>, StudioError> {
     Ok(bytes)
 }
 
-/// Check each PNG chunk CRC without introducing a dependency on an image
-/// decoding library. The browser still performs final pixel decoding.
+/// Check each PNG chunk CRC before decoding.
 fn crc32(bytes: &[u8]) -> u32 {
     let mut crc = !0_u32;
     for &byte in bytes {
@@ -171,8 +170,7 @@ fn crc32(bytes: &[u8]) -> u32 {
     !crc
 }
 
-/// Restrict import to structurally complete PNG streams. The WebView still
-/// performs image decoding; no arbitrary file bytes are executed or rewritten.
+/// Validate the PNG container and decode its image data with bounded memory.
 pub(crate) fn validate_png(
     bytes: &[u8],
     expected_width: u32,
@@ -225,6 +223,9 @@ pub(crate) fn validate_png(
             ));
         }
         let kind = &bytes[cursor + 4..cursor + 8];
+        if kind == b"acTL" || kind == b"fcTL" || kind == b"fdAT" {
+            return Err(issue("RSI_IMPORT_PNG_INVALID", "Анимированные PNG не поддерживаются.", "Используйте обычный PNG-лист."));
+        }
         let stored_crc = u32::from_be_bytes(bytes[end - 4..end].try_into().unwrap_or([0; 4]));
         if crc32(&bytes[cursor + 4..end - 4]) != stored_crc {
             return Err(issue(
@@ -263,6 +264,14 @@ pub(crate) fn validate_png(
             "Используйте полностью сохранённый PNG.",
         ));
     }
+    let invalid = |e: png::DecodingError| issue(
+        "RSI_IMPORT_PNG_INVALID", "Не удалось декодировать PNG.", "Пересохраните PNG."
+    ).with_details(e.to_string());
+    let mut decoder = png::Decoder::new(bytes);
+    decoder.set_limits(png::Limits { bytes: 64 * 1024 * 1024 });
+    let mut reader = decoder.read_info().map_err(&invalid)?;
+    while reader.next_row().map_err(&invalid)?.is_some() {}
+    reader.finish().map_err(invalid)?;
     Ok(())
 }
 
@@ -477,7 +486,13 @@ pub fn create_metadata_only(root: &Path, request: &RsiStateImport) -> Result<Imp
 
 /// Attach a PNG without changing the existing metadata or replacing any file.
 pub fn attach(root: &Path, request: &RsiStateImport) -> Result<ImportedRsiState, StudioError> {
-    validate_request(request)?;
+    // Attach derives the grid and timings from metadata, never from UI fields.
+    let mut validation = request.clone();
+    validation.directions = 1;
+    validation.frames_per_direction = 1;
+    validation.delay_seconds = 1.0;
+    validation.delays = None;
+    validate_request(&validation)?;
     let folder = safe_import_directory(root, &request.path)?;
     let meta_path = folder.join("meta.json");
     let original = bounded_metadata(&meta_path)?;
@@ -503,19 +518,23 @@ pub fn attach(root: &Path, request: &RsiStateImport) -> Result<ImportedRsiState,
         Some(value) => serde_json::from_value(value.clone()).map_err(|_| issue("RSI_IMPORT_TIMING_INVALID", "Некорректные задержки.", "Исправьте метаданные."))?,
         None => default_delays,
     };
-    if directions != u64::from(request.directions) || delays.len() != request.directions as usize
-        || delays.iter().any(|row| row.len() != request.frames_per_direction as usize) {
+    let total: usize = delays.iter().map(Vec::len).sum();
+    if delays.len() != directions as usize || total > 4096 || delays.iter().any(|row|
+        row.is_empty() || row.iter().any(|delay| !delay.is_finite() || *delay <= 0.0 || *delay > 3600.0)) {
         return Err(issue("RSI_IMPORT_TIMING_INVALID", "Сетка не совпадает с метаданными.", "Исправьте метаданные."));
     }
     let png = STANDARD.decode(&request.data_url[PNG_DATA_PREFIX.len()..]).map_err(|e|
         issue("RSI_IMPORT_PNG_INVALID", "Некорректный PNG.", "Выберите PNG повторно.").with_details(e.to_string()))?;
-    // Reuse the normal import's bounds, dimensions and PNG validation without saving its generated JSON.
-    let mut validation = request.clone();
-    validation.delays = Some(delays);
-    validate_common(&validation)?;
-    let without_state = serde_json::to_vec(&meta).map_err(|e|
-        issue("RSI_IMPORT_META_INVALID", "Некорректный meta.json.", "Исправьте метаданные.").with_details(e.to_string()))?;
-    updated_metadata_at(&without_state, &validation, Some(&png), None, None)?;
+    let width = meta.get("size").and_then(|s| s.get("x")).and_then(Value::as_u64).unwrap_or(0);
+    let height = meta.get("size").and_then(|s| s.get("y")).and_then(Value::as_u64).unwrap_or(0);
+    let (png_width, png_height) = png_dimensions(&png)?;
+    if meta.get("version").and_then(Value::as_i64) != Some(1)
+        || width == 0 || height == 0 || width > 4096 || height > 4096
+        || u64::from(png_width) % width != 0 || u64::from(png_height) % height != 0
+        || u64::from(png_width) / width * (u64::from(png_height) / height) < total as u64 {
+        return Err(issue("RSI_IMPORT_PNG_SIZE_MISMATCH", "Сетка PNG не совпадает с метаданными.", "Проверьте размер и число кадров."));
+    }
+    validate_png(&png, png_width, png_height)?;
     if revision(&bounded_metadata(&meta_path)?) != request.expected_revision {
         return Err(issue("RSI_IMPORT_CONFLICT", "meta.json изменился.", "Обновите RSI."));
     }
@@ -529,7 +548,7 @@ pub fn attach(root: &Path, request: &RsiStateImport) -> Result<ImportedRsiState,
     })?;
     // ponytail: leave an incomplete file on failure; unlinking by pathname could delete an external replacement.
     file.write_all(&png).and_then(|_| file.sync_all()).map_err(|e|
-        issue("RSI_IMPORT_CLEANUP_FAILED", "PNG записан не полностью.", "Проверьте файл вручную.").with_details(e.to_string()))?;
+        issue("RSI_IMPORT_CLEANUP_FAILED", "PNG записан не полностью.", "Проверьте файл в каталоге RSI вручную; сохраните его при необходимости и удалите только после проверки, затем повторите попытку.").with_details(format!("{}: {e}", target.display())))?;
     if revision(&bounded_metadata(&meta_path)?) != request.expected_revision {
         return Err(issue("RSI_IMPORT_CONFLICT", "meta.json изменился во время записи PNG.", "Проверьте PNG и метаданные вручную."));
     }
@@ -860,6 +879,48 @@ mod tests {
         request.expected_revision = created.revision;
         request.data_url = format!("{PNG_DATA_PREFIX}{}", STANDARD.encode(b"not png"));
         assert!(attach(&fx.root, &request).is_err());
+        assert!(!fx.root.join(&fx.rel).join("idle.png").exists());
+    }
+
+    #[test]
+    fn attach_accepts_unequal_direction_lengths() {
+        let fx = Fixture::new();
+        let meta = br#"{"version":1,"size":{"x":1,"y":1},"states":[{"name":"idle","directions":4,"delays":[[0.001,61],[1],[1],[1]]}]}"#;
+        fs::write(fx.root.join(&fx.rel).join("meta.json"), meta).unwrap();
+        let mut png = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut png, 5, 1);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            encoder.write_header().unwrap().write_image_data(&[0; 20]).unwrap();
+        }
+        let mut request = fx.request();
+        request.data_url = format!("{PNG_DATA_PREFIX}{}", STANDARD.encode(png));
+        assert!(attach(&fx.root, &request).is_ok());
+        assert_eq!(fs::read(fx.root.join(&fx.rel).join("meta.json")).unwrap(), meta);
+    }
+
+    #[test]
+    fn attach_accepts_existing_positive_timing_outside_import_range() {
+        let fx = Fixture::new();
+        let meta = br#"{"version":1,"size":{"x":1,"y":1},"states":[{"name":"idle","delays":[[0.001]]}]}"#;
+        fs::write(fx.root.join(&fx.rel).join("meta.json"), meta).unwrap();
+        let request = fx.request();
+        assert!(attach(&fx.root, &request).is_ok());
+        assert_eq!(fs::read(fx.root.join(&fx.rel).join("meta.json")).unwrap(), meta);
+    }
+
+    #[test]
+    fn attach_rejects_bad_compressed_data_even_with_valid_crc() {
+        let fx = Fixture::new();
+        let mut request = fx.request();
+        request.expected_revision = create_metadata_only(&fx.root, &request).unwrap().revision;
+        let mut data = Fixture::png();
+        data[41] = 0;
+        let crc = crc32(&data[37..54]);
+        data[54..58].copy_from_slice(&crc.to_be_bytes());
+        request.data_url = format!("{PNG_DATA_PREFIX}{}", STANDARD.encode(data));
+        assert_eq!(attach(&fx.root, &request).unwrap_err().code, "RSI_IMPORT_PNG_INVALID");
         assert!(!fx.root.join(&fx.rel).join("idle.png").exists());
     }
 

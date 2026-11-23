@@ -12,6 +12,7 @@ interface Props {
   replaceState?: RsiState;
   expectedPngRevision?: string;
   attachState?: RsiState;
+  projectRoot?: string;
 }
 
 const PNG_LIMIT = 8 * 1024 * 1024;
@@ -30,7 +31,7 @@ function fileToDataUrl(file: File): Promise<string> {
 
 /** Append a new state or replace an existing PNG through an archived, conflict-aware operation. */
 export default function RsiImportPanel({
-  path, revision, onImported, replaceState, expectedPngRevision, attachState,
+  path, revision, onImported, replaceState, expectedPngRevision, attachState, projectRoot,
 }: Props) {
   const attaching = Boolean(attachState);
   const existingState = replaceState ?? attachState;
@@ -132,7 +133,8 @@ export default function RsiImportPanel({
         ...(replacing ? { expected_png_revision: expectedPngRevision } : {}),
         ...(preserveDelays && replaceState ? { delays: replaceState.delays } : {}),
       };
-      const result = attaching ? await studio.attachRsiState(request) : replacing
+      if (attaching && !projectRoot) throw new Error('Проект не определён.');
+      const result = attaching ? await studio.attachRsiState(request, projectRoot!) : replacing
         ? await studio.replaceRsiState(request)
         : metadataOnly ? await studio.createRsiState(request) : await studio.importRsiState(request);
       onImported(result);
@@ -200,17 +202,19 @@ export default function RsiImportPanel({
             onChange={(event) => setDelay(Number(event.target.value))}/>
         </label>
       </div>
-      <p className="rsi-import-hint">
+      {!attaching && <p className="rsi-import-hint">
         Порядок кадров: сначала все кадры юга, затем севера, востока, запада и диагоналей.
         PNG должен содержать ровно направления × кадры ячеек. Если сетка не меняется,
         покадровые задержки исходного состояния сохраняются.
-      </p>
+      </p>}
+      {attaching && <p>PNG должен содержать все кадры из метаданных; дополнительные ячейки допустимы.</p>}
       {!metadataOnly && file && <small>Выбран: {file.name} · {Math.ceil(file.size / 1024)} КиБ</small>}
       {error && <div className="rsi-error" role="alert"><AlertCircle size={16}/>
         <span>{error.message} {error.hint} <code>{error.code}</code></span>
+        {error.details && <pre>{error.details}</pre>}
       </div>}
       <button type="submit" disabled={uploading || (!metadataOnly && !file) || (!replacing && !name)
-          || !Number.isInteger(frames) || frames < 1 || frames > 128 || frames * directions > 256
+          || (!attaching && (!Number.isInteger(frames) || frames < 1 || frames > 128 || frames * directions > 256))
           || (replacing && !expectedPngRevision)}>
         <ImagePlus size={15}/>{uploading
           ? (replacing ? 'Заменяю…' : 'Импортирую…')

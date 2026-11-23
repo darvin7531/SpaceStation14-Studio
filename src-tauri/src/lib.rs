@@ -394,9 +394,13 @@ async fn import_rsi_state(
 #[tauri::command]
 async fn attach_rsi_state(
     request: RsiStateImport,
+    expected_project_root: String,
     state: State<'_, WorkspaceState>,
 ) -> Result<ImportedRsiState, StudioError> {
     let index = current_project(&state)?;
+    if index.overview().project_root != expected_project_root {
+        return Err(StudioError::new("PROJECT_CHANGED", "Проект изменился.", "Откройте RSI заново."));
+    }
     tauri::async_runtime::spawn_blocking(move || index.attach_rsi_state(&request))
         .await
         .map_err(interrupted)?

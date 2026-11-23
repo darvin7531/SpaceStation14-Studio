@@ -24,8 +24,9 @@ function Failure({ error }: { error: StudioError }) {
 
 /** Load one PNG at a time; do not expose project paths to the webview filesystem. */
 export default function RsiPreview({
-  path, metadata, revision, initialState, onImported, onBatchOutcome, onTimingUpdated, onCreditsUpdated, onSizeUpdated, onDeleted, onRestored, onRenamed,
+  projectRoot, path, metadata, revision, initialState, onImported, onBatchOutcome, onTimingUpdated, onCreditsUpdated, onSizeUpdated, onDeleted, onRestored, onRenamed,
 }: {
+  projectRoot: string;
   path: string;
   metadata: string;
   revision: string;
@@ -150,7 +151,7 @@ export default function RsiPreview({
     {list && !listing && inspection.states.filter((state) =>
       !list.sheets.some((sheet) => sheet.name === state.name + '.png')).map((state) =>
       <RsiImportPanel key={'attach:' + path + ':' + state.name + ':' + revision}
-        path={path} revision={revision} attachState={state} onImported={(result) => {
+        projectRoot={projectRoot} path={path} revision={revision} attachState={state} onImported={(result) => {
           onImported(result);
           setRefresh((value) => value + 1);
         }}/>)}
