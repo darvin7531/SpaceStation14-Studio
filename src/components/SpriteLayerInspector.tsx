@@ -93,7 +93,7 @@ export default function SpriteLayerInspector({ sprite, layers, total, busy, onOp
       const parsed = parseRsiMetadata(document.content);
       if (!parsed.size) throw new Error(parsed.errors[0] ?? 'RSI не содержит корректного размера кадра.');
       const state = selectRsiPreviewState(parsed.states, selectedState);
-      if (!state) throw new Error(parsed.errors[0] ?? 'В meta.json нет корректных состояний.');
+      if (!state) throw new Error(parsed.errors[0] ?? t('sprite.noStates'));
       const sheet = await studio.readRsiSheet(selectedPath, state.name + '.png');
       const layout = buildRsiFrameLayout(parsed.size, state, sheet.width, sheet.height);
       if (isRsiLayoutError(layout)) throw new Error(layout.error);
@@ -107,7 +107,7 @@ export default function SpriteLayerInspector({ sprite, layers, total, busy, onOp
       if (active) setLoading(false);
     });
     return () => { active = false; };
-  }, [selectedPath, selectedState, selectedIndexed]);
+  }, [selectedPath, selectedState, selectedIndexed, t]);
 
   if (!targets.length) return null;
   const matches = preview?.path === selectedPath && preview.requestedState === selectedState;
@@ -156,7 +156,7 @@ export default function SpriteLayerInspector({ sprite, layers, total, busy, onOp
       </p> : loading ? <p role="status" className="sprite-layer-hint">Чтение RSI и PNG…</p>
         : error ? <p role="alert" className="sprite-layer-error"><AlertCircle size={14}/>{error}</p>
           : matches && preview ? <>{preview.state !== selectedState && <p className="sprite-layer-hint">
-              Запрошенное состояние не указано или отсутствует в корректных метаданных. Показано первое состояние RSI: {preview.state}.
+              {t('sprite.fallback', { state: preview.state })}
             </p>}<div className="sprite-zoom" role="group" aria-label={t('sprite.zoom')}>
               <button type="button" disabled={zoom <= 0.5} aria-label={t('sprite.zoomOut')}
                 onClick={() => setZoom((value) => spriteZoom(value, -1))}>−</button>

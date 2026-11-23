@@ -101,7 +101,7 @@ function InheritedSpriteInspector({ entry, workspaceKey, busy, onOpenRsi, onOpen
   onOpenRsi: (path: string, state: string | null) => void;
   onOpenSource: (file: string, line: number) => void;
 }) {
-  const { language } = useI18n();
+  const { language, t } = useI18n();
   const [report, setReport] = useState<PrototypeInheritancePreview | null>(null);
   const [failure, setFailure] = useState<StudioError | null>(null);
   useEffect(() => {
@@ -114,15 +114,15 @@ function InheritedSpriteInspector({ entry, workspaceKey, busy, onOpenRsi, onOpen
   }, [entry.declaration.kind, entry.declaration.id, workspaceKey]);
   const projection = inheritedSpriteForEntry(entry, report);
   return <>
-    {!report && !failure && <p role="status">Загрузка структурного Sprite…</p>}
-    {failure && <p role="alert">Не удалось разрешить Sprite: {failure.message} [{failure.code}]</p>}
+    {!report && !failure && <p role="status">{t('sprite.inheritedLoading')}</p>}
+    {failure && <p role="alert">{t('sprite.inheritedError', { message: failure.message, code: failure.code })}</p>}
     {report && <>
       <p className="prototype-outline-warning">{projection
-        ? 'Структурный Sprite из сохранённых источников; не итоговая композиция игры.'
-        : 'Не удалось однозначно определить унаследованный Sprite; показаны прямые данные объявления.'}</p>
+        ? t('sprite.inheritedProjection')
+        : t('sprite.inheritedAmbiguous')}</p>
       {report.warnings.map((warning, index) => <p className="prototype-outline-warning" key={index}>{prototypeNotice(language, warning)}</p>)}
       {projection?.source && <button type="button" onClick={() => onOpenSource(projection.source!.file, projection.source!.line)}>
-        Последний источник компонента: {projection.source.file}:{projection.source.line}
+        {t('sprite.inheritedSource', { file: projection.source.file, line: projection.source.line })}
       </button>}
     </>}
     {projection ? <SpriteLayerInspector sprite={projection.sprite} layers={projection.layers}
@@ -138,6 +138,7 @@ export default function PrototypeOutlinePanel({
   requiredLocales, liveValidation, validationDelay, cursorLine, prototypeJump,
   workspaceKey, sourceDirty, onNavigatePrototype, onOpenSource,
 }: Props) {
+  const { t } = useI18n();
   const [snapshot, setSnapshot] = useState<{ path: string; source: string; outline: SourceOutline } | null>(null);
   const [failure, setFailure] = useState<StudioError | null>(null);
   const [loading, setLoading] = useState(false);
@@ -251,7 +252,7 @@ export default function PrototypeOutlinePanel({
           ? <InheritedSpriteInspector key={outlineDeclarationKey(selected.declaration)} entry={selected}
               workspaceKey={workspaceKey} busy={busy} onOpenRsi={onOpenRsi} onOpenSource={onOpenSource}/>
           : <>{sourceDirty && selected.declaration.parents.length > 0 && <p className="prototype-outline-warning">
-              Сохраните YAML для просмотра унаследованного Sprite; сейчас показан только черновик.
+              {t('sprite.inheritedDirty')}
             </p>}
             {(selected.sprite || selected.sprite_layers.length > 0) && <SpriteLayerInspector
               key={outlineDeclarationKey(selected.declaration)} sprite={selected.sprite} layers={selected.sprite_layers}
