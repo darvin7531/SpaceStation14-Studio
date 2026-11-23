@@ -109,8 +109,11 @@ try {
     range.setStart(node, offset); range.setEnd(node, offset + ${word.length});
     const rect = range.getBoundingClientRect();
     const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
-    document.elementFromPoint(x, y).dispatchEvent(new MouseEvent('mousedown',
+    const target = document.elementFromPoint(x, y);
+    target.dispatchEvent(new MouseEvent('mousedown',
       { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: 1, ctrlKey: true }));
+    target.dispatchEvent(new MouseEvent('mouseup',
+      { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: 0, ctrlKey: true }));
   `);
   await ctrlClickWord('SmokeSecond');
   try {
