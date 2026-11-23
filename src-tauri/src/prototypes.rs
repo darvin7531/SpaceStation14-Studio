@@ -191,7 +191,7 @@ pub fn inspect_source_outline(
 /// Accept only source-constant texture paths, never canonicalize arbitrary
 /// YAML paths. Explicit Textures prefixes and optional .rsi suffixes are
 /// common across SS14 forks.
-fn normalize_sprite_path(raw: &str) -> Option<String> {
+pub(crate) fn normalize_sprite_path(raw: &str) -> Option<String> {
     let relative = raw
         .strip_prefix("Resources/Textures/")
         .or_else(|| raw.strip_prefix("/Textures/"))

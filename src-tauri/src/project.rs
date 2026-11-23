@@ -967,13 +967,32 @@ impl ProjectIndex {
         &self,
         draft: &PrototypeDraft,
     ) -> Result<PrototypePreview, StudioError> {
-        let preview = prototype_create::preview(draft)?;
-        if self.prototypes()?.has_identity(&preview.kind, &preview.id) {
+        let mut preview = prototype_create::preview(draft)?;
+        let catalog = self.prototypes()?;
+        if catalog.has_identity(&preview.kind, &preview.id) {
             return Err(StudioError::new(
                 "PROTOTYPE_ID_EXISTS",
                 "Прототип с таким сочетанием типа и ID уже объявлен в проекте.",
                 "Измените ID либо откройте существующее объявление из каталога.",
             ));
+        }
+        if !draft.parent.is_empty() && !catalog.has_identity(&draft.kind, &draft.parent) {
+            preview.warnings.push(format!(
+                "Родитель '{}' не найден в текущем индексе проекта; индекс может быть неполным или устаревшим.",
+                draft.parent
+            ));
+        }
+        if !draft.sprite.is_empty() {
+            let indexed = prototypes::normalize_sprite_path(&draft.sprite)
+                .and_then(|path| self.positions.get(&path))
+                .and_then(|index| self.resources.get(*index))
+                .is_some_and(|entry| entry.kind == "rsi");
+            if !indexed {
+                preview.warnings.push(format!(
+                    "RSI '{}' не найден в текущем индексе проекта; индекс может быть неполным или устаревшим.",
+                    draft.sprite
+                ));
+            }
         }
         Ok(preview)
     }
@@ -2869,6 +2888,53 @@ mod tests {
         assert!(index.is_editable_text_indexed(file));
         assert!(!index.is_yaml_indexed(file));
         assert!(!index.is_editable_text_indexed("Resources/Textures/thing.rsi"));
+    }
+
+    #[test]
+    fn prototype_preview_reports_unindexed_references_without_claiming_absence() {
+        let fx = Fixture::new();
+        fx.write("Resources/Prototypes/base.yml", "- type: entity\n  id: Base\n");
+        fx.write("Resources/Textures/Test.rsi/meta.json", "{}");
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let mut draft = PrototypeDraft {
+            kind: "entity".into(),
+            id: "New".into(),
+            parent: "Base".into(),
+            name: String::new(),
+            description: String::new(),
+            suffix: String::new(),
+            abstract_prototype: false,
+            sprite: "Test.rsi".into(),
+            sprite_state: String::new(),
+            include_sprite: false,
+            include_item: false,
+            include_physics: false,
+            include_appearance: false,
+            file: "Resources/Prototypes/base.yml".into(),
+        };
+        assert!(index.preview_new_prototype(&draft).unwrap().warnings.is_empty());
+        draft.parent = "Missing".into();
+        draft.sprite = "Missing.rsi".into();
+        let warnings = index.preview_new_prototype(&draft).unwrap().warnings;
+        assert!(warnings.iter().any(|w| w.contains("Missing") && w.contains("индекс")));
+        assert!(warnings.iter().any(|w| w.contains("Missing.rsi") && w.contains("индекс")));
+        assert_eq!(
+            index.preview_append_prototype(&draft).unwrap().warnings,
+            warnings
+        );
+        draft.sprite = "Resources/Textures/Test.rsi".into();
+        assert!(!index
+            .preview_new_prototype(&draft)
+            .unwrap()
+            .warnings
+            .iter()
+            .any(|w| w.contains("Test.rsi")));
+        // An unreadable/invalid YAML makes the catalogue incomplete; describe only its index.
+        fx.write("Resources/Prototypes/bad.yml", "[broken");
+        let incomplete = ProjectIndex::open(fx.root_str()).unwrap();
+        let warnings = incomplete.preview_new_prototype(&draft).unwrap().warnings;
+        assert!(warnings.iter().any(|w| w.contains("Missing") && w.contains("индекс")));
+        assert!(!warnings.iter().any(|w| w.contains("не существует")));
     }
 
     #[test]

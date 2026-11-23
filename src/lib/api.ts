@@ -837,8 +837,8 @@ export const studio = {
   createExternalFluent(draft: NewFluentDraft): Promise<ExternalCreatedFluent | null> {
     return invoke('create_external_fluent', { draft });
   },
-  previewNewPrototype(draft: NewPrototypeDraft): Promise<NewPrototypePreview> {
-    return invoke('preview_new_prototype', { draft });
+  previewNewPrototype(draft: NewPrototypeDraft, external = false): Promise<NewPrototypePreview> {
+    return invoke('preview_new_prototype', { draft, external });
   },
   createNewPrototype(draft: NewPrototypeDraft): Promise<CreatedPrototype> {
     return invoke('create_new_prototype', { draft });

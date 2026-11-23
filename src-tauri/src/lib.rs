@@ -1124,12 +1124,19 @@ struct CreatePrototypeResult {
 #[tauri::command]
 async fn preview_new_prototype(
     draft: PrototypeDraft,
+    external: Option<bool>,
     state: State<'_, WorkspaceState>,
 ) -> Result<PrototypePreview, StudioError> {
     let project = current_project(&state)?;
-    tauri::async_runtime::spawn_blocking(move || project.preview_new_prototype(&draft))
-        .await
-        .map_err(interrupted)?
+    tauri::async_runtime::spawn_blocking(move || {
+        if external.unwrap_or(false) {
+            prototype_create::preview(&draft)
+        } else {
+            project.preview_new_prototype(&draft)
+        }
+    })
+    .await
+    .map_err(interrupted)?
 }
 
 /// Creation writes only a brand-new file. The existing workspace state is

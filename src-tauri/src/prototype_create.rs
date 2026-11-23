@@ -192,8 +192,8 @@ pub fn preview(draft: &PrototypeDraft) -> Result<PrototypePreview, StudioError> 
     if draft.parent.is_empty() {
         warnings.push("Родитель не задан: наследование компонентов не используется.".into());
     }
-    if !draft.sprite.is_empty() {
-        warnings.push("RSI и состояние спрайта ещё не проверяются на существование.".into());
+    if !draft.sprite_state.is_empty() {
+        warnings.push("Состояние спрайта не проверяется на существование.".into());
     }
     if draft.include_item || draft.include_physics || draft.include_appearance {
         warnings.push("Наличие и требования компонентов зависят от конкретного форка SS14; C#-валидация будет добавлена отдельно.".into());
@@ -590,6 +590,8 @@ mod tests {
         let fixture = Fixture::new();
         let target = fixture.0.join("external.yml");
         let draft = fixture.draft("ExternalItem");
+        // External generation has no dependency on the currently loaded project index.
+        assert!(preview(&draft).unwrap().warnings.is_empty());
         let result = create_external_at(&target, &draft).unwrap();
         assert_eq!(result.path, target.to_string_lossy());
         assert!(fs::read_to_string(&target).unwrap().contains("id:"));

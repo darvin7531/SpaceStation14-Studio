@@ -62,6 +62,15 @@ export default function CreatePrototypeWizard({
   const [checking, setChecking] = useState(true);
   const [creating, setCreating] = useState(false);
 
+  function switchDestination(next: 'project' | 'external') {
+    if (next === destination) return;
+    setChecking(true);
+    setPreview(null);
+    setValidationError(null);
+    setCreateError(null);
+    setDestination(next);
+  }
+
   function switchMode(next: PrototypeDestinationMode) {
     if (next === mode) return;
     setChecking(true);
@@ -144,7 +153,7 @@ export default function CreatePrototypeWizard({
         return;
       }
       const request = mode === 'new'
-        ? studio.previewNewPrototype(draft)
+        ? studio.previewNewPrototype(draft, destination === 'external')
         : studio.previewAppendPrototype(draft);
       void request.then((value) => {
         if (!active) return;
@@ -162,7 +171,7 @@ export default function CreatePrototypeWizard({
       active = false;
       window.clearTimeout(handle);
     };
-  }, [draft, mode, targetIsDirty]);
+  }, [draft, mode, destination, targetIsDirty]);
 
   const [pickingFolder, setPickingFolder] = useState(false);
 
@@ -242,9 +251,9 @@ export default function CreatePrototypeWizard({
 
           {mode === 'new' && <div className="create-proto-mode" role="group" aria-label={t('wizard.proto.destination')}>
             <button type="button" className={destination === 'project' ? 'selected' : ''}
-              onClick={() => setDestination('project')}>{t('wizard.proto.project')}</button>
+              onClick={() => switchDestination('project')}>{t('wizard.proto.project')}</button>
             <button type="button" className={destination === 'external' ? 'selected' : ''}
-              onClick={() => setDestination('external')}>{t('wizard.common.external')}</button>
+              onClick={() => switchDestination('external')}>{t('wizard.common.external')}</button>
           </div>}
           <fieldset className="create-proto-group">
             <legend>{t('wizard.proto.identity')}</legend>
