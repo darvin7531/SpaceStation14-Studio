@@ -101,6 +101,7 @@ try {
   const ctrlClickWord = async (word) => script(`
     const lines = [...document.querySelectorAll('.monaco-shell .view-line')];
     const line = lines.find(el => el.textContent.includes(${JSON.stringify(word)}));
+    line.scrollIntoView({ block: 'center', inline: 'nearest' });
     const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
     let node; while ((node = walker.nextNode()) && !node.textContent.includes(${JSON.stringify(word)})) {}
     const range = document.createRange();
