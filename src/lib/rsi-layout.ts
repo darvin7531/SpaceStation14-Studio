@@ -1,3 +1,5 @@
+import { uiText, type Language } from './ui-language';
+
 /**
  * SS14/Robust RSI v1 sprite-sheet layout.
  * States are separate PNGs, sprites are row-major and grouped by direction
@@ -61,7 +63,7 @@ function record(value: unknown): value is Record<string, unknown> {
 }
 
 /** Invalid states are skipped individually; the sheet remains viewable. */
-export function parseRsiMetadata(text: string): RsiMetadata {
+export function parseRsiMetadata(text: string, language: Language = 'ru'): RsiMetadata {
   const errors: string[] = [];
   const warnings: string[] = [];
   let parsed: unknown;
@@ -70,14 +72,14 @@ export function parseRsiMetadata(text: string): RsiMetadata {
   } catch (error) {
     return {
       size: null, states: [], warnings,
-      errors: ['Невозможно разобрать meta.json: ' + (error instanceof Error ? error.message : String(error))],
+      errors: [uiText(language, 'rsi.layout.json', { detail: error instanceof Error ? error.message : String(error) })],
     };
   }
   if (!record(parsed)) {
-    return { size: null, states: [], warnings, errors: ['meta.json должен содержать JSON-объект.'] };
+    return { size: null, states: [], warnings, errors: [uiText(language, 'rsi.layout.object')] };
   }
   if (parsed.version !== 1) {
-    warnings.push('Версия RSI отличается от 1. Раскладка кадров может отличаться от поддерживаемого формата.');
+    warnings.push(uiText(language, 'rsi.layout.version'));
   }
   let size: RsiSize | null = null;
   if (record(parsed.size)
@@ -85,15 +87,15 @@ export function parseRsiMetadata(text: string): RsiMetadata {
     && integer(parsed.size.y, 1, MAX_FRAME_SIZE)) {
     size = { x: parsed.size.x, y: parsed.size.y };
   } else {
-    errors.push('meta.json: size.x и size.y должны быть целыми числами от 1 до 4096.');
+    errors.push(uiText(language, 'rsi.layout.size'));
   }
   const rawStates = parsed.states;
   if (!Array.isArray(rawStates)) {
-    errors.push('meta.json: states должен быть массивом.');
+    errors.push(uiText(language, 'rsi.layout.states'));
     return { size, states: [], errors, warnings };
   }
   if (rawStates.length > MAX_STATES) {
-    errors.push('В meta.json слишком много состояний (лимит ' + MAX_STATES + ').');
+    errors.push(uiText(language, 'rsi.layout.limit', { count: MAX_STATES }));
     return { size, states: [], errors, warnings };
   }
   const states: RsiState[] = [];
@@ -101,22 +103,22 @@ export function parseRsiMetadata(text: string): RsiMetadata {
   for (let index = 0; index < rawStates.length; index++) {
     const input: unknown = rawStates[index];
     if (!record(input)) {
-      warnings.push('Состояние №' + (index + 1) + ' не является объектом.');
+      warnings.push(uiText(language, 'rsi.layout.stateObject', { index: index + 1 }));
       continue;
     }
     const name = input.name;
     if (typeof name !== 'string' || !/^[a-z0-9_-]{1,128}$/.test(name)) {
-      warnings.push('Состояние №' + (index + 1) + ': недопустимое имя для PNG.');
+      warnings.push(uiText(language, 'rsi.layout.stateName', { index: index + 1 }));
       continue;
     }
     if (seen.has(name)) {
-      warnings.push('Повторное объявление состояния «' + name + '» пропущено.');
+      warnings.push(uiText(language, 'rsi.layout.duplicate', { name }));
       continue;
     }
     seen.add(name);
     const dir = input.directions ?? 1;
     if (dir !== 1 && dir !== 4 && dir !== 8) {
-      warnings.push('Состояние «' + name + '»: directions должно быть 1, 4 или 8.');
+      warnings.push(uiText(language, 'rsi.layout.directions', { name }));
       continue;
     }
     const directions: 1 | 4 | 8 = dir;
@@ -128,15 +130,14 @@ export function parseRsiMetadata(text: string): RsiMetadata {
           && direction.every((seconds: unknown) =>
             typeof seconds === 'number' && Number.isFinite(seconds)
             && seconds > 0 && seconds <= MAX_PLAYBACK_SECONDS))) {
-        warnings.push('Состояние «' + name + '»: delays должен содержать '
-          + directions + ' непустых массивов положительных длительностей (секунды).');
+        warnings.push(uiText(language, 'rsi.layout.delays', { name, count: directions }));
         continue;
       }
       delays = input.delays as number[][];
     }
     const count = delays.reduce((sum, direction) => sum + direction.length, 0);
     if (count > MAX_FRAMES) {
-      warnings.push('Состояние «' + name + '»: больше ' + MAX_FRAMES + ' кадров.');
+      warnings.push(uiText(language, 'rsi.layout.frames', { name, count: MAX_FRAMES }));
       continue;
     }
     states.push({ name, directions, delays });
@@ -153,28 +154,27 @@ export function buildRsiFrameLayout(
   state: RsiState,
   pngWidth: number,
   pngHeight: number,
+  language: Language = 'ru',
 ): RsiFrameLayout | { error: string } {
   if (!integer(size.x, 1, MAX_FRAME_SIZE) || !integer(size.y, 1, MAX_FRAME_SIZE)) {
-    return { error: 'Недопустимый размер кадра в meta.json.' };
+    return { error: uiText(language, 'rsi.layout.invalidCell') };
   }
   if (!integer(pngWidth, 1, MAX_PNG_DIMENSION)
     || !integer(pngHeight, 1, MAX_PNG_DIMENSION)) {
-    return { error: 'Размер PNG выходит за допустимые пределы предпросмотра.' };
+    return { error: uiText(language, 'rsi.layout.pngSize') };
   }
   if (pngWidth % size.x !== 0 || pngHeight % size.y !== 0) {
-    return { error: 'Размер PNG не кратен размеру кадра '
-      + size.x + '×' + size.y + ' из meta.json.' };
+    return { error: uiText(language, 'rsi.layout.multiple', { width: size.x, height: size.y }) };
   }
   const columns = pngWidth / size.x;
   const rows = pngHeight / size.y;
   const expected = state.delays.reduce((sum, direction) => sum + direction.length, 0);
   if (expected > columns * rows) {
-    return { error: 'PNG содержит ' + (columns * rows) + ' ячеек, а meta.json требует ' + expected + '.' };
+    return { error: uiText(language, 'rsi.layout.insufficient', { actual: columns * rows, expected }) };
   }
   const warnings: string[] = [];
   if (expected < columns * rows) {
-    warnings.push('PNG содержит ' + (columns * rows - expected)
-      + ' дополнительных ячеек. Они не включены в анимацию.');
+    warnings.push(uiText(language, 'rsi.layout.extra', { count: columns * rows - expected }));
   }
   let ordinal = 0;
   const directions: RsiSpriteFrame[][] = state.delays.map((durations, directionIndex) =>

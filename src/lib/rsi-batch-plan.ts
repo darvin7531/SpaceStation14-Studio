@@ -1,3 +1,5 @@
+import { uiText, type Language } from './ui-language';
+
 /** Electron parity: multiple PNG files dropped onto one RSI.
  * Preflight every file before invoking any native mutation. The Rust importer
  * remains responsible for CRC, PNG decoding checks, revisions and disk writes.
@@ -35,38 +37,39 @@ export function planRsiBatch(
   cell: { x: number; y: number },
   directions: 1 | 4 | 8,
   existingNames: ReadonlySet<string>,
+  language: Language = 'ru',
 ): BatchEntry[] {
   if (!Number.isSafeInteger(cell.x) || !Number.isSafeInteger(cell.y) ||
     cell.x < 1 || cell.y < 1 || cell.x > 2048 || cell.y > 2048) {
-    throw new Error('Размер кадра RSI отсутствует или некорректен в meta.json.');
+    throw new Error(uiText(language, 'rsi.batch.cell'));
   }
   if (!files.length || files.length > MAX_FILES) {
-    throw new Error('Выберите от 1 до 16 PNG для одного пакетного импорта.');
+    throw new Error(uiText(language, 'rsi.batch.count'));
   }
-  if (![1, 4, 8].includes(directions)) throw new Error('Направлений должно быть 1, 4 или 8.');
+  if (![1, 4, 8].includes(directions)) throw new Error(uiText(language, 'rsi.batch.directions'));
   const names = new Set(existingNames);
   let bytes = 0;
   return files.map((file) => {
     if (file.bytes < 1 || file.bytes > MAX_FILE_BYTES) {
-      throw new Error(file.name + ': файл должен быть непустым PNG размером не более 8 МиБ.');
+      throw new Error(uiText(language, 'rsi.batch.bytes', { name: file.name }));
     }
     bytes += file.bytes;
-    if (bytes > MAX_TOTAL_BYTES) throw new Error('Суммарный размер выбранных PNG превышает 32 МиБ.');
+    if (bytes > MAX_TOTAL_BYTES) throw new Error(uiText(language, 'rsi.batch.total'));
     if (!/^[a-z0-9_-]{1,128}\.png$/.test(file.name)) {
-      throw new Error(file.name + ': имя PNG должно иметь вид state.png (латинские строчные буквы, цифры, - и _).');
+      throw new Error(uiText(language, 'rsi.batch.name', { name: file.name }));
     }
     const name = file.name.slice(0, -4);
-    if (names.has(name)) throw new Error('Состояние "' + name + '" уже существует или повторяется в списке.');
+    if (names.has(name)) throw new Error(uiText(language, 'rsi.batch.duplicate', { name }));
     names.add(name);
     if (!Number.isSafeInteger(file.width) || !Number.isSafeInteger(file.height) ||
       file.width < 1 || file.height < 1 ||
       file.width % cell.x !== 0 || file.height % cell.y !== 0) {
-      throw new Error(file.name + ': размер PNG не кратен размеру кадра ' + cell.x + '×' + cell.y + '.');
+      throw new Error(uiText(language, 'rsi.batch.size', { name: file.name, width: cell.x, height: cell.y }));
     }
     const framesTotal = (file.width / cell.x) * (file.height / cell.y);
     if (framesTotal < 1 || framesTotal > 256 || framesTotal % directions !== 0 ||
       framesTotal / directions > 128) {
-      throw new Error(file.name + ': сетка кадров не соответствует выбранным направлениям 1/4/8.');
+      throw new Error(uiText(language, 'rsi.batch.grid', { name: file.name }));
     }
     return { name, directions, frames: framesTotal / directions };
   });

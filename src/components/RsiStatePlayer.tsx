@@ -1,7 +1,8 @@
+import { useI18n } from '../i18n';
 import { useEffect, useRef, useState } from 'react';
 import { Pause, Play, SkipBack, SkipForward } from 'lucide-react';
 import {
-  RSI_DIRECTIONS, type RsiFrameLayout,
+  type RsiFrameLayout,
 } from '../lib/rsi-layout';
 
 interface Props {
@@ -17,6 +18,9 @@ interface Props {
 export default function RsiStatePlayer({
   imageUrl, imageWidth, imageHeight, stateName, layout, zoom, onZoomWheel,
 }: Props) {
+  const { t } = useI18n();
+  const directionNames = [t('rsi.player.south'), t('rsi.player.north'), t('rsi.player.east'), t('rsi.player.west'),
+    t('rsi.player.southeast'), t('rsi.player.southwest'), t('rsi.player.northeast'), t('rsi.player.northwest')];
   const [direction, setDirection] = useState(0);
   const [frameIndex, setFrameIndex] = useState(0);
   const [playing, setPlaying] = useState(true);
@@ -64,38 +68,36 @@ export default function RsiStatePlayer({
 
   return <div className="rsi-player">
     <div className="rsi-player-controls">
-      <label>Направление
-        <select aria-label="Направление RSI" value={direction}
+      <label>{t('rsi.player.direction')}
+        <select aria-label={t('rsi.player.directionLabel')} value={direction}
           onChange={(event) => selectDirection(Number(event.target.value))}>
           {layout.directions.map((_, index) =>
             <option key={index} value={index}>
-              {RSI_DIRECTIONS[index]} · {layout.directions[index].length} кадров
+              {t('rsi.player.option', { direction: directionNames[index], count: layout.directions[index].length })}
             </option>)}
         </select>
       </label>
       <button type="button" disabled={frames.length < 2}
         onClick={() => setPlaying((current) => !current)}>
         {playing ? <Pause size={14}/> : <Play size={14}/>}
-        {playing ? 'Пауза' : 'Воспроизвести'}
+        {playing ? t('rsi.player.pause') : t('rsi.player.play')}
       </button>
       <button type="button" disabled={frames.length < 2}
-        aria-label="Предыдущий кадр"
+        aria-label={t('rsi.player.previous')}
         onClick={() => selectFrame((frameIndex + frames.length - 1) % frames.length)}>
         <SkipBack size={15}/>
       </button>
       <button type="button" disabled={frames.length < 2}
-        aria-label="Следующий кадр"
+        aria-label={t('rsi.player.next')}
         onClick={() => selectFrame((frameIndex + 1) % frames.length)}>
         <SkipForward size={15}/>
       </button>
-      <span className="rsi-player-counter">Кадр {frameIndex + 1}/{frames.length} ·
-        {currentFrame?.duration.toFixed(3) ?? '?'} с</span>
+      <span className="rsi-player-counter">{t('rsi.player.counter', { frame: frameIndex + 1, total: frames.length, duration: currentFrame?.duration.toFixed(3) ?? '?' })}</span>
     </div>
-    <div ref={canvasRef} className="rsi-player-canvas" aria-label={'Кадр RSI: ' + stateName}>
+    <div ref={canvasRef} className="rsi-player-canvas" aria-label={t('rsi.player.canvas', { name: stateName })}>
       {currentFrame && <div className="rsi-frame-viewport"
         style={{ width: layout.width * zoom, height: layout.height * zoom }}>
-        <img src={imageUrl} alt={'Состояние ' + stateName + ', '
-          + RSI_DIRECTIONS[direction] + ', кадр ' + (frameIndex + 1)}
+        <img src={imageUrl} alt={t('rsi.player.alt', { name: stateName, direction: directionNames[direction], frame: frameIndex + 1 })}
           draggable={false}
           style={{
             position: 'absolute',
@@ -107,15 +109,14 @@ export default function RsiStatePlayer({
       </div>}
     </div>
     {frames.length > 1 && <label className="rsi-player-timeline">
-      Кадры
+      {t('rsi.player.frames')}
       <input type="range" min={0} max={frames.length - 1} step={1} value={frameIndex}
         onChange={(event) => selectFrame(Number(event.target.value))}
-        aria-label="Кадр анимации RSI"/>
+        aria-label={t('rsi.player.timeline')}/>
       <span>{frameIndex + 1}/{frames.length}</span>
     </label>}
     <p className="rsi-player-description">
-      Кадры расположены по направлениям, затем по времени; длительности взяты из meta.json.
-      Просмотр не изменяет исходные PNG.
+      {t('rsi.player.help')}
     </p>
   </div>;
 }
