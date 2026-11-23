@@ -16,7 +16,7 @@ export HOME="$root/home" XDG_CONFIG_HOME="$root/config" XDG_DATA_HOME="$root/dat
 export WEBKIT_DISABLE_COMPOSITING_MODE=1
 mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME" "$root/project/Resources/Prototypes" "$root/project/Resources/Textures/smoke.rsi" "$root/project/Resources/Locale"
 export SMOKE_PROJECT="$root/project"
-printf '%s\n' '- type: entity' '  id: SmokeOriginal' '  parent:' '  - SmokeSecond' '  - SmokeFirst' > "$SMOKE_PROJECT/Resources/Prototypes/smoke.yml"
+printf '%s\n' '- type: entity' '  id: SmokeOriginal' '  parent: [SmokeSecond, SmokeFirst]' > "$SMOKE_PROJECT/Resources/Prototypes/smoke.yml"
 printf '%s\n' '- type: entity' '  id: SmokeFirst' '- type: entity' '  id: SmokeSecond' > "$SMOKE_PROJECT/Resources/Prototypes/tabs.yml"
 printf '%s\n' '# delayed jump' '' '- type: entity' '  id: FocusDelayed' '  name: FocusNeedle' > "$SMOKE_PROJECT/Resources/Prototypes/focus.yml"
 for i in {1..9}; do printf '%s\n' "- type: entity" "  id: Filler$i" > "$SMOKE_PROJECT/Resources/Prototypes/filler$i.yml"; done
