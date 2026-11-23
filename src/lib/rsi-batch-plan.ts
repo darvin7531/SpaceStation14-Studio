@@ -56,7 +56,7 @@ export function planRsiBatch(
     }
     bytes += file.bytes;
     if (bytes > MAX_TOTAL_BYTES) throw new Error(uiText(language, 'rsi.batch.total'));
-    if (!/^[a-z0-9_-]{1,128}\.png$/.test(file.name)) {
+    if (!/^[a-z0-9_-]{1,128}\.[pP][nN][gG]$/.test(file.name)) {
       throw new Error(uiText(language, 'rsi.batch.name', { name: file.name }));
     }
     const name = file.name.slice(0, -4);

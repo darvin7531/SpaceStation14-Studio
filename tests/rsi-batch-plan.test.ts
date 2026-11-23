@@ -37,6 +37,14 @@ test('existing states require explicit replacement approval; duplicate inputs re
   assert.throws(() => planRsiBatch([file('idle.png', 33)], cell, 1, existing, 'ru', true), /не кратен/);
 });
 
+test('uppercase PNG extensions import and still require replacement approval', () => {
+  assert.deepEqual(planRsiBatch([file('walk.PNG')], cell, 1, new Set()), [
+    { name: 'walk', directions: 1, frames: 1 },
+  ]);
+  assert.throws(() => planRsiBatch([file('idle.PNG')], cell, 1, new Set(['idle'])), /уже существует/);
+  assert.throws(() => planRsiBatch([file('walk.png'), file('walk.PNG')], cell, 1, new Set()), /повторяется/);
+});
+
 test('preflight catches incompatible PNG grids and per-direction frame overflow', () => {
   assert.throws(() => planRsiBatch([file('bad.png', 34)], cell, 1, new Set()), /не кратен/);
   assert.throws(() => planRsiBatch([file('bad.png')], cell, 4, new Set()), /направлениям/);

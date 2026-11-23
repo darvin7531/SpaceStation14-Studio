@@ -31,7 +31,7 @@ export default function RsiBulkImportPanel({
   const [replaceExisting, setReplaceExisting] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const inspection = parseRsiMetadata(metadata, language);
-  const collisions = files.map((file) => file.name.replace(/\.png$/, ''))
+  const collisions = files.map((file) => file.name.replace(/\.png$/i, ''))
     .filter((name) => inspection.states.some((state) => state.name === name));
 
   function selectFiles(next: File[]) {
