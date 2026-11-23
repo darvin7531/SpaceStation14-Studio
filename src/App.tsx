@@ -24,7 +24,7 @@ import { reconcileWorkspaceRefresh } from './lib/workspace-refresh';
 import MonacoPreview from './editor/MonacoPreview';
 import { directEntityLocaleField } from './editor/yaml-locale-navigation';
 import RsiPreview from './components/RsiPreview';
-import { publishBatchOutcome } from './lib/rsi-batch-import';
+import { readBatchOutcomes, writeBatchOutcomes, type BatchOutcome } from './lib/rsi-batch-import';
 import CreateRsiWizard from './components/CreateRsiWizard';
 import PrototypeExplorer from './components/PrototypeExplorer';
 import PrototypeFieldsPanel from './components/PrototypeFieldsPanel';
@@ -172,6 +172,14 @@ export default function App() {
   const [exitSaving, setExitSaving] = useState(false);
   const [exitFailure, setExitFailure] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [batchOutcomes, setBatchOutcomes] = useState(() => readBatchOutcomes(window.localStorage));
+  const batchOutcomesRef = useRef(batchOutcomes);
+  const [batchStorageFailed, setBatchStorageFailed] = useState(false);
+  function updateBatchOutcomes(entries: BatchOutcome[]) {
+    batchOutcomesRef.current = entries;
+    setBatchOutcomes(entries);
+    setBatchStorageFailed(!writeBatchOutcomes(window.localStorage, entries));
+  }
   const draftsRef = useRef(drafts);
   draftsRef.current = drafts;
   const draftBasesRef = useRef(draftBases);
@@ -1608,6 +1616,11 @@ export default function App() {
     </section>
 
     {error && <ErrorPanel error={error} close={() => setError(null)}/>}
+    {batchOutcomes.map((entry, index) => <div className="recovery-conflict-notice" role="alert" key={index}>
+      <AlertTriangle size={16}/><span><strong>{entry.projectRoot} — {entry.path}</strong><br/>{entry.message}
+        {batchStorageFailed && <><br/>{t('rsi.bulk.storageFailed')}</>}</span>
+      <button type="button" onClick={() => updateBatchOutcomes(batchOutcomesRef.current.filter((_, i) => i !== index))}>{t('common.close')}</button>
+    </div>)}
     {notice && <div className="save-notice" role="status">
       <CheckCircle2 size={16}/><span>{notice}</span>
       <button type="button" onClick={() => setNotice(null)}>Закрыть</button>
@@ -1827,7 +1840,7 @@ export default function App() {
             onClose={closeComparison}/>}
           {reading ? <div className="placeholder">Чтение ресурса…</div> :
             document && selected.kind === 'rsi'
-              ? <RsiPreview projectRoot={overview.project_root} key={document.path + ':' + document.revision + ':' + workspaceRevision}
+              ? <RsiPreview projectRoot={overview.project_root} key={overview.project_root + ':' + document.path + ':' + document.revision + ':' + workspaceRevision}
                 initialState={rsiRequested?.path === selected.path ? rsiRequested.state : null}
                 path={selected.path} metadata={document.content} revision={document.revision}
                 onImported={(result) => { if (projectRootRef.current === overview.project_root) onRsiImported(selected.path, result); }}
@@ -1843,7 +1856,7 @@ export default function App() {
                     }, setError, failure);
                 }}
                 onBatchRefresh={(root) => refreshRsiBatch(selected.path, root)}
-                onBatchOutcome={(message) => publishBatchOutcome(overview.project_root, projectRootRef.current, message, setNotice)}
+                onBatchOutcome={(message) => updateBatchOutcomes([...batchOutcomesRef.current, { projectRoot: overview.project_root, path: selected.path, message }])}
                 onTimingUpdated={(result) => onRsiImported(selected.path, result, 'timing')}
                 onCreditsUpdated={(result) => onRsiImported(selected.path, result, 'credits')}
                 onSizeUpdated={(result) => onRsiImported(selected.path, result, 'size')}

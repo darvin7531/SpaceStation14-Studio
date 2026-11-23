@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { importRsiBatch, publishBatchOutcome } from '../src/lib/rsi-batch-import';
+import { importRsiBatch, readBatchOutcomes, writeBatchOutcomes } from '../src/lib/rsi-batch-import';
 import type { RsiMetadata } from '../src/lib/rsi-layout';
 
 const inspection: RsiMetadata = {
@@ -129,10 +129,33 @@ test('switching projects stops the batch and refresh stays bound to the original
 });
 
 
-test('batch outcome is not published to a different project', () => {
-  const notices: string[] = [];
-  publishBatchOutcome('/project-a', '/project-b', 'finished A', (message) => notices.push(message));
-  assert.deepEqual(notices, []);
-  publishBatchOutcome('/project-a', '/project-a', 'finished A', (message) => notices.push(message));
-  assert.deepEqual(notices, ['finished A']);
+test('archived failure after switching projects remains associated with its origin after reload', async () => {
+  let active = '/project-a';
+  const ctx = setup((command) => {
+    if (command === 'read_rsi_sheet_bound') return { revision: 'png-0' };
+    if (command === 'replace_rsi_state') {
+      active = '/project-b';
+      return { revision: 'meta-1', archive_path: 'archive/saved', warning: 'keep backup' };
+    }
+    throw { code: 'PROJECT_CHANGED', message: 'project changed', details: 'archive/failed' };
+  });
+  const result = await importRsiBatch(ctx.options);
+  let stored = '';
+  const storage = { getItem: () => stored, setItem: (_key: string, value: string) => { stored = value; } };
+  const entries = [{ projectRoot: ctx.options.projectRoot, path: ctx.options.path, message: result.outcome }];
+  assert.equal(active, '/project-b');
+  assert.equal(writeBatchOutcomes(storage, entries), true);
+  const restored = readBatchOutcomes(storage);
+  assert.equal(restored[0].projectRoot, '/project-a');
+  assert.equal(restored[0].path, 'test.rsi');
+  for (const detail of ['PROJECT_CHANGED', 'archive/saved', 'archive/failed', 'keep backup'])
+    assert.ok(restored[0].message.includes(detail), detail);
+  writeBatchOutcomes(storage, []);
+  assert.deepEqual(readBatchOutcomes(storage), []);
+});
+
+test('unavailable or malformed outcome storage does not hide the in-memory warning', () => {
+  const storage = { getItem: () => '{', setItem: () => { throw Error('blocked'); } };
+  assert.deepEqual(readBatchOutcomes(storage), []);
+  assert.equal(writeBatchOutcomes(storage, [{ projectRoot: '/a', path: 'x.rsi', message: 'recover' }]), false);
 });

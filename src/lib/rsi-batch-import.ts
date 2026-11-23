@@ -98,6 +98,23 @@ export async function importRsiBatch({ projectRoot, path, revision, inspection, 
   return { attempted, outcome };
 }
 
-export function publishBatchOutcome(origin: string, active: string | null, message: string, publish: (message: string) => void) {
-  if (origin === active) publish(message);
+export type BatchOutcome = { projectRoot: string; path: string; message: string };
+const BATCH_OUTCOMES_KEY = 'ss14-studio-rsi-batch-outcomes';
+
+type OutcomeStorage = Pick<Storage, 'getItem' | 'setItem'>;
+
+export function readBatchOutcomes(storage: OutcomeStorage): BatchOutcome[] {
+  try {
+    const entries: unknown = JSON.parse(storage.getItem(BATCH_OUTCOMES_KEY) ?? '[]');
+    return Array.isArray(entries) ? entries.filter((entry): entry is BatchOutcome =>
+      entry && typeof entry.projectRoot === 'string' && typeof entry.path === 'string'
+      && typeof entry.message === 'string') : [];
+  } catch { return []; }
+}
+
+export function writeBatchOutcomes(storage: OutcomeStorage, entries: BatchOutcome[]): boolean {
+  try {
+    storage.setItem(BATCH_OUTCOMES_KEY, JSON.stringify(entries));
+    return true;
+  } catch { return false; }
 }
