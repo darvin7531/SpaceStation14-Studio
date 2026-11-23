@@ -56,7 +56,11 @@ fn valid_state(value: &str) -> bool {
 fn validate(request: &RsiRenameRequest) -> Result<(), StudioError> {
     if !valid_sha(&request.expected_revision)
         || (request.expected_missing_png && request.expected_png_revision.is_some())
-        || (!request.expected_missing_png && !request.expected_png_revision.as_deref().is_some_and(valid_sha))
+        || (!request.expected_missing_png
+            && !request
+                .expected_png_revision
+                .as_deref()
+                .is_some_and(valid_sha))
     {
         return Err(issue(
             "RSI_RENAME_REVISION_INVALID",
@@ -178,9 +182,18 @@ fn metadata_after_rename(
 
 fn require_absent(path: &Path) -> Result<(), StudioError> {
     match fs::symlink_metadata(path) {
-        Ok(_) => Err(issue("RSI_RENAME_TARGET_EXISTS", "Путь PNG уже занят.", "Обновите RSI и проверьте файлы.")),
+        Ok(_) => Err(issue(
+            "RSI_RENAME_TARGET_EXISTS",
+            "Путь PNG уже занят.",
+            "Обновите RSI и проверьте файлы.",
+        )),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(issue("RSI_RENAME_TARGET_UNREADABLE", "Не удалось проверить путь PNG.", "Проверьте права доступа.").with_details(error.to_string())),
+        Err(error) => Err(issue(
+            "RSI_RENAME_TARGET_UNREADABLE",
+            "Не удалось проверить путь PNG.",
+            "Проверьте права доступа.",
+        )
+        .with_details(error.to_string())),
     }
 }
 
@@ -223,7 +236,10 @@ pub fn rename(root: &Path, request: &RsiRenameRequest) -> Result<RenamedRsiState
     } else {
         Some(read_png(&source_path)?)
     };
-    if old_png.as_ref().is_some_and(|png| Some(revision(png).as_str()) != request.expected_png_revision.as_deref()) {
+    if old_png
+        .as_ref()
+        .is_some_and(|png| Some(revision(png).as_str()) != request.expected_png_revision.as_deref())
+    {
         return Err(issue(
             "RSI_RENAME_PNG_CONFLICT",
             "Исходный PNG был изменён вне Studio.",
@@ -292,15 +308,26 @@ pub fn rename(root: &Path, request: &RsiRenameRequest) -> Result<RenamedRsiState
         require_absent(&source_path)?;
         require_absent(&target_path)?;
         let result = resource_edit::save_rsi_metadata(
-            root, &format!("{}/meta.json", request.path), &request.expected_revision, updated,
+            root,
+            &format!("{}/meta.json", request.path),
+            &request.expected_revision,
+            updated,
         )?;
         // ponytail: cross-process writes can race the final checks; OS-level locking would be needed.
         let mut warnings = vec!["PNG не изменялись; внешний процесс мог изменить метаданные или создать PNG во время операции. Архив метаданных восстанавливается вручную.".to_owned()];
-        if let Some(warning) = result.durability_warning { warnings.push(warning); }
+        if let Some(warning) = result.durability_warning {
+            warnings.push(warning);
+        }
         return Ok(RenamedRsiState {
-            name: request.new_name.clone(), old_name: request.old_name.clone(),
-            content: result.document.content, revision: result.document.revision,
-            archive_path: archive.strip_prefix(root).unwrap_or(&archive).to_string_lossy().replace('\\', "/"),
+            name: request.new_name.clone(),
+            old_name: request.old_name.clone(),
+            content: result.document.content,
+            revision: result.document.revision,
+            archive_path: archive
+                .strip_prefix(root)
+                .unwrap_or(&archive)
+                .to_string_lossy()
+                .replace('\\', "/"),
             warning: Some(warnings.join(" ")),
         });
     }
@@ -354,7 +381,9 @@ pub fn rename(root: &Path, request: &RsiRenameRequest) -> Result<RenamedRsiState
                     "Обновите RSI перед повторной попыткой.",
                 ));
             }
-            if revision(&read_png(&source_path)?) != request.expected_png_revision.as_deref().unwrap_or("") {
+            if revision(&read_png(&source_path)?)
+                != request.expected_png_revision.as_deref().unwrap_or("")
+            {
                 return Err(issue(
                     "RSI_RENAME_PNG_CONFLICT",
                     "Исходный PNG изменился во время копирования.",
@@ -410,7 +439,9 @@ pub fn rename(root: &Path, request: &RsiRenameRequest) -> Result<RenamedRsiState
         );
     } else {
         match read_png(&source_path) {
-            Ok(bytes) if revision(&bytes) == request.expected_png_revision.as_deref().unwrap_or("") => {
+            Ok(bytes)
+                if revision(&bytes) == request.expected_png_revision.as_deref().unwrap_or("") =>
+            {
                 if let Err(error) = fs::remove_file(&source_path) {
                     warnings.push(format!(
                         "Новый файл записан, но исходный PNG остался: {error}"
@@ -619,15 +650,24 @@ mod tests {
         assert!(archive.join("meta.json.before").exists());
         assert!(!archive.join("idle.png").exists());
         assert!(renamed.warning.is_some());
-        let manifest: Value = serde_json::from_slice(&fs::read(archive.join("manifest.json")).unwrap()).unwrap();
-        assert!(manifest["recovery"].as_str().unwrap().contains("do not replace meta.json wholesale"));
+        let manifest: Value =
+            serde_json::from_slice(&fs::read(archive.join("manifest.json")).unwrap()).unwrap();
+        assert!(manifest["recovery"]
+            .as_str()
+            .unwrap()
+            .contains("do not replace meta.json wholesale"));
         let listed = rsi_restore::list(&fixture.root, &fixture.path).unwrap();
         assert_eq!(listed.archives.len(), 1);
         assert!(!listed.archives[0].automatic_restore);
-        let error = rsi_restore::restore(&fixture.root, &RsiRestoreRequest {
-            path: fixture.path.clone(), expected_revision: renamed.revision,
-            archive_id: listed.archives[0].id.clone(),
-        }).unwrap_err();
+        let error = rsi_restore::restore(
+            &fixture.root,
+            &RsiRestoreRequest {
+                path: fixture.path.clone(),
+                expected_revision: renamed.revision,
+                archive_id: listed.archives[0].id.clone(),
+            },
+        )
+        .unwrap_err();
         assert_eq!(error.code, "RSI_RESTORE_MANUAL_REQUIRED");
         assert!(error.details.unwrap().contains(&listed.archives[0].id));
     }
@@ -637,16 +677,31 @@ mod tests {
         let fixture = Fixture::new();
         let mut request = fixture.request();
         request.expected_missing_png = true;
-        assert_eq!(rename(&fixture.root, &request).unwrap_err().code, "RSI_RENAME_REVISION_INVALID");
+        assert_eq!(
+            rename(&fixture.root, &request).unwrap_err().code,
+            "RSI_RENAME_REVISION_INVALID"
+        );
         request.expected_png_revision = None;
-        assert_eq!(rename(&fixture.root, &request).unwrap_err().code, "RSI_RENAME_TARGET_EXISTS");
+        assert_eq!(
+            rename(&fixture.root, &request).unwrap_err().code,
+            "RSI_RENAME_TARGET_EXISTS"
+        );
         fs::remove_file(fixture.folder().join("idle.png")).unwrap();
         fs::write(fixture.folder().join("idle_new.png"), b"orphan").unwrap();
-        assert_eq!(rename(&fixture.root, &request).unwrap_err().code, "RSI_RENAME_TARGET_EXISTS");
-        assert_eq!(fs::read(fixture.folder().join("idle_new.png")).unwrap(), b"orphan");
+        assert_eq!(
+            rename(&fixture.root, &request).unwrap_err().code,
+            "RSI_RENAME_TARGET_EXISTS"
+        );
+        assert_eq!(
+            fs::read(fixture.folder().join("idle_new.png")).unwrap(),
+            b"orphan"
+        );
         fs::remove_file(fixture.folder().join("idle_new.png")).unwrap();
         fs::write(fixture.folder().join("meta.json"), b"external").unwrap();
-        assert_eq!(rename(&fixture.root, &request).unwrap_err().code, "RSI_RENAME_META_CONFLICT");
+        assert_eq!(
+            rename(&fixture.root, &request).unwrap_err().code,
+            "RSI_RENAME_META_CONFLICT"
+        );
     }
 
     #[cfg(unix)]
@@ -659,10 +714,16 @@ mod tests {
         request.expected_missing_png = true;
         fs::remove_file(fixture.folder().join("idle.png")).unwrap();
         symlink("missing", fixture.folder().join("idle.png")).unwrap();
-        assert_eq!(rename(&fixture.root, &request).unwrap_err().code, "RSI_RENAME_TARGET_EXISTS");
+        assert_eq!(
+            rename(&fixture.root, &request).unwrap_err().code,
+            "RSI_RENAME_TARGET_EXISTS"
+        );
         fs::remove_file(fixture.folder().join("idle.png")).unwrap();
         symlink("missing", fixture.folder().join("idle_new.png")).unwrap();
-        assert_eq!(rename(&fixture.root, &request).unwrap_err().code, "RSI_RENAME_TARGET_EXISTS");
+        assert_eq!(
+            rename(&fixture.root, &request).unwrap_err().code,
+            "RSI_RENAME_TARGET_EXISTS"
+        );
     }
 
     #[cfg(unix)]
