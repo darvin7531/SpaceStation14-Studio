@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useI18n } from '../i18n';
 import { AlertCircle, FileCode2, GitBranch, Layers, Search } from 'lucide-react';
 import {
   studio, type EntityLocalizationAnalysis, type PrototypeDeclaration, type SourceOutline, type SourceOutlineEntry, type PrototypeInheritancePreview,
@@ -48,6 +49,7 @@ function SelectedEntityLocaleStatus({
   onRepair: () => void;
   onOpenFtl: (path: string) => void;
 }) {
+  const { t } = useI18n();
   const [report, setReport] = useState<EntityLocalizationAnalysis | null>(null);
   const [failure, setFailure] = useState<StudioError | null>(null);
   const [requested, setRequested] = useState(0);
@@ -73,23 +75,23 @@ function SelectedEntityLocaleStatus({
     source, localesKey, enabled, delayMs, requested, shouldRun,
   ]);
   return <div className="prototype-entity-locale-status" aria-live="polite">
-    <strong>Игровые локализации ({requiredLocales.join(', ')})</strong>
+    <strong>{t('outline.localeTitle', { locales: requiredLocales.join(', ') })}</strong>
     {!enabled && <button type="button" disabled={busy}
-      onClick={() => setRequested((count) => count + 1)}>Проверить переводы</button>}
-    {!shouldRun ? <small>Автоматическая проверка отключена в настройках редактора.</small>
-      : failure ? <small role="alert">Не удалось проверить: {failure.message} [{failure.code}]</small>
-        : !report ? <small>Проверяю существующие FTL…</small>
-          : !report.complete ? <small role="alert">Неполный индекс локалей: {report.warnings.join(' ')}</small>
-            : report.diagnostics.length === 0 ? <small>Пропущенных переводов явных полей не найдено.</small>
+      onClick={() => setRequested((count) => count + 1)}>{t('outline.check')}</button>}
+    {!shouldRun ? <small>{t('outline.disabled')}</small>
+      : failure ? <small role="alert">{t('outline.failure', { message: failure.message, code: failure.code })}</small>
+        : !report ? <small>{t('outline.checking')}</small>
+          : !report.complete ? <small role="alert">{t('outline.incomplete', { warnings: report.warnings.join(' ') })}</small>
+            : report.diagnostics.length === 0 ? <small>{t('outline.noneMissing')}</small>
               : <div>
-                <small>Отсутствуют: {report.diagnostics.map((issue) =>
-                  issue.field + ' (' + issue.missing_locales.join(', ') + ')').join('; ')}</small>
-                <button type="button" disabled={busy} onClick={onRepair}>Исправить локализацию</button>
-                <div className="prototype-outline-actions" aria-label="Открыть существующий FTL">
+                <small>{t('outline.missing', { issues: report.diagnostics.map((issue) =>
+                  issue.field + ' (' + issue.missing_locales.join(', ') + ')').join('; ') })}</small>
+                <button type="button" disabled={busy} onClick={onRepair}>{t('outline.repair')}</button>
+                <div className="prototype-outline-actions" aria-label={t('outline.openFtlLabel')}>
                   {missingLocaleFiles(report).map((target) => <button type="button"
                     disabled={busy} key={target.locale + ':' + target.path}
                     title={target.path} onClick={() => onOpenFtl(target.path)}>
-                    Открыть {target.locale} · {target.path.split('/').at(-1)}
+                    {t('outline.openFtl', { locale: target.locale, file: target.path.split('/').at(-1) })}
                   </button>)}
                 </div>
               </div>}
@@ -193,33 +195,33 @@ export default function PrototypeOutlinePanel({
   const editable = Boolean(selected && formsAvailable && selected.declaration.variant_index === null);
   const visualLine = (line: number) => line > 0 ? line : 1;
 
-  return <section className="prototype-outline" aria-label="Инспектор открытого YAML">
+  return <section className="prototype-outline" aria-label={t('outline.label')}>
     <div className="prototype-outline-top">
-      <strong><Layers size={15}/> Прототипы в файле</strong>
-      <span>{outline ? declarations.length : '…'} объявлений · черновик</span>
-      {loading && <small>Разбор YAML…</small>}
+      <strong><Layers size={15}/> {t('outline.title')}</strong>
+      <span>{t('outline.count', { count: outline ? declarations.length : '…' })}</span>
+      {loading && <small>{t('outline.loading')}</small>}
     </div>
     <label className="prototype-outline-filter">
       <Search size={14}/>
-      <input value={query} placeholder="Найти ID или тип в файле"
+      <input value={query} placeholder={t('outline.filterPlaceholder')}
         onChange={(event) => setQuery(event.target.value)}
-        aria-label="Найти прототип в текущем файле"/>
+        aria-label={t('outline.filterLabel')}/>
     </label>
     {failure && <p role="alert" className="prototype-outline-error">
       <AlertCircle size={14}/>{failure.message} {failure.hint} [{failure.code}]
     </p>}
     {outline && <>
       {outline.truncated && <p className="prototype-outline-warning">
-        Список ограничен 256 объявлениями и 64 диагностическими сообщениями. Для полного поиска используйте каталог.
+        {t('outline.limit')}
       </p>}
       {outline.diagnostics.slice(0, 5).map((diagnostic, index) =>
         <button type="button" className="prototype-outline-issue"
           key={diagnostic.code + ':' + diagnostic.line + ':' + index}
           onClick={() => onJump(visualLine(diagnostic.line))}>
-          <AlertCircle size={13}/> {diagnostic.message} {diagnostic.line > 0 ? '(строка ' + diagnostic.line + ')' : ''}
+          <AlertCircle size={13}/> {diagnostic.message} {diagnostic.line > 0 ? '(' + t('outline.line', { line: diagnostic.line }) + ')' : ''}
         </button>)}
       {declarations.length === 0 && <p className="muted">
-        {outline.diagnostics.length ? 'Исправьте YAML, чтобы увидеть объявления.' : 'В файле пока нет объявлений прототипов.'}
+        {outline.diagnostics.length ? t('outline.fixYaml') : t('outline.empty')}
       </p>}
       <div className="prototype-outline-list">
         {filtered.map(({ declaration }) => {
@@ -229,11 +231,11 @@ export default function PrototypeOutlinePanel({
             onJump(visualLine(declaration.line));
           }}
             className={'prototype-outline-item' + (selectedKey === key ? ' active' : '')}
-            title={'Строка ' + declaration.line + ' · ' + declaration.file}>
+            title={t('outline.lineTitle', { line: declaration.line, file: declaration.file })}>
             <FileCode2 size={14}/>
             <span><b>{declaration.id}</b><small>{declaration.kind}
               {declaration.mode !== 'normal' ? ' · ' + declaration.mode : ''}
-              {declaration.variant_index !== null ? ' · вариант ' + (declaration.variant_index + 1) : ''}
+              {declaration.variant_index !== null ? ' · ' + t('outline.variant', { number: declaration.variant_index + 1 }) : ''}
             </small></span>
             <span className="prototype-outline-line">:{declaration.line}</span>
           </button>;
@@ -245,7 +247,7 @@ export default function PrototypeOutlinePanel({
           {selected.declaration.abstract_prototype && <small>abstract</small>}
         </div>
         {selected.declaration.parents.length > 0 && <p>
-          <GitBranch size={13}/> Прямые родители: {selected.declaration.parents.join(', ')}
+          <GitBranch size={13}/> {t('outline.parents', { parents: selected.declaration.parents.join(', ') })}
         </p>}
         {!sourceDirty && selected.declaration.kind === 'entity' && selected.declaration.mode === 'normal'
           && selected.declaration.variant_index === null && selected.declaration.parents.length > 0
@@ -259,27 +261,26 @@ export default function PrototypeOutlinePanel({
               total={selected.sprite_layers_total} busy={busy} onOpenRsi={onOpenRsi}/>}</>}
         <div className="prototype-outline-actions">
           {editable ? <>
-            <button type="button" disabled={busy} onClick={() => onEdit(selected.declaration, 'fields')}>Поля</button>
-            <button type="button" disabled={busy} onClick={() => onEdit(selected.declaration, 'parents')}>Родители</button>
+            <button type="button" disabled={busy} onClick={() => onEdit(selected.declaration, 'fields')}>{t('outline.fields')}</button>
+            <button type="button" disabled={busy} onClick={() => onEdit(selected.declaration, 'parents')}>{t('outline.parentButton')}</button>
             {selected.declaration.kind === 'entity' && <>
-              <button type="button" disabled={busy} onClick={() => onEdit(selected.declaration, 'components')}>Компоненты</button>
-              <button type="button" disabled={busy} onClick={() => onEdit(selected.declaration, 'localization')}>Локализация</button>
+              <button type="button" disabled={busy} onClick={() => onEdit(selected.declaration, 'components')}>{t('outline.components')}</button>
+              <button type="button" disabled={busy} onClick={() => onEdit(selected.declaration, 'localization')}>{t('outline.localization')}</button>
             </>}
-          </> : <small>Сложные, partial и генерируемые объявления доступны для навигации, но не для автоматических форм.</small>}
+          </> : <small>{t('outline.uneditable')}</small>}
         </div>
-        <div className="prototype-outline-actions" aria-label="Разделы инспектора Electron">
+        <div className="prototype-outline-actions" aria-label={t('outline.sections')}>
           <button type="button" className="prototype-relations-trigger"
             aria-expanded={showLinked} onClick={() => setShowLinked((value) => !value)}>
-            {showLinked ? 'Скрыть связанные прототипы' : 'Связанные прототипы'}
+            {showLinked ? t('outline.hideLinked') : t('outline.showLinked')}
           </button>
           <button type="button" className="prototype-relations-trigger"
             aria-expanded={showInheritance} onClick={() => setShowInheritance((value) => !value)}>
-            {showInheritance ? 'Скрыть наследование' : 'Наследование'}
+            {showInheritance ? t('outline.hideInheritance') : t('outline.showInheritance')}
           </button>
         </div>
         {(showLinked || showInheritance) && sourceDirty && <p className="prototype-outline-warning">
-          В YAML есть несохранённые изменения. Связи и наследование берутся из Rust-индекса
-          сохранённого проекта; сохраните черновик, чтобы увидеть актуальный результат.
+          {t('outline.dirty')}
         </p>}
         {!sourceDirty && showLinked && <LinkedPrototypePanel
           key={selected.declaration.kind + ':' + selected.declaration.id}
@@ -296,7 +297,7 @@ export default function PrototypeOutlinePanel({
           enabled={liveValidation} delayMs={validationDelay} busy={busy}
           onRepair={() => onEdit(selected.declaration, 'localization')}
           onOpenFtl={onOpenFtl}/>}
-        <small className="prototype-outline-footnote">Показаны только прямые поля исходного YAML, не итоговое наследование RobustToolbox.</small>
+        <small className="prototype-outline-footnote">{t('outline.footnote')}</small>
       </div>}
     </>}
   </section>;
