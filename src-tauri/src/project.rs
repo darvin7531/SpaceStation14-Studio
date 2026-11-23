@@ -3125,6 +3125,48 @@ mod tests {
     }
 
     #[test]
+    fn missing_direct_sprite_diagnostics_refresh_with_texture_index() {
+        let fx = Fixture::new();
+        fx.write("Resources/Textures/Present.rsi/meta.json", "{}");
+        fx.write("Resources/Prototypes/sprites.yml", "- type: entity\n  id: Missing\n  components:\n  - type: Sprite\n    sprite: Missing.rsi\n- type: entity\n  id: Present\n  components:\n  - type: Sprite\n    sprite: Present.rsi\n- type: entity\n  id: LayerOnly\n  components:\n  - type: Sprite\n    layers:\n    - sprite: Layer.rsi\n");
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let issues = index.prototypes().unwrap().diagnostics(0, 200).items;
+        let missing: Vec<_> = issues.iter().filter(|item| item.code == "SPRITE_RSI_MISSING").collect();
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0].file, "Resources/Prototypes/sprites.yml");
+        assert_eq!(missing[0].line, 1);
+        assert!(missing[0].message.contains("Missing.rsi"));
+        fx.write("Resources/Textures/Missing.rsi/meta.json", "{}");
+        let (fresh, _) = index.refresh_paths(&["Resources/Textures/Missing.rsi/meta.json".into()]).unwrap();
+        assert!(!fresh.prototypes().unwrap().diagnostics(0, 200).items.iter().any(|item| item.code == "SPRITE_RSI_MISSING"));
+    }
+
+    #[test]
+    fn sprite_diagnostics_are_bounded() {
+        let fx = Fixture::new();
+        fx.write("Resources/Textures/Present.rsi/meta.json", "{}");
+        let source: String = (0..501).map(|i| format!("- type: entity\n  id: Item{i}\n  components:\n  - type: Sprite\n    sprite: Missing{i}.rsi\n")).collect();
+        fx.write("Resources/Prototypes/many.yml", &source);
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let catalog = index.prototypes().unwrap();
+        let mut issues = catalog.diagnostics(0, 200).items;
+        issues.extend(catalog.diagnostics(200, 200).items);
+        issues.extend(catalog.diagnostics(400, 200).items);
+        assert_eq!(issues.iter().filter(|item| item.code == "SPRITE_RSI_MISSING").count(), 500);
+        assert!(issues.iter().any(|item| item.code == "SPRITE_DIAGNOSTICS_TRUNCATED"));
+    }
+
+    #[test]
+    fn missing_texture_index_does_not_claim_missing_sprite() {
+        let fx = Fixture::new();
+        fx.write("Resources/Prototypes/sprites.yml", "- type: entity\n  id: A\n  components:\n  - type: Sprite\n    sprite: Missing.rsi\n");
+        let index = ProjectIndex::open(fx.root_str()).unwrap();
+        let issues = index.prototypes().unwrap().diagnostics(0, 200).items;
+        assert!(!issues.iter().any(|item| item.code == "SPRITE_RSI_MISSING"));
+        assert!(issues.iter().any(|item| item.code == "SPRITE_INDEX_INCOMPLETE"));
+    }
+
+    #[test]
     fn newly_created_rsi_becomes_indexed_after_refresh() {
         let fx = Fixture::new();
         fx.write("Resources/Textures/seed.rsi/meta.json", "{\"version\":1}");

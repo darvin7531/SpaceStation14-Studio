@@ -3,7 +3,7 @@
 //! This is a *source catalog*, NOT RobustToolbox's resolved prototype graph.
 //! Every declaration is preserved, including configured partials and tagged
 //! partials, with separate provenance and no guessed merge semantics.
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
@@ -23,6 +23,7 @@ const MAX_PARTIAL_CONFIG_FILES: usize = 128;
 const MAX_PARTIAL_CONFIG_ENTRIES: usize = 4096;
 const MAX_PARTIAL_CONFIG_BYTES: usize = 16 * 1024 * 1024;
 const MAX_PAGE: usize = 200;
+const MAX_SPRITE_DIAGNOSTICS: usize = 500;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PrototypeDeclaration {
@@ -368,6 +369,15 @@ impl PrototypeCatalog {
     pub fn build(root: &Path, resources: &[ResourceEntry]) -> Self {
         let mut catalog = Self::default();
         let scopes = configured_partials(root, &mut catalog.diagnostics);
+        let textures_complete = root.join("Resources/Textures").is_dir();
+        let rsi_paths: HashSet<String> = resources.iter().filter(|entry| entry.kind == "rsi")
+            .map(|entry| entry.path.to_lowercase()).collect();
+        let mut sprite_count = 0;
+        let mut sprite_truncated = false;
+        if !textures_complete {
+            catalog.issue("SPRITE_INDEX_INCOMPLETE", "Resources/Textures", 0,
+                "Каталог текстур отсутствует: проверка Sprite.sprite неполна.");
+        }
 
         for resource in resources {
             if resource.kind != "yaml" {
@@ -425,6 +435,52 @@ impl PrototypeCatalog {
             let result = Parser::new_from_str(&content).load(&mut collector, true);
             match result {
                 Ok(()) => {
+                    if textures_complete {
+                        if let Ok(docs) = YamlLoader::load_from_str(&content) {
+                            for declaration in &collector.declarations {
+                                if declaration.kind != "entity" || declaration.variant_index.is_some() {
+                                    continue;
+                                }
+                                let item = docs.get(declaration.document_index.saturating_sub(1))
+                                    .and_then(Yaml::as_vec)
+                                    .and_then(|items| items.get(declaration.item_index.saturating_sub(1)));
+                                if let Some((sprite, _)) = item.and_then(extract_sprite_source) {
+                                    if !rsi_paths.contains(&sprite.to_lowercase()) {
+                                        // The resource index deliberately skips symlinks; absence there is not proof.
+                                        let mut current = root.to_path_buf();
+                                        let skipped_link = Path::new(&sprite).components().any(|part| {
+                                            current.push(part.as_os_str());
+                                            fs::symlink_metadata(&current).is_ok_and(|metadata| metadata.file_type().is_symlink())
+                                        });
+                                        if skipped_link {
+                                            if sprite_count < MAX_SPRITE_DIAGNOSTICS {
+                                                catalog.issue("SPRITE_INDEX_INCOMPLETE", path, declaration.line,
+                                                    format!("Sprite.sprite не проверен: путь содержит символическую ссылку: {sprite}."));
+                                                sprite_count += 1;
+                                            } else if !sprite_truncated {
+                                                catalog.issue("SPRITE_DIAGNOSTICS_TRUNCATED", path, declaration.line,
+                                                    "Показаны первые 500 сообщений Sprite RSI; проверка усечена.");
+                                                sprite_truncated = true;
+                                            }
+                                            continue;
+                                        }
+                                        if sprite_count < MAX_SPRITE_DIAGNOSTICS {
+                                            catalog.issue("SPRITE_RSI_MISSING", path, declaration.line,
+                                                format!("Sprite.sprite: RSI не найден в индексе: {sprite} ({}).", declaration.id));
+                                            sprite_count += 1;
+                                        } else if !sprite_truncated {
+                                            catalog.issue("SPRITE_DIAGNOSTICS_TRUNCATED", path, declaration.line,
+                                                "Показаны первые 500 сообщений Sprite RSI; проверка усечена.");
+                                            sprite_truncated = true;
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            catalog.issue("SPRITE_SCAN_INCOMPLETE", path, 0,
+                                "Не удалось проверить Sprite.sprite в этом YAML-файле.");
+                        }
+                    }
                     catalog.declarations.extend(collector.declarations);
                     catalog.diagnostics.extend(collector.diagnostics);
                 }
