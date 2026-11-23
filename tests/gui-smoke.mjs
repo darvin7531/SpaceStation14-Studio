@@ -95,6 +95,12 @@ try {
   await until('first prototype selected', () => find('[role=tab][data-prototype-id="SmokeFirst"][aria-selected=true]'));
   await until('prototype file loaded', () => script("return document.querySelector('.monaco-shell .view-lines')?.textContent?.includes('SmokeFirst');"));
   await edit(tabsDraft, 'SharedDraft');
+  // A workspace refresh can remount the tree after the earlier save.
+  const folder = '.resource-tree-row[title="Resources/Prototypes"]';
+  if (await script(`return document.querySelector('${folder}')?.getAttribute('aria-expanded') === 'false';`)) await click(folder);
+  const yaml = '.resource-tree-toggle[data-resource-path="Resources/Prototypes/tabs.yml"]';
+  await until('prototype tree file', () => find(yaml));
+  if (await script(`return document.querySelector('${yaml}')?.getAttribute('aria-expanded') === 'false';`)) await click(yaml);
   await click('[data-testid=tree-prototype][data-resource-path="Resources/Prototypes/tabs.yml"][data-prototype-id="SmokeSecond"]');
   await until('second prototype selected with shared draft', () => script(`
     return document.querySelector('[role=tab][data-prototype-id="SmokeSecond"][aria-selected=true]')
