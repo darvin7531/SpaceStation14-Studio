@@ -11,7 +11,6 @@ import InheritancePreviewPanel from './InheritancePreviewPanel';
 import { missingLocaleFiles } from '../lib/localization-navigation';
 import { inheritedSpriteForEntry, outlineDeclarationKey, outlineKeyAtLine } from '../lib/outline-selection';
 import { prototypeNotice } from '../lib/prototype-notices';
-import { useI18n } from '../i18n';
 
 type EditorPanel = 'fields' | 'components' | 'localization' | 'parents';
 
