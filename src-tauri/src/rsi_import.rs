@@ -224,7 +224,11 @@ pub(crate) fn validate_png(
         }
         let kind = &bytes[cursor + 4..cursor + 8];
         if kind == b"acTL" || kind == b"fcTL" || kind == b"fdAT" {
-            return Err(issue("RSI_IMPORT_PNG_INVALID", "Анимированные PNG не поддерживаются.", "Используйте обычный PNG-лист."));
+            return Err(issue(
+                "RSI_IMPORT_PNG_INVALID",
+                "Анимированные PNG не поддерживаются.",
+                "Используйте обычный PNG-лист.",
+            ));
         }
         let stored_crc = u32::from_be_bytes(bytes[end - 4..end].try_into().unwrap_or([0; 4]));
         if crc32(&bytes[cursor + 4..end - 4]) != stored_crc {
@@ -264,11 +268,18 @@ pub(crate) fn validate_png(
             "Используйте полностью сохранённый PNG.",
         ));
     }
-    let invalid = |e: png::DecodingError| issue(
-        "RSI_IMPORT_PNG_INVALID", "Не удалось декодировать PNG.", "Пересохраните PNG."
-    ).with_details(e.to_string());
+    let invalid = |e: png::DecodingError| {
+        issue(
+            "RSI_IMPORT_PNG_INVALID",
+            "Не удалось декодировать PNG.",
+            "Пересохраните PNG.",
+        )
+        .with_details(e.to_string())
+    };
     let mut decoder = png::Decoder::new(bytes);
-    decoder.set_limits(png::Limits { bytes: 64 * 1024 * 1024 });
+    decoder.set_limits(png::Limits {
+        bytes: 64 * 1024 * 1024,
+    });
     let mut reader = decoder.read_info().map_err(&invalid)?;
     while reader.next_row().map_err(&invalid)?.is_some() {}
     reader.finish().map_err(invalid)?;
@@ -458,22 +469,45 @@ pub(crate) fn safe_import_directory(
 }
 
 /// Create only metadata; a PNG can be supplied separately later.
-pub fn create_metadata_only(root: &Path, request: &RsiStateImport) -> Result<ImportedRsiState, StudioError> {
+pub fn create_metadata_only(
+    root: &Path,
+    request: &RsiStateImport,
+) -> Result<ImportedRsiState, StudioError> {
     validate_common(request)?;
     let folder = safe_import_directory(root, &request.path)?;
     let original = bounded_metadata(&folder.join("meta.json"))?;
     if revision(&original) != request.expected_revision {
-        return Err(issue("RSI_IMPORT_CONFLICT", "meta.json изменился после открытия.", "Обновите RSI."));
+        return Err(issue(
+            "RSI_IMPORT_CONFLICT",
+            "meta.json изменился после открытия.",
+            "Обновите RSI.",
+        ));
     }
     let content = updated_metadata_at(&original, request, None, None, None)?;
     // Do not silently associate an existing orphan PNG with a new state.
     match fs::symlink_metadata(folder.join(format!("{}.png", request.name))) {
-        Ok(_) => return Err(issue("RSI_IMPORT_PNG_EXISTS", "PNG с таким именем уже существует.", "Выберите другое имя состояния.")),
+        Ok(_) => {
+            return Err(issue(
+                "RSI_IMPORT_PNG_EXISTS",
+                "PNG с таким именем уже существует.",
+                "Выберите другое имя состояния.",
+            ))
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
-        Err(error) => return Err(issue("RSI_IMPORT_WRITE_FAILED", "Не удалось проверить PNG.", "Проверьте каталог RSI.").with_details(error.to_string())),
+        Err(error) => {
+            return Err(issue(
+                "RSI_IMPORT_WRITE_FAILED",
+                "Не удалось проверить PNG.",
+                "Проверьте каталог RSI.",
+            )
+            .with_details(error.to_string()))
+        }
     }
     let saved = crate::resource_edit::save_rsi_metadata(
-        root, &format!("{}/meta.json", request.path), &request.expected_revision, content,
+        root,
+        &format!("{}/meta.json", request.path),
+        &request.expected_revision,
+        content,
     )?;
     Ok(ImportedRsiState {
         name: request.name.clone(),
@@ -497,64 +531,172 @@ pub fn attach(root: &Path, request: &RsiStateImport) -> Result<ImportedRsiState,
     let meta_path = folder.join("meta.json");
     let original = bounded_metadata(&meta_path)?;
     if revision(&original) != request.expected_revision {
-        return Err(issue("RSI_IMPORT_CONFLICT", "meta.json изменился.", "Обновите RSI."));
+        return Err(issue(
+            "RSI_IMPORT_CONFLICT",
+            "meta.json изменился.",
+            "Обновите RSI.",
+        ));
     }
-    let mut meta: Value = serde_json::from_slice(&original).map_err(|e|
-        issue("RSI_IMPORT_META_INVALID", "Некорректный meta.json.", "Исправьте метаданные.").with_details(e.to_string()))?;
-    let states = meta.get_mut("states").and_then(Value::as_array_mut).ok_or_else(||
-        issue("RSI_IMPORT_META_INVALID", "Нет массива states.", "Исправьте метаданные."))?;
-    let matches: Vec<_> = states.iter().enumerate().filter(|(_, state)|
-        state.get("name").and_then(Value::as_str) == Some(request.name.as_str())).map(|(i, _)| i).collect();
+    let mut meta: Value = serde_json::from_slice(&original).map_err(|e| {
+        issue(
+            "RSI_IMPORT_META_INVALID",
+            "Некорректный meta.json.",
+            "Исправьте метаданные.",
+        )
+        .with_details(e.to_string())
+    })?;
+    let states = meta
+        .get_mut("states")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| {
+            issue(
+                "RSI_IMPORT_META_INVALID",
+                "Нет массива states.",
+                "Исправьте метаданные.",
+            )
+        })?;
+    let matches: Vec<_> = states
+        .iter()
+        .enumerate()
+        .filter(|(_, state)| {
+            state.get("name").and_then(Value::as_str) == Some(request.name.as_str())
+        })
+        .map(|(i, _)| i)
+        .collect();
     if matches.len() != 1 {
-        return Err(issue("RSI_IMPORT_STATE_INVALID", "Состояние отсутствует или повторяется.", "Обновите RSI и исправьте метаданные."));
+        return Err(issue(
+            "RSI_IMPORT_STATE_INVALID",
+            "Состояние отсутствует или повторяется.",
+            "Обновите RSI и исправьте метаданные.",
+        ));
     }
     let state = states.remove(matches[0]);
     let directions = state.get("directions").and_then(Value::as_u64).unwrap_or(1);
     if !matches!(directions, 1 | 4 | 8) {
-        return Err(issue("RSI_IMPORT_TIMING_INVALID", "Некорректные направления.", "Исправьте метаданные."));
+        return Err(issue(
+            "RSI_IMPORT_TIMING_INVALID",
+            "Некорректные направления.",
+            "Исправьте метаданные.",
+        ));
     }
     let default_delays = vec![vec![1.0]; directions as usize];
     let delays: Vec<Vec<f64>> = match state.get("delays") {
-        Some(value) => serde_json::from_value(value.clone()).map_err(|_| issue("RSI_IMPORT_TIMING_INVALID", "Некорректные задержки.", "Исправьте метаданные."))?,
+        Some(value) => serde_json::from_value(value.clone()).map_err(|_| {
+            issue(
+                "RSI_IMPORT_TIMING_INVALID",
+                "Некорректные задержки.",
+                "Исправьте метаданные.",
+            )
+        })?,
         None => default_delays,
     };
     let total: usize = delays.iter().map(Vec::len).sum();
-    if delays.len() != directions as usize || total > 4096 || delays.iter().any(|row|
-        row.is_empty() || row.iter().any(|delay| !delay.is_finite() || *delay <= 0.0 || *delay > 3600.0)) {
-        return Err(issue("RSI_IMPORT_TIMING_INVALID", "Сетка не совпадает с метаданными.", "Исправьте метаданные."));
+    if delays.len() != directions as usize
+        || total > 4096
+        || delays.iter().any(|row| {
+            row.is_empty()
+                || row
+                    .iter()
+                    .any(|delay| !delay.is_finite() || *delay <= 0.0 || *delay > 3600.0)
+        })
+    {
+        return Err(issue(
+            "RSI_IMPORT_TIMING_INVALID",
+            "Сетка не совпадает с метаданными.",
+            "Исправьте метаданные.",
+        ));
     }
-    let png = STANDARD.decode(&request.data_url[PNG_DATA_PREFIX.len()..]).map_err(|e|
-        issue("RSI_IMPORT_PNG_INVALID", "Некорректный PNG.", "Выберите PNG повторно.").with_details(e.to_string()))?;
-    let width = meta.get("size").and_then(|s| s.get("x")).and_then(Value::as_u64).unwrap_or(0);
-    let height = meta.get("size").and_then(|s| s.get("y")).and_then(Value::as_u64).unwrap_or(0);
+    let png = STANDARD
+        .decode(&request.data_url[PNG_DATA_PREFIX.len()..])
+        .map_err(|e| {
+            issue(
+                "RSI_IMPORT_PNG_INVALID",
+                "Некорректный PNG.",
+                "Выберите PNG повторно.",
+            )
+            .with_details(e.to_string())
+        })?;
+    let width = meta
+        .get("size")
+        .and_then(|s| s.get("x"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let height = meta
+        .get("size")
+        .and_then(|s| s.get("y"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
     let (png_width, png_height) = png_dimensions(&png)?;
     if meta.get("version").and_then(Value::as_i64) != Some(1)
-        || width == 0 || height == 0 || width > 4096 || height > 4096
-        || u64::from(png_width) % width != 0 || u64::from(png_height) % height != 0
-        || u64::from(png_width) / width * (u64::from(png_height) / height) < total as u64 {
-        return Err(issue("RSI_IMPORT_PNG_SIZE_MISMATCH", "Сетка PNG не совпадает с метаданными.", "Проверьте размер и число кадров."));
+        || width == 0
+        || height == 0
+        || width > 4096
+        || height > 4096
+        || u64::from(png_width) % width != 0
+        || u64::from(png_height) % height != 0
+        || u64::from(png_width) / width * (u64::from(png_height) / height) < total as u64
+    {
+        return Err(issue(
+            "RSI_IMPORT_PNG_SIZE_MISMATCH",
+            "Сетка PNG не совпадает с метаданными.",
+            "Проверьте размер и число кадров.",
+        ));
     }
     validate_png(&png, png_width, png_height)?;
     if revision(&bounded_metadata(&meta_path)?) != request.expected_revision {
-        return Err(issue("RSI_IMPORT_CONFLICT", "meta.json изменился.", "Обновите RSI."));
+        return Err(issue(
+            "RSI_IMPORT_CONFLICT",
+            "meta.json изменился.",
+            "Обновите RSI.",
+        ));
     }
     let target = folder.join(format!("{}.png", request.name));
-    let mut file = OpenOptions::new().write(true).create_new(true).open(&target).map_err(|e| {
-        if e.kind() == std::io::ErrorKind::AlreadyExists {
-            issue("RSI_IMPORT_PNG_EXISTS", "PNG уже существует и не будет перезаписан.", "Обновите RSI.")
-        } else {
-            issue("RSI_IMPORT_WRITE_FAILED", "Не удалось создать PNG.", "Проверьте каталог RSI.").with_details(e.to_string())
-        }
-    })?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&target)
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::AlreadyExists {
+                issue(
+                    "RSI_IMPORT_PNG_EXISTS",
+                    "PNG уже существует и не будет перезаписан.",
+                    "Обновите RSI.",
+                )
+            } else {
+                issue(
+                    "RSI_IMPORT_WRITE_FAILED",
+                    "Не удалось создать PNG.",
+                    "Проверьте каталог RSI.",
+                )
+                .with_details(e.to_string())
+            }
+        })?;
     // ponytail: leave an incomplete file on failure; unlinking by pathname could delete an external replacement.
     file.write_all(&png).and_then(|_| file.sync_all()).map_err(|e|
         issue("RSI_IMPORT_CLEANUP_FAILED", "PNG записан не полностью.", "Проверьте файл в каталоге RSI вручную; сохраните его при необходимости и удалите только после проверки, затем повторите попытку.").with_details(format!("{}: {e}", target.display())))?;
     if revision(&bounded_metadata(&meta_path)?) != request.expected_revision {
-        return Err(issue("RSI_IMPORT_CONFLICT", "meta.json изменился во время записи PNG.", "Проверьте PNG и метаданные вручную."));
+        return Err(issue(
+            "RSI_IMPORT_CONFLICT",
+            "meta.json изменился во время записи PNG.",
+            "Проверьте PNG и метаданные вручную.",
+        ));
     }
-    let content = String::from_utf8(original).map_err(|_| issue("RSI_IMPORT_META_INVALID", "Некорректный UTF-8.", "Исправьте метаданные."))?;
-    Ok(ImportedRsiState { name: request.name.clone(), revision: request.expected_revision.clone(), content,
-        warning: sync_dir(&folder).err().map(|e| format!("Синхронизация каталога не подтверждена: {e}")), archive_path: None })
+    let content = String::from_utf8(original).map_err(|_| {
+        issue(
+            "RSI_IMPORT_META_INVALID",
+            "Некорректный UTF-8.",
+            "Исправьте метаданные.",
+        )
+    })?;
+    Ok(ImportedRsiState {
+        name: request.name.clone(),
+        revision: request.expected_revision.clone(),
+        content,
+        warning: sync_dir(&folder)
+            .err()
+            .map(|e| format!("Синхронизация каталога не подтверждена: {e}")),
+        archive_path: None,
+    })
 }
 
 /// The caller serializes actions in a project-local mutex. A second precommit
@@ -590,8 +732,13 @@ pub(crate) fn import_at(
         )
         .with_details(e.to_string())
     })?;
-    let content =
-        updated_metadata_at(&original, request, Some(&png), insert_at, preserve_state.as_ref())?;
+    let content = updated_metadata_at(
+        &original,
+        request,
+        Some(&png),
+        insert_at,
+        preserve_state.as_ref(),
+    )?;
     let target_png = folder.join(format!("{}.png", request.name));
     if target_png.exists() {
         return Err(issue(
@@ -830,10 +977,19 @@ mod tests {
         let metadata: Value = serde_json::from_str(&created.content).unwrap();
         assert_eq!(metadata["states"][0]["name"], "idle");
         assert_eq!(metadata["states"][0]["delays"][0][0], 0.1);
-        assert_eq!(create_metadata_only(&fx.root, &request).unwrap_err().code, "RSI_IMPORT_CONFLICT");
+        assert_eq!(
+            create_metadata_only(&fx.root, &request).unwrap_err().code,
+            "RSI_IMPORT_CONFLICT"
+        );
         request.expected_revision = created.revision;
-        assert_eq!(create_metadata_only(&fx.root, &request).unwrap_err().code, "RSI_IMPORT_STATE_EXISTS");
-        assert_eq!(fs::read_to_string(fx.root.join(&fx.rel).join("meta.json")).unwrap(), created.content);
+        assert_eq!(
+            create_metadata_only(&fx.root, &request).unwrap_err().code,
+            "RSI_IMPORT_STATE_EXISTS"
+        );
+        assert_eq!(
+            fs::read_to_string(fx.root.join(&fx.rel).join("meta.json")).unwrap(),
+            created.content
+        );
     }
 
     #[test]
@@ -843,10 +999,16 @@ mod tests {
         let meta_path = fx.root.join(&fx.rel).join("meta.json");
         let original = fs::read(&meta_path).unwrap();
         request.name = "../bad".into();
-        assert_eq!(create_metadata_only(&fx.root, &request).unwrap_err().code, "RSI_IMPORT_NAME_INVALID");
+        assert_eq!(
+            create_metadata_only(&fx.root, &request).unwrap_err().code,
+            "RSI_IMPORT_NAME_INVALID"
+        );
         request.name = "idle".into();
         fs::write(fx.root.join(&fx.rel).join("idle.png"), Fixture::png()).unwrap();
-        assert_eq!(create_metadata_only(&fx.root, &request).unwrap_err().code, "RSI_IMPORT_PNG_EXISTS");
+        assert_eq!(
+            create_metadata_only(&fx.root, &request).unwrap_err().code,
+            "RSI_IMPORT_PNG_EXISTS"
+        );
         assert_eq!(fs::read(meta_path).unwrap(), original);
     }
 
@@ -862,11 +1024,17 @@ mod tests {
         let target = fx.root.join(&fx.rel).join("idle.png");
         assert_eq!(fs::read(&target).unwrap(), Fixture::png());
         fs::write(&target, b"external").unwrap();
-        assert_eq!(attach(&fx.root, &request).unwrap_err().code, "RSI_IMPORT_PNG_EXISTS");
+        assert_eq!(
+            attach(&fx.root, &request).unwrap_err().code,
+            "RSI_IMPORT_PNG_EXISTS"
+        );
         assert_eq!(fs::read(&target).unwrap(), b"external");
         fs::remove_file(&target).unwrap();
         fs::write(fx.root.join(&fx.rel).join("meta.json"), b"changed").unwrap();
-        assert_eq!(attach(&fx.root, &request).unwrap_err().code, "RSI_IMPORT_CONFLICT");
+        assert_eq!(
+            attach(&fx.root, &request).unwrap_err().code,
+            "RSI_IMPORT_CONFLICT"
+        );
         assert!(!target.exists());
     }
 
@@ -874,7 +1042,10 @@ mod tests {
     fn attach_rejects_invalid_png_and_missing_state() {
         let fx = Fixture::new();
         let mut request = fx.request();
-        assert_eq!(attach(&fx.root, &request).unwrap_err().code, "RSI_IMPORT_STATE_INVALID");
+        assert_eq!(
+            attach(&fx.root, &request).unwrap_err().code,
+            "RSI_IMPORT_STATE_INVALID"
+        );
         let created = create_metadata_only(&fx.root, &request).unwrap();
         request.expected_revision = created.revision;
         request.data_url = format!("{PNG_DATA_PREFIX}{}", STANDARD.encode(b"not png"));
@@ -892,22 +1063,33 @@ mod tests {
             let mut encoder = png::Encoder::new(&mut png, 5, 1);
             encoder.set_color(png::ColorType::Rgba);
             encoder.set_depth(png::BitDepth::Eight);
-            encoder.write_header().unwrap().write_image_data(&[0; 20]).unwrap();
+            encoder
+                .write_header()
+                .unwrap()
+                .write_image_data(&[0; 20])
+                .unwrap();
         }
         let mut request = fx.request();
         request.data_url = format!("{PNG_DATA_PREFIX}{}", STANDARD.encode(png));
         assert!(attach(&fx.root, &request).is_ok());
-        assert_eq!(fs::read(fx.root.join(&fx.rel).join("meta.json")).unwrap(), meta);
+        assert_eq!(
+            fs::read(fx.root.join(&fx.rel).join("meta.json")).unwrap(),
+            meta
+        );
     }
 
     #[test]
     fn attach_accepts_existing_positive_timing_outside_import_range() {
         let fx = Fixture::new();
-        let meta = br#"{"version":1,"size":{"x":1,"y":1},"states":[{"name":"idle","delays":[[0.001]]}]}"#;
+        let meta =
+            br#"{"version":1,"size":{"x":1,"y":1},"states":[{"name":"idle","delays":[[0.001]]}]}"#;
         fs::write(fx.root.join(&fx.rel).join("meta.json"), meta).unwrap();
         let request = fx.request();
         assert!(attach(&fx.root, &request).is_ok());
-        assert_eq!(fs::read(fx.root.join(&fx.rel).join("meta.json")).unwrap(), meta);
+        assert_eq!(
+            fs::read(fx.root.join(&fx.rel).join("meta.json")).unwrap(),
+            meta
+        );
     }
 
     #[test]
@@ -920,7 +1102,10 @@ mod tests {
         let crc = crc32(&data[37..54]);
         data[54..58].copy_from_slice(&crc.to_be_bytes());
         request.data_url = format!("{PNG_DATA_PREFIX}{}", STANDARD.encode(data));
-        assert_eq!(attach(&fx.root, &request).unwrap_err().code, "RSI_IMPORT_PNG_INVALID");
+        assert_eq!(
+            attach(&fx.root, &request).unwrap_err().code,
+            "RSI_IMPORT_PNG_INVALID"
+        );
         assert!(!fx.root.join(&fx.rel).join("idle.png").exists());
     }
 

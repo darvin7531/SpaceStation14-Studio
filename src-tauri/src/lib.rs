@@ -114,10 +114,17 @@ fn current_project(state: &WorkspaceState) -> Result<Arc<ProjectIndex>, StudioEr
         })
 }
 
-fn project_for_rsi_write(state: &WorkspaceState, expected: &str) -> Result<Arc<ProjectIndex>, StudioError> {
+fn project_for_rsi_write(
+    state: &WorkspaceState,
+    expected: &str,
+) -> Result<Arc<ProjectIndex>, StudioError> {
     let index = current_project(state)?;
     if index.overview().project_root != expected {
-        return Err(StudioError::new("PROJECT_CHANGED", "Проект изменился.", "Откройте RSI заново."));
+        return Err(StudioError::new(
+            "PROJECT_CHANGED",
+            "Проект изменился.",
+            "Откройте RSI заново.",
+        ));
     }
     Ok(index)
 }
@@ -1358,7 +1365,10 @@ mod rsi_project_binding_tests {
         let state = WorkspaceState(Mutex::new(Some(first)));
         assert!(project_for_rsi_write(&state, &expected).is_ok());
         *state.0.lock().unwrap() = Some(Arc::new(ProjectIndex::open(b.to_str().unwrap()).unwrap()));
-        assert_eq!(project_for_rsi_write(&state, &expected).unwrap_err().code, "PROJECT_CHANGED");
+        assert_eq!(
+            project_for_rsi_write(&state, &expected).unwrap_err().code,
+            "PROJECT_CHANGED"
+        );
         std::fs::remove_dir_all(base).unwrap();
     }
 }
