@@ -1,6 +1,6 @@
 // Real Linux WebDriver session against the release Tauri executable and IPC.
 import assert from 'node:assert/strict';
-import { readFile, writeFile } from 'node:fs/promises';
+import { access, readFile, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 
 const base = 'http://127.0.0.1:4444';
@@ -12,6 +12,7 @@ const external = '[{type: entity, id: SmokeExternal}]\n';
 const tabsPath = 'Resources/Prototypes/tabs.yml';
 const tabsFile = join(process.env.SMOKE_PROJECT, tabsPath);
 const tabsDraft = '[{type: entity, id: SmokeFirst, name: SharedDraft}, {type: entity, id: SmokeSecond}]';
+const rsi = join(process.env.SMOKE_PROJECT, 'Resources/Textures/smoke.rsi');
 let session;
 
 async function request(method, path, body) {
@@ -87,6 +88,30 @@ try {
       && button?.disabled && editor && !editor.readOnly;
   `));
 
+  await click('.resource-row[title="Resources/Textures/smoke.rsi"]');
+  await click('[data-testid=rsi-import] summary');
+  await click('[data-testid=rsi-import] input[type=checkbox]');
+  await keys(await until('state name', () => find('[data-testid=rsi-import] input[type=text]')), 'idle');
+  await click('[data-testid=rsi-import] button[type=submit]');
+  await until('metadata-only state', async () => JSON.parse(await readFile(join(rsi, 'meta.json'), 'utf8')).states.some((state) => state.name === 'idle'));
+  const metadata = await readFile(join(rsi, 'meta.json'));
+  assert.deepEqual(JSON.parse(metadata).states, [{ name: 'idle', directions: 1, delays: [[0.1]] }]);
+  await assert.rejects(access(join(rsi, 'idle.png')), { code: 'ENOENT' });
+
+  // An indexed external file confirms the watcher reconciled earlier writes.
+  await writeFile(join(process.env.SMOKE_PROJECT, 'Resources/Prototypes/watcher.yml'), '[{type: entity, id: WatcherSmoke}]\n');
+  await until('watcher refresh', () => find('.resource-row[title="Resources/Prototypes/watcher.yml"]'));
+  await until('attach panel after refresh', () => find('[data-testid=rsi-attach] summary'));
+  await click('[data-testid=rsi-attach] summary');
+  await keys(await until('PNG input', () => find('[data-testid=rsi-attach] input[type=file]')), process.env.SMOKE_PNG);
+  await until('attach enabled', () => script("const button = document.querySelector('[data-testid=rsi-attach] button[type=submit]'); return button && !button.disabled;"));
+  await click('[data-testid=rsi-attach] button[type=submit]');
+  await until('attached PNG', async () => (await readFile(join(rsi, 'idle.png'))).equals(await readFile(process.env.SMOKE_PNG)));
+  await until('attached sheet displayed', () => find('.rsi-toolbar option[value="idle.png"]'));
+  assert.deepEqual(await readFile(join(rsi, 'meta.json')), metadata, 'attaching PNG must not change metadata');
+  await click('[role=tab][title="Resources/Prototypes/smoke.yml"]');
+  await until('original file reloaded after RSI', () => script("return document.querySelector('.monaco-shell .view-lines')?.textContent?.includes('SmokeSaved');"));
+
   const originalTabsFile = await readFile(tabsFile, 'utf8');
   await click('[data-testid=folder-view]');
   await click('.resource-tree-row[title="Resources/Prototypes"]');
@@ -144,7 +169,7 @@ try {
   }
   assert.equal(await readFile(file, 'utf8'), external, 'conflict must not overwrite external disk contents');
   assert.ok(await script("return document.querySelector('.monaco-shell .view-lines')?.textContent?.includes('SmokeDraft');"), 'conflict must retain the editor draft');
-  console.log('GUI smoke passed: shared prototype draft survives switching and close; YAML save and conflict protected');
+  console.log('GUI smoke passed: RSI metadata and PNG, shared prototype drafts, YAML save and conflict protection');
 } finally {
   if (session) {
     try { await call('DELETE', ''); } catch (error) { console.error('WebDriver cleanup:', error.message); }

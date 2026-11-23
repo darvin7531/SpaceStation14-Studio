@@ -14,10 +14,13 @@ trap cleanup EXIT
 trap 'exit 1' HUP INT TERM
 export HOME="$root/home" XDG_CONFIG_HOME="$root/config" XDG_DATA_HOME="$root/data" XDG_CACHE_HOME="$root/cache" XDG_STATE_HOME="$root/state"
 export WEBKIT_DISABLE_COMPOSITING_MODE=1
-mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME" "$root/project/Resources/Prototypes" "$root/project/Resources/Textures" "$root/project/Resources/Locale"
+mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME" "$root/project/Resources/Prototypes" "$root/project/Resources/Textures/smoke.rsi" "$root/project/Resources/Locale"
 export SMOKE_PROJECT="$root/project"
 printf '%s\n' '[{type: entity, id: SmokeOriginal}]' > "$SMOKE_PROJECT/Resources/Prototypes/smoke.yml"
 printf '%s\n' '- type: entity' '  id: SmokeFirst' '- type: entity' '  id: SmokeSecond' > "$SMOKE_PROJECT/Resources/Prototypes/tabs.yml"
+printf '%s\n' '{"version":1,"size":{"x":1,"y":1},"states":[]}' > "$SMOKE_PROJECT/Resources/Textures/smoke.rsi/meta.json"
+export SMOKE_PNG="$root/fixture.png"
+node -e 'require("fs").writeFileSync(process.env.SMOKE_PNG, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==", "base64"))'
 tauri-driver > "$root/driver.log" 2>&1 &
 driver_pid=$!
 if ! node tests/gui-smoke.mjs; then

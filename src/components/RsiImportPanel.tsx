@@ -143,7 +143,7 @@ export default function RsiImportPanel({
     }
   }
 
-  return <details className="rsi-import-panel">
+  return <details className="rsi-import-panel" data-testid={attaching ? 'rsi-attach' : replacing ? 'rsi-replace' : 'rsi-import'}>
     <summary><ImagePlus size={15}/>{attaching ? 'Добавить PNG: ' + attachState?.name : replacing
       ? 'Заменить PNG и перестроить кадры: ' + replaceState?.name
       : 'Добавить состояние RSI'}</summary>
