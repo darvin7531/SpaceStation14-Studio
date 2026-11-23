@@ -3,6 +3,7 @@ import { AlertCircle, ImagePlus } from 'lucide-react';
 import { studio, type ImportedRsiState } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
 import type { RsiState } from '../lib/rsi-layout';
+import { toggleRsiImportMode } from '../lib/rsi-import-mode';
 
 interface Props {
   path: string;
@@ -10,6 +11,7 @@ interface Props {
   onImported: (updated: ImportedRsiState) => void;
   replaceState?: RsiState;
   expectedPngRevision?: string;
+  attachState?: RsiState;
 }
 
 const PNG_LIMIT = 8 * 1024 * 1024;
@@ -28,15 +30,17 @@ function fileToDataUrl(file: File): Promise<string> {
 
 /** Append a new state or replace an existing PNG through an archived, conflict-aware operation. */
 export default function RsiImportPanel({
-  path, revision, onImported, replaceState, expectedPngRevision,
+  path, revision, onImported, replaceState, expectedPngRevision, attachState,
 }: Props) {
+  const attaching = Boolean(attachState);
+  const existingState = replaceState ?? attachState;
   const replacing = Boolean(replaceState);
   const [metadataOnly, setMetadataOnly] = useState(false);
   const [file, setFile] = useState<File | null>(null);
-  const [name, setName] = useState(replaceState?.name ?? '');
-  const [directions, setDirections] = useState<1 | 4 | 8>(replaceState?.directions ?? 1);
-  const [frames, setFrames] = useState(replaceState?.delays[0]?.length ?? 1);
-  const [delay, setDelay] = useState(replaceState?.delays[0]?.[0] ?? 0.1);
+  const [name, setName] = useState(existingState?.name ?? '');
+  const [directions, setDirections] = useState<1 | 4 | 8>(existingState?.directions ?? 1);
+  const [frames, setFrames] = useState(existingState?.delays[0]?.length ?? 1);
+  const [delay, setDelay] = useState(existingState?.delays[0]?.[0] ?? 0.1);
   const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<StudioError | null>(null);
@@ -44,6 +48,7 @@ export default function RsiImportPanel({
 
   function chooseFile(candidate: File | null) {
     setError(null);
+    setFile(null);
     if (!candidate) {
       setFile(null);
       return;
@@ -65,7 +70,7 @@ export default function RsiImportPanel({
       return;
     }
     setFile(candidate);
-    if (!replacing) {
+    if (!existingState) {
       const suggested = candidate.name.replace(/\.png$/i, '')
         .toLowerCase().replace(/[^a-z0-9_-]/g, '-').slice(0, 128);
       setName(suggested);
@@ -119,7 +124,7 @@ export default function RsiImportPanel({
       const request = {
         path,
         expected_revision: revision,
-        name: replaceState?.name ?? name,
+        name: existingState?.name ?? name,
         directions,
         frames_per_direction: frames,
         delay_seconds: delay,
@@ -127,7 +132,7 @@ export default function RsiImportPanel({
         ...(replacing ? { expected_png_revision: expectedPngRevision } : {}),
         ...(preserveDelays && replaceState ? { delays: replaceState.delays } : {}),
       };
-      const result = replacing
+      const result = attaching ? await studio.attachRsiState(request) : replacing
         ? await studio.replaceRsiState(request)
         : metadataOnly ? await studio.createRsiState(request) : await studio.importRsiState(request);
       onImported(result);
@@ -141,20 +146,19 @@ export default function RsiImportPanel({
   }
 
   return <details className="rsi-import-panel">
-    <summary><ImagePlus size={15}/>{replacing
+    <summary><ImagePlus size={15}/>{attaching ? 'Добавить PNG: ' + attachState?.name : replacing
       ? 'Заменить PNG и перестроить кадры: ' + replaceState?.name
       : 'Добавить состояние RSI'}</summary>
     <form onSubmit={(event) => void submit(event)}>
-      {replacing
+      {attaching ? <p>PNG добавляется без изменения метаданных; существующий файл не перезаписывается.</p> : replacing
         ? <p>Старая версия состояния и PNG сначала попадут в <code>.ss14-studio-archive</code>.
             Новая сетка может изменить число направлений и кадров. При ошибке Studio попытается
             восстановить прежнее состояние; внешние изменения не перезаписываются.</p>
         : <p>Добавление записывает состояние в <code>meta.json</code>; PNG создаётся только при импорте.
             Существующие изображения и состояния не перезаписываются.</p>}
-      {!replacing && <label><input type="checkbox" checked={metadataOnly} disabled={uploading}
-        onChange={(event) => setMetadataOnly(event.target.checked)}/> Только метаданные, без PNG</label>}
-      {metadataOnly && <p>PNG не создаётся. Чтобы добавить изображение позже, поместите файл
-        с именем состояния и расширением .png в папку RSI и обновите просмотр.</p>}
+      {!existingState && <label><input type="checkbox" checked={metadataOnly} disabled={uploading}
+        onChange={(event) => { const next = toggleRsiImportMode(event.target.checked); setMetadataOnly(next.metadataOnly); setFile(next.file); if (input.current) input.current.value = ''; }}/> Только метаданные, без PNG</label>}
+      {metadataOnly && <p>PNG не создаётся. Изображение можно добавить позже через Studio.</p>}
       {!metadataOnly && <>
       <div className={'rsi-dropzone' + (dragging ? ' dragging' : '')}
         role="group" aria-label="Перетащить PNG для импорта"
@@ -170,15 +174,15 @@ export default function RsiImportPanel({
         </label>
       </div></>}
       <div className="rsi-import-fields">
-        {replacing
-          ? <label>Состояние<strong>{replaceState?.name}</strong></label>
+        {existingState
+          ? <label>Состояние<strong>{existingState.name}</strong></label>
           : <label>Имя состояния
               <input type="text" value={name} required maxLength={128}
                 pattern="[a-z0-9_-]+" disabled={uploading}
                 onChange={(event) => setName(event.target.value)} placeholder="walk"/>
             </label>}
         <label>Направления
-          <select value={directions} disabled={uploading}
+          <select value={directions} disabled={uploading || attaching}
             onChange={(event) => setDirections(Number(event.target.value) as 1 | 4 | 8)}>
             <option value={1}>1 — одно</option>
             <option value={4}>4 — стороны света</option>
@@ -187,12 +191,12 @@ export default function RsiImportPanel({
         </label>
         <label>Кадров на направление
           <input type="number" min={1} max={Math.min(128, Math.floor(256 / directions))} step={1}
-            value={frames} disabled={uploading}
+            value={frames} disabled={uploading || attaching}
             onChange={(event) => setFrames(Number(event.target.value))}/>
         </label>
         <label>Длительность кадра, сек
           <input type="number" min={0.01} max={60} step={0.01}
-            value={delay} disabled={uploading}
+            value={delay} disabled={uploading || attaching}
             onChange={(event) => setDelay(Number(event.target.value))}/>
         </label>
       </div>
@@ -210,7 +214,7 @@ export default function RsiImportPanel({
           || (replacing && !expectedPngRevision)}>
         <ImagePlus size={15}/>{uploading
           ? (replacing ? 'Заменяю…' : 'Импортирую…')
-          : (replacing ? 'Заменить PNG и перестроить кадры' : metadataOnly ? 'Создать без PNG' : 'Добавить новое состояние')}
+          : (attaching ? 'Добавить PNG' : replacing ? 'Заменить PNG и перестроить кадры' : metadataOnly ? 'Создать без PNG' : 'Добавить новое состояние')}
       </button>
     </form>
   </details>;

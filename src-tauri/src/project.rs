@@ -1404,6 +1404,12 @@ impl ProjectIndex {
         rsi_import::import(&self.root, request)
     }
 
+    pub fn attach_rsi_state(&self, request: &RsiStateImport) -> Result<ImportedRsiState, StudioError> {
+        self.verify_indexed_rsi(&request.path)?;
+        let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;
+        rsi_import::attach(&self.root, request)
+    }
+
     pub fn create_rsi_state(&self, request: &RsiStateImport) -> Result<ImportedRsiState, StudioError> {
         self.verify_indexed_rsi(&request.path)?;
         let _guard = self.edit_lock.lock().map_err(|_| internal_lock())?;

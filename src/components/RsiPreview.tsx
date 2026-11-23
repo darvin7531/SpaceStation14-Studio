@@ -147,6 +147,13 @@ export default function RsiPreview({
     <RsiImportPanel path={path} revision={revision} onImported={onImported}/>
     <RsiBulkImportPanel path={path} revision={revision} metadata={metadata}
       onImported={onImported} onBatchOutcome={onBatchOutcome}/>
+    {list && !listing && inspection.states.filter((state) =>
+      !list.sheets.some((sheet) => sheet.name === state.name + '.png')).map((state) =>
+      <RsiImportPanel key={'attach:' + path + ':' + state.name + ':' + revision}
+        path={path} revision={revision} attachState={state} onImported={(result) => {
+          onImported(result);
+          setRefresh((value) => value + 1);
+        }}/>)}
     {selectedState && image?.revision && list?.sheets.some((sheet) => sheet.name === selectedState.name + '.png')
       && <RsiImportPanel key={'replace:' + path + ':' + selectedState.name + ':' + revision}
         path={path} revision={revision} replaceState={selectedState}
