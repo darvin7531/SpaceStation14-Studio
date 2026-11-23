@@ -672,19 +672,27 @@ impl ProjectIndex {
         id: &str,
     ) -> Result<PrototypeInheritancePreview, StudioError> {
         let catalog = self.prototypes()?;
-        prototype_merge::preview_inheritance(&catalog, kind, id, |path| {
-            if !self.is_yaml_indexed(path) {
-                return Err(StudioError::new(
-                    "PROTOTYPE_INHERITANCE_NOT_INDEXED",
-                    "YAML-источник отсутствует в индексе проекта.",
-                    "Обновите индекс и повторите просмотр цепочки.",
-                ));
-            }
-            self.read_resource(path).map(|document| document.content)
-        }, |rsi| {
-            self.positions.get(rsi).and_then(|index| self.resources.get(*index))
-                .is_some_and(|entry| entry.kind == "rsi")
-        })
+        prototype_merge::preview_inheritance(
+            &catalog,
+            kind,
+            id,
+            |path| {
+                if !self.is_yaml_indexed(path) {
+                    return Err(StudioError::new(
+                        "PROTOTYPE_INHERITANCE_NOT_INDEXED",
+                        "YAML-источник отсутствует в индексе проекта.",
+                        "Обновите индекс и повторите просмотр цепочки.",
+                    ));
+                }
+                self.read_resource(path).map(|document| document.content)
+            },
+            |rsi| {
+                self.positions
+                    .get(rsi)
+                    .and_then(|index| self.resources.get(*index))
+                    .is_some_and(|entry| entry.kind == "rsi")
+            },
+        )
     }
 
     /// Preview base + partial modifications without mutating project files.
@@ -1818,7 +1826,9 @@ mod tests {
         fx.write("Resources/Prototypes/child.yml", "- type: entity\n  id: Child\n  parent: Parent\n  components:\n  - type: Sprite\n    state: child\n    layers:\n    - state: child-layer\n");
         fx.write("Resources/Prototypes/other.yml", "- type: entity\n  id: Other\n  components:\n  - type: Sprite\n    sprite: Objects/other.rsi\n- type: entity\n  id: Inherited\n  parent: Parent\n- type: entity\n  id: Multi\n  parent: [Parent, Other]\n- type: entity\n  id: Missing\n  parent: Absent\n");
         let project = ProjectIndex::open(fx.root_str()).unwrap();
-        let report = project.prototype_inheritance_preview("entity", "Child").unwrap();
+        let report = project
+            .prototype_inheritance_preview("entity", "Child")
+            .unwrap();
         assert!(report.structural_complete);
         assert!(!report.runtime_exact);
         let sprite = report.sprite.unwrap();
@@ -1831,14 +1841,23 @@ mod tests {
         let source = sprite.source.unwrap();
         assert_eq!(source.file, "Resources/Prototypes/child.yml");
         assert_eq!(source.line, 1);
-        let inherited = project.prototype_inheritance_preview("entity", "Inherited").unwrap();
+        let inherited = project
+            .prototype_inheritance_preview("entity", "Inherited")
+            .unwrap();
         let parent_sprite = inherited.sprite.unwrap();
         assert_eq!(parent_sprite.sprite.unwrap().state.as_deref(), Some("base"));
-        assert_eq!(parent_sprite.source.unwrap().file, "Resources/Prototypes/parent.yml");
-        let multi = project.prototype_inheritance_preview("entity", "Multi").unwrap();
+        assert_eq!(
+            parent_sprite.source.unwrap().file,
+            "Resources/Prototypes/parent.yml"
+        );
+        let multi = project
+            .prototype_inheritance_preview("entity", "Multi")
+            .unwrap();
         assert!(!multi.structural_complete);
         assert!(!multi.warnings.is_empty());
-        let missing = project.prototype_inheritance_preview("entity", "Missing").unwrap();
+        let missing = project
+            .prototype_inheritance_preview("entity", "Missing")
+            .unwrap();
         assert!(!missing.structural_complete);
         assert!(!missing.warnings.is_empty());
     }
@@ -2928,7 +2947,10 @@ mod tests {
     #[test]
     fn prototype_preview_reports_unindexed_references_without_claiming_absence() {
         let fx = Fixture::new();
-        fx.write("Resources/Prototypes/base.yml", "- type: entity\n  id: Base\n");
+        fx.write(
+            "Resources/Prototypes/base.yml",
+            "- type: entity\n  id: Base\n",
+        );
         fx.write("Resources/Textures/Test.rsi/meta.json", "{}");
         let index = ProjectIndex::open(fx.root_str()).unwrap();
         let mut draft = PrototypeDraft {
@@ -2947,12 +2969,20 @@ mod tests {
             include_appearance: false,
             file: "Resources/Prototypes/base.yml".into(),
         };
-        assert!(index.preview_new_prototype(&draft).unwrap().warnings.is_empty());
+        assert!(index
+            .preview_new_prototype(&draft)
+            .unwrap()
+            .warnings
+            .is_empty());
         draft.parent = "Missing".into();
         draft.sprite = "Missing.rsi".into();
         let warnings = index.preview_new_prototype(&draft).unwrap().warnings;
-        assert!(warnings.iter().any(|w| w.contains("Missing") && w.contains("индекс")));
-        assert!(warnings.iter().any(|w| w.contains("Missing.rsi") && w.contains("индекс")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Missing") && w.contains("индекс")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Missing.rsi") && w.contains("индекс")));
         assert_eq!(
             index.preview_append_prototype(&draft).unwrap().warnings,
             warnings
@@ -2968,7 +2998,9 @@ mod tests {
         fx.write("Resources/Prototypes/bad.yml", "[broken");
         let incomplete = ProjectIndex::open(fx.root_str()).unwrap();
         let warnings = incomplete.preview_new_prototype(&draft).unwrap().warnings;
-        assert!(warnings.iter().any(|w| w.contains("Missing") && w.contains("индекс")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Missing") && w.contains("индекс")));
         assert!(!warnings.iter().any(|w| w.contains("не существует")));
     }
 
@@ -3166,14 +3198,25 @@ mod tests {
         fx.write("Resources/Prototypes/sprites.yml", "- type: entity\n  id: Missing\n  components:\n  - type: Sprite\n    sprite: Missing.rsi\n- type: entity\n  id: Present\n  components:\n  - type: Sprite\n    sprite: Present.rsi\n- type: entity\n  id: LayerOnly\n  components:\n  - type: Sprite\n    layers:\n    - sprite: Layer.rsi\n");
         let index = ProjectIndex::open(fx.root_str()).unwrap();
         let issues = index.prototypes().unwrap().diagnostics(0, 200).items;
-        let missing: Vec<_> = issues.iter().filter(|item| item.code == "SPRITE_RSI_MISSING").collect();
+        let missing: Vec<_> = issues
+            .iter()
+            .filter(|item| item.code == "SPRITE_RSI_MISSING")
+            .collect();
         assert_eq!(missing.len(), 1);
         assert_eq!(missing[0].file, "Resources/Prototypes/sprites.yml");
         assert_eq!(missing[0].line, 1);
         assert!(missing[0].message.contains("Missing.rsi"));
         fx.write("Resources/Textures/Missing.rsi/meta.json", "{}");
-        let (fresh, _) = index.refresh_paths(&["Resources/Textures/Missing.rsi/meta.json".into()]).unwrap();
-        assert!(!fresh.prototypes().unwrap().diagnostics(0, 200).items.iter().any(|item| item.code == "SPRITE_RSI_MISSING"));
+        let (fresh, _) = index
+            .refresh_paths(&["Resources/Textures/Missing.rsi/meta.json".into()])
+            .unwrap();
+        assert!(!fresh
+            .prototypes()
+            .unwrap()
+            .diagnostics(0, 200)
+            .items
+            .iter()
+            .any(|item| item.code == "SPRITE_RSI_MISSING"));
     }
 
     #[test]
@@ -3184,13 +3227,30 @@ mod tests {
         let index = ProjectIndex::open(fx.root_str()).unwrap();
         fx.write("Resources/Textures/Later.rsi/meta.json", "{}");
         let issues = index.prototypes().unwrap().diagnostics(0, 200).items;
-        let missing: Vec<_> = issues.iter().filter(|item| item.code == "SPRITE_RSI_MISSING").collect();
+        let missing: Vec<_> = issues
+            .iter()
+            .filter(|item| item.code == "SPRITE_RSI_MISSING")
+            .collect();
         let case_sensitive = !fx.root.join("Resources/Textures/present.rsi").exists();
-        assert_eq!(missing.iter().any(|item| item.message.contains("present.rsi")), case_sensitive);
-        let later = missing.iter().find(|item| item.message.contains("Later.rsi")).unwrap();
+        assert_eq!(
+            missing
+                .iter()
+                .any(|item| item.message.contains("present.rsi")),
+            case_sensitive
+        );
+        let later = missing
+            .iter()
+            .find(|item| item.message.contains("Later.rsi"))
+            .unwrap();
         assert!(later.message.contains("текущем индексе"));
         let (fresh, _) = index.refresh().unwrap();
-        assert!(!fresh.prototypes().unwrap().diagnostics(0, 200).items.iter().any(|item| item.code == "SPRITE_RSI_MISSING" && item.message.contains("Later.rsi")));
+        assert!(!fresh
+            .prototypes()
+            .unwrap()
+            .diagnostics(0, 200)
+            .items
+            .iter()
+            .any(|item| item.code == "SPRITE_RSI_MISSING" && item.message.contains("Later.rsi")));
     }
 
     #[test]
@@ -3204,18 +3264,31 @@ mod tests {
         let mut issues = catalog.diagnostics(0, 200).items;
         issues.extend(catalog.diagnostics(200, 200).items);
         issues.extend(catalog.diagnostics(400, 200).items);
-        assert_eq!(issues.iter().filter(|item| item.code == "SPRITE_RSI_MISSING").count(), 500);
-        assert!(issues.iter().any(|item| item.code == "SPRITE_DIAGNOSTICS_TRUNCATED"));
+        assert_eq!(
+            issues
+                .iter()
+                .filter(|item| item.code == "SPRITE_RSI_MISSING")
+                .count(),
+            500
+        );
+        assert!(issues
+            .iter()
+            .any(|item| item.code == "SPRITE_DIAGNOSTICS_TRUNCATED"));
     }
 
     #[test]
     fn missing_texture_index_does_not_claim_missing_sprite() {
         let fx = Fixture::new();
-        fx.write("Resources/Prototypes/sprites.yml", "- type: entity\n  id: A\n  components:\n  - type: Sprite\n    sprite: Missing.rsi\n");
+        fx.write(
+            "Resources/Prototypes/sprites.yml",
+            "- type: entity\n  id: A\n  components:\n  - type: Sprite\n    sprite: Missing.rsi\n",
+        );
         let index = ProjectIndex::open(fx.root_str()).unwrap();
         let issues = index.prototypes().unwrap().diagnostics(0, 200).items;
         assert!(!issues.iter().any(|item| item.code == "SPRITE_RSI_MISSING"));
-        assert!(issues.iter().any(|item| item.code == "SPRITE_INDEX_INCOMPLETE"));
+        assert!(issues
+            .iter()
+            .any(|item| item.code == "SPRITE_INDEX_INCOMPLETE"));
     }
 
     #[test]

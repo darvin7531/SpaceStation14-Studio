@@ -370,16 +370,25 @@ impl PrototypeCatalog {
         let mut catalog = Self::default();
         let scopes = configured_partials(root, &mut catalog.diagnostics);
         let textures_present = root.join("Resources/Textures").is_dir();
-        let rsi_paths: HashSet<&str> = resources.iter().filter(|entry| entry.kind == "rsi")
-            .map(|entry| entry.path.as_str()).collect();
-        let resolved_rsi_paths: HashSet<PathBuf> = rsi_paths.iter()
+        let rsi_paths: HashSet<&str> = resources
+            .iter()
+            .filter(|entry| entry.kind == "rsi")
+            .map(|entry| entry.path.as_str())
+            .collect();
+        let resolved_rsi_paths: HashSet<PathBuf> = rsi_paths
+            .iter()
             .filter_map(|path| fs::canonicalize(root.join(path)).ok())
-            .filter(|path| path.starts_with(root)).collect();
+            .filter(|path| path.starts_with(root))
+            .collect();
         let mut sprite_count = 0;
         let mut sprite_truncated = false;
         if !textures_present {
-            catalog.issue("SPRITE_INDEX_INCOMPLETE", "Resources/Textures", 0,
-                "Каталог текстур отсутствует: проверка Sprite.sprite неполна.");
+            catalog.issue(
+                "SPRITE_INDEX_INCOMPLETE",
+                "Resources/Textures",
+                0,
+                "Каталог текстур отсутствует: проверка Sprite.sprite неполна.",
+            );
         }
 
         for resource in resources {
@@ -441,20 +450,28 @@ impl PrototypeCatalog {
                     if textures_present {
                         if let Ok(docs) = YamlLoader::load_from_str(&content) {
                             for declaration in &collector.declarations {
-                                if declaration.kind != "entity" || declaration.variant_index.is_some() {
+                                if declaration.kind != "entity"
+                                    || declaration.variant_index.is_some()
+                                {
                                     continue;
                                 }
-                                let item = docs.get(declaration.document_index.saturating_sub(1))
+                                let item = docs
+                                    .get(declaration.document_index.saturating_sub(1))
                                     .and_then(Yaml::as_vec)
-                                    .and_then(|items| items.get(declaration.item_index.saturating_sub(1)));
+                                    .and_then(|items| {
+                                        items.get(declaration.item_index.saturating_sub(1))
+                                    });
                                 if let Some((sprite, _)) = item.and_then(extract_sprite_source) {
                                     if !rsi_paths.contains(sprite.as_str()) {
                                         // The resource index deliberately skips symlinks; absence there is not proof.
                                         let mut current = root.to_path_buf();
-                                        let skipped_link = Path::new(&sprite).components().any(|part| {
-                                            current.push(part.as_os_str());
-                                            fs::symlink_metadata(&current).is_ok_and(|metadata| metadata.file_type().is_symlink())
-                                        });
+                                        let skipped_link =
+                                            Path::new(&sprite).components().any(|part| {
+                                                current.push(part.as_os_str());
+                                                fs::symlink_metadata(&current).is_ok_and(
+                                                    |metadata| metadata.file_type().is_symlink(),
+                                                )
+                                            });
                                         if skipped_link {
                                             if sprite_count < MAX_SPRITE_DIAGNOSTICS {
                                                 catalog.issue("SPRITE_INDEX_INCOMPLETE", path, declaration.line,
@@ -468,7 +485,8 @@ impl PrototypeCatalog {
                                             continue;
                                         }
                                         // Resolve alternate casing using the project's filesystem, not Unicode folding.
-                                        if fs::canonicalize(root.join(&sprite)).ok()
+                                        if fs::canonicalize(root.join(&sprite))
+                                            .ok()
                                             .is_some_and(|path| resolved_rsi_paths.contains(&path))
                                         {
                                             continue;
@@ -486,8 +504,12 @@ impl PrototypeCatalog {
                                 }
                             }
                         } else {
-                            catalog.issue("SPRITE_SCAN_INCOMPLETE", path, 0,
-                                "Не удалось проверить Sprite.sprite в этом YAML-файле.");
+                            catalog.issue(
+                                "SPRITE_SCAN_INCOMPLETE",
+                                path,
+                                0,
+                                "Не удалось проверить Sprite.sprite в этом YAML-файле.",
+                            );
                         }
                     }
                     catalog.declarations.extend(collector.declarations);

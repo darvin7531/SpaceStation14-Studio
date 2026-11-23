@@ -10,7 +10,10 @@ use yaml_rust2::scanner::Marker;
 use yaml_rust2::Event;
 
 use crate::error::StudioError;
-use crate::prototypes::{normalize_sprite_path, PrototypeCatalog, PrototypeDeclaration, SourceSpriteLayer, SourceSpriteLink, MAX_LIVE_SPRITE_LAYERS};
+use crate::prototypes::{
+    normalize_sprite_path, PrototypeCatalog, PrototypeDeclaration, SourceSpriteLayer,
+    SourceSpriteLink, MAX_LIVE_SPRITE_LAYERS,
+};
 
 const MAX_PREVIEW_FIELDS: usize = 96;
 const MAX_PREVIEW_COMPONENTS: usize = 128;
@@ -813,30 +816,68 @@ fn inherited_sprite(
     source: Option<PrototypeDeclaration>,
     indexed: &impl Fn(&str) -> bool,
 ) -> Option<InheritedSpritePreview> {
-    let Value::Seq(components) = &node.field("components")?.value else { return None };
-    let component = components.iter().find(|item| item.field("type").and_then(Node::scalar) == Some("Sprite"))?;
-    let sprite = component.field("sprite").and_then(Node::scalar).and_then(normalize_sprite_path).map(|path| SourceSpriteLink {
-        indexed: indexed(&path), path, state: component.field("state").and_then(Node::scalar).map(str::to_owned),
-    });
+    let Value::Seq(components) = &node.field("components")?.value else {
+        return None;
+    };
+    let component = components
+        .iter()
+        .find(|item| item.field("type").and_then(Node::scalar) == Some("Sprite"))?;
+    let sprite = component
+        .field("sprite")
+        .and_then(Node::scalar)
+        .and_then(normalize_sprite_path)
+        .map(|path| SourceSpriteLink {
+            indexed: indexed(&path),
+            path,
+            state: component
+                .field("state")
+                .and_then(Node::scalar)
+                .map(str::to_owned),
+        });
     let layers = match component.field("layers").map(|node| &node.value) {
         Some(Value::Seq(layers)) => layers.as_slice(),
         _ => &[],
     };
-    let items = layers.iter().take(MAX_LIVE_SPRITE_LAYERS).enumerate().map(|(index, layer)| {
-        let explicit = layer.field("sprite");
-        let path = match explicit {
-            Some(value) => value.scalar().and_then(normalize_sprite_path),
-            None => sprite.as_ref().map(|value| value.path.clone()),
-        };
-        SourceSpriteLayer {
-            index, indexed: path.as_deref().is_some_and(indexed), path,
-            state: layer.field("state").and_then(Node::scalar).map(str::to_owned),
-            visible: match layer.field("visible") { None => Some(true), Some(value) => match value.scalar() { Some("true") => Some(true), Some("false") => Some(false), _ => None } },
-            shader: layer.field("shader").and_then(Node::scalar).map(str::to_owned),
-            default_path: explicit.is_none() && sprite.is_some(),
-        }
-    }).collect();
-    Some(InheritedSpritePreview { sprite, layers: items, layers_total: layers.len(), source })
+    let items = layers
+        .iter()
+        .take(MAX_LIVE_SPRITE_LAYERS)
+        .enumerate()
+        .map(|(index, layer)| {
+            let explicit = layer.field("sprite");
+            let path = match explicit {
+                Some(value) => value.scalar().and_then(normalize_sprite_path),
+                None => sprite.as_ref().map(|value| value.path.clone()),
+            };
+            SourceSpriteLayer {
+                index,
+                indexed: path.as_deref().is_some_and(indexed),
+                path,
+                state: layer
+                    .field("state")
+                    .and_then(Node::scalar)
+                    .map(str::to_owned),
+                visible: match layer.field("visible") {
+                    None => Some(true),
+                    Some(value) => match value.scalar() {
+                        Some("true") => Some(true),
+                        Some("false") => Some(false),
+                        _ => None,
+                    },
+                },
+                shader: layer
+                    .field("shader")
+                    .and_then(Node::scalar)
+                    .map(str::to_owned),
+                default_path: explicit.is_none() && sprite.is_some(),
+            }
+        })
+        .collect();
+    Some(InheritedSpritePreview {
+        sprite,
+        layers: items,
+        layers_total: layers.len(),
+        source,
+    })
 }
 
 #[derive(Clone)]
@@ -1188,11 +1229,22 @@ pub fn preview_inheritance(
             .is_some_and(|components| matches!(components.value, Value::Seq(items)
                 if items.iter().any(|item| item.field("type").and_then(Node::scalar) == Some("Sprite")))))
         .collect();
-    let source = if candidates.len() == 1 { candidates.into_iter().next() } else { None };
+    let source = if candidates.len() == 1 {
+        candidates.into_iter().next()
+    } else {
+        None
+    };
     let sprite = inherited_sprite(&result.node, source, &indexed);
-    let normal: Vec<_> = catalog.source_declarations(kind, id).into_iter()
-        .filter(|declaration| declaration.mode == "normal").collect();
-    let base = if normal.len() == 1 { normal.into_iter().next() } else { None };
+    let normal: Vec<_> = catalog
+        .source_declarations(kind, id)
+        .into_iter()
+        .filter(|declaration| declaration.mode == "normal")
+        .collect();
+    let base = if normal.len() == 1 {
+        normal.into_iter().next()
+    } else {
+        None
+    };
     Ok(PrototypeInheritancePreview {
         kind: kind.to_owned(),
         id: id.to_owned(),
