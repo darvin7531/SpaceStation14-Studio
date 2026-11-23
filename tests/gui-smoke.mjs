@@ -82,17 +82,20 @@ try {
 
   // Resolve two Ctrl-click searches in reverse order; the older result must not win.
   await script(`
-    const original = window.__TAURI_INTERNALS__.invoke;
+    const original = window.fetch;
     window.__navigationGate = { held: false, settled: false, release: null };
-    window.__TAURI_INTERNALS__.invoke = function(command, args, ...rest) {
+    window.fetch = function(url, options) {
+      if (!String(url).startsWith('ipc:')) return original.call(this, url, options);
+      const command = decodeURIComponent(new URL(url).pathname.slice(1));
+      const args = options?.body ? JSON.parse(options.body) : {};
       if (command === 'search_prototypes' && args.query === 'SmokeSecond' && !window.__navigationGate.held) {
         window.__navigationGate.held = true;
         return new Promise((resolve, reject) => { window.__navigationGate.release = () =>
-          original.call(this, command, args, ...rest).then(value => {
+          original.call(this, url, options).then(value => {
             resolve(value); setTimeout(() => { window.__navigationGate.settled = true; }, 0);
           }, reject); });
       }
-      return original.call(this, command, args, ...rest);
+      return original.call(this, url, options);
     };
   `);
   const ctrlClickWord = async (word) => script(`
@@ -136,14 +139,17 @@ try {
   await click('.resource-tree-toggle[data-resource-path="Resources/Prototypes/focus.yml"]');
   await until('focus prototype outline loaded', () => find('[data-testid=tree-prototype][data-prototype-id="FocusDelayed"]'));
   await script(`
-    const original = window.__TAURI_INTERNALS__.invoke;
+    const original = window.fetch;
     window.__focusGate = { held: false, release: null };
-    window.__TAURI_INTERNALS__.invoke = function(command, args, ...rest) {
+    window.fetch = function(url, options) {
+      if (!String(url).startsWith('ipc:')) return original.call(this, url, options);
+      const command = decodeURIComponent(new URL(url).pathname.slice(1));
+      const args = options?.body ? JSON.parse(options.body) : {};
       if (command === 'read_resource' && args.path === 'Resources/Prototypes/focus.yml' && !window.__focusGate.held) {
         window.__focusGate.held = true;
-        return new Promise((resolve, reject) => { window.__focusGate.release = () => original.call(this, command, args, ...rest).then(resolve, reject); });
+        return new Promise((resolve, reject) => { window.__focusGate.release = () => original.call(this, url, options).then(resolve, reject); });
       }
-      return original.call(this, command, args, ...rest);
+      return original.call(this, url, options);
     };
   `);
   await click('[data-testid=tree-prototype][data-prototype-id="FocusDelayed"]');
@@ -193,15 +199,18 @@ try {
 
   // A delayed read failure must leave the query and results intact.
   await script(`
-    const original = window.__TAURI_INTERNALS__.invoke;
+    const original = window.fetch;
     window.__failureGate = { held: false, fail: null };
-    window.__TAURI_INTERNALS__.invoke = function(command, args, ...rest) {
+    window.fetch = function(url, options) {
+      if (!String(url).startsWith('ipc:')) return original.call(this, url, options);
+      const command = decodeURIComponent(new URL(url).pathname.slice(1));
+      const args = options?.body ? JSON.parse(options.body) : {};
       if (command === 'read_resource_bound' && args.path === 'Resources/Prototypes/tabs.yml' && !window.__failureGate.held) {
         window.__failureGate.held = true;
         window.__failureGate.root = args.expectedProjectRoot;
-        return new Promise((resolve, reject) => { window.__failureGate.fail = () => reject(new Error('delayed read failed')); });
+        return new Promise((resolve) => { window.__failureGate.fail = () => resolve(new Response('delayed read failed', { headers: { 'Tauri-Response': 'error', 'Content-Type': 'text/plain' } })); });
       }
-      return original.call(this, command, args, ...rest);
+      return original.call(this, url, options);
     };
   `);
   await keys(await find('#project-path'), '\uE009\uE008f\uE000');
@@ -219,15 +228,18 @@ try {
   assert.ok(await find('.content-search-list [role=option]'), 'failed read retains results');
   assert.equal(await find('[role=tab][title="Resources/Prototypes/tabs.yml"]'), undefined, 'failed read opens no tab');
   await script(`
-    const original = window.__TAURI_INTERNALS__.invoke;
+    const original = window.fetch;
     window.__staleFailure = { held: false, fail: null };
-    window.__TAURI_INTERNALS__.invoke = function(command, args, ...rest) {
+    window.fetch = function(url, options) {
+      if (!String(url).startsWith('ipc:')) return original.call(this, url, options);
+      const command = decodeURIComponent(new URL(url).pathname.slice(1));
+      const args = options?.body ? JSON.parse(options.body) : {};
       if (command === 'read_resource_bound' && args.path === 'Resources/Prototypes/tabs.yml' && !window.__staleFailure.held) {
         window.__staleFailure.held = true;
         window.__staleFailure.root = args.expectedProjectRoot;
-        return new Promise((resolve, reject) => { window.__staleFailure.fail = () => reject(new Error('stale failure')); });
+        return new Promise((resolve) => { window.__staleFailure.fail = () => resolve(new Response('stale failure', { headers: { 'Tauri-Response': 'error', 'Content-Type': 'text/plain' } })); });
       }
-      return original.call(this, command, args, ...rest);
+      return original.call(this, url, options);
     };
   `);
   await until('retry hit', () => script(`
@@ -248,15 +260,18 @@ try {
   await click('[role=tab][title="Resources/Prototypes/smoke.yml"]');
   await until('smoke editor restored', () => find('.monaco-shell textarea.inputarea'));
   await script(`
-    const original = window.__TAURI_INTERNALS__.invoke;
+    const original = window.fetch;
     window.__switchGate = { held: false, settled: false, release: null };
-    window.__TAURI_INTERNALS__.invoke = function(command, args, ...rest) {
+    window.fetch = function(url, options) {
+      if (!String(url).startsWith('ipc:')) return original.call(this, url, options);
+      const command = decodeURIComponent(new URL(url).pathname.slice(1));
+      const args = options?.body ? JSON.parse(options.body) : {};
       if (command === 'read_resource_bound' && args.path === 'Resources/Prototypes/tabs.yml' && !window.__switchGate.held) {
         window.__switchGate.held = true;
         window.__switchGate.root = args.expectedProjectRoot;
-        return new Promise((resolve, reject) => { window.__switchGate.release = () => original.call(this, command, args, ...rest).then(value => { resolve(value); setTimeout(() => { window.__switchGate.settled = true; }, 0); }, reject); });
+        return new Promise((resolve, reject) => { window.__switchGate.release = () => original.call(this, url, options).then(value => { resolve(value); setTimeout(() => { window.__switchGate.settled = true; }, 0); }, reject); });
       }
-      return original.call(this, command, args, ...rest);
+      return original.call(this, url, options);
     };
   `);
   await keys(await find('.monaco-shell textarea.inputarea'), '\uE009\uE008f\uE000');
