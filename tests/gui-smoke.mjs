@@ -41,8 +41,15 @@ async function find(selector) {
   return elements[0]?.[elementKey];
 }
 async function click(selector) {
-  const id = await until(selector, () => find(selector));
-  await call('POST', `/element/${id}/click`, {});
+  await until(selector, async () => {
+    const id = await find(selector);
+    if (!id) return false;
+    try { await call('POST', `/element/${id}/click`, {}); } catch (error) {
+      if (!/stale element reference/i.test(error.message)) throw error;
+      return false;
+    }
+    return true;
+  });
 }
 async function keys(id, text) {
   await call('POST', `/element/${id}/value`, { text, value: [...text] });
