@@ -308,7 +308,11 @@ pub(crate) fn delete_checked(
     let png_path = folder.join(format!("{}.png", request.name));
     let png = if request.expected_missing_png {
         if expected_png_revision.is_some() {
-            return Err(issue("RSI_DELETE_PNG_REVISION_INVALID", "Противоречивые ожидания PNG.", "Обновите RSI."));
+            return Err(issue(
+                "RSI_DELETE_PNG_REVISION_INVALID",
+                "Противоречивые ожидания PNG.",
+                "Обновите RSI.",
+            ));
         }
         None
     } else {
@@ -393,15 +397,21 @@ pub(crate) fn delete_checked(
                 !stat.file_type().is_symlink() && stat.is_file() && stat.len() <= MAX_PNG_BYTES
             });
         if !png_still_safe {
-            warnings.push("Исходный PNG изменился или исчез: файл не удалён. Резервная копия сохранена.".to_string());
+            warnings.push(
+                "Исходный PNG изменился или исчез: файл не удалён. Резервная копия сохранена."
+                    .to_string(),
+            );
         } else {
             match read_png(&png_path) {
                 Ok(current) if Some(revision(&current)) == png_revision => {
                     if let Err(error) = fs::remove_file(&png_path) {
-                        warnings.push(format!("Состояние удалено из meta.json, но PNG остался: {error}"));
+                        warnings.push(format!(
+                            "Состояние удалено из meta.json, но PNG остался: {error}"
+                        ));
                     }
                 }
-                _ => warnings.push("Исходный PNG изменился во время операции: он оставлен на месте.".into()),
+                _ => warnings
+                    .push("Исходный PNG изменился во время операции: он оставлен на месте.".into()),
             }
         }
     }
@@ -579,14 +589,32 @@ mod tests {
     fn metadata_only_deletes_invalid_state_without_touching_present_png() {
         let fixture = Fixture::new();
         let folder = fixture.root.join(&fixture.path);
-        let original = br#"{"version":1,"size":{"x":1,"y":1},"states":[{"name":"idle","directions":"bad"}]}"#;
+        let original =
+            br#"{"version":1,"size":{"x":1,"y":1},"states":[{"name":"idle","directions":"bad"}]}"#;
         fs::write(folder.join("meta.json"), original).unwrap();
         let mut request = fixture.request();
         request.expected_missing_png = true;
         let deleted = delete(&fixture.root, &request).unwrap();
-        assert_eq!(fs::read(folder.join("idle.png")).unwrap(), b"original sprite");
-        assert_eq!(fs::read(fixture.root.join(deleted.archive_path).join("meta.json.before")).unwrap(), original);
-        assert!(serde_json::from_str::<Value>(&deleted.content).unwrap()["states"].as_array().unwrap().is_empty());
+        assert_eq!(
+            fs::read(folder.join("idle.png")).unwrap(),
+            b"original sprite"
+        );
+        assert_eq!(
+            fs::read(
+                fixture
+                    .root
+                    .join(deleted.archive_path)
+                    .join("meta.json.before")
+            )
+            .unwrap(),
+            original
+        );
+        assert!(
+            serde_json::from_str::<Value>(&deleted.content).unwrap()["states"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -606,9 +634,16 @@ mod tests {
         assert!(deleted.warning.is_some());
         let id = archive.file_name().unwrap().to_str().unwrap().to_string();
         let request = crate::rsi_restore::RsiRestoreRequest {
-            path: fixture.path.clone(), expected_revision: deleted.revision, archive_id: id,
+            path: fixture.path.clone(),
+            expected_revision: deleted.revision,
+            archive_id: id,
         };
-        assert_eq!(crate::rsi_restore::restore(&fixture.root, &request).unwrap_err().code, "RSI_RESTORE_MANUAL_REQUIRED");
+        assert_eq!(
+            crate::rsi_restore::restore(&fixture.root, &request)
+                .unwrap_err()
+                .code,
+            "RSI_RESTORE_MANUAL_REQUIRED"
+        );
         assert_eq!(fs::read(&png).unwrap(), b"late external PNG");
         assert!(archive.join("meta.json.before").exists());
     }
@@ -619,28 +654,56 @@ mod tests {
         let folder = fixture.root.join(&fixture.path);
         fs::remove_file(folder.join("idle.png")).unwrap();
         let mut request = fixture.request();
-        assert_eq!(delete_checked(&fixture.root, &request, Some(&revision(b"old"))).unwrap_err().code, "RSI_DELETE_PNG_MISSING");
+        assert_eq!(
+            delete_checked(&fixture.root, &request, Some(&revision(b"old")))
+                .unwrap_err()
+                .code,
+            "RSI_DELETE_PNG_MISSING"
+        );
         request.expected_missing_png = true;
         let deleted = delete(&fixture.root, &request).unwrap();
         let archive = fixture.root.join(&deleted.archive_path);
         assert!(!archive.join("idle.png").exists());
         let id = archive.file_name().unwrap().to_str().unwrap().to_string();
-        assert_eq!(crate::rsi_restore::list(&fixture.root, &fixture.path).unwrap().archives.len(), 1);
+        assert_eq!(
+            crate::rsi_restore::list(&fixture.root, &fixture.path)
+                .unwrap()
+                .archives
+                .len(),
+            1
+        );
         let restore_request = crate::rsi_restore::RsiRestoreRequest {
-            path: fixture.path.clone(), expected_revision: deleted.revision.clone(), archive_id: id,
+            path: fixture.path.clone(),
+            expected_revision: deleted.revision.clone(),
+            archive_id: id,
         };
         let stale = crate::rsi_restore::RsiRestoreRequest {
-            path: fixture.path.clone(), expected_revision: request.expected_revision.clone(), archive_id: restore_request.archive_id.clone(),
+            path: fixture.path.clone(),
+            expected_revision: request.expected_revision.clone(),
+            archive_id: restore_request.archive_id.clone(),
         };
-        assert_eq!(crate::rsi_restore::restore(&fixture.root, &stale).unwrap_err().code, "RSI_RESTORE_CONFLICT");
+        assert_eq!(
+            crate::rsi_restore::restore(&fixture.root, &stale)
+                .unwrap_err()
+                .code,
+            "RSI_RESTORE_CONFLICT"
+        );
         let error = crate::rsi_restore::restore(&fixture.root, &restore_request).unwrap_err();
         assert_eq!(error.code, "RSI_RESTORE_MANUAL_REQUIRED");
         assert!(error.hint.contains("version"));
         assert!(error.hint.contains("size"));
         assert!(error.hint.contains("дубликат"));
-        assert_eq!(fs::read_to_string(folder.join("meta.json")).unwrap(), deleted.content);
+        assert_eq!(
+            fs::read_to_string(folder.join("meta.json")).unwrap(),
+            deleted.content
+        );
         fs::write(folder.join("idle.png"), b"external").unwrap();
-        assert_eq!(crate::rsi_restore::restore(&fixture.root, &restore_request).unwrap_err().code, "RSI_RESTORE_MANUAL_REQUIRED");
+        assert_eq!(
+            crate::rsi_restore::restore(&fixture.root, &restore_request)
+                .unwrap_err()
+                .code,
+            "RSI_RESTORE_MANUAL_REQUIRED"
+        );
         assert_eq!(fs::read(folder.join("idle.png")).unwrap(), b"external");
         assert!(archive.join("meta.json.before").exists());
     }

@@ -573,11 +573,13 @@ pub fn attach(root: &Path, request: &RsiStateImport) -> Result<ImportedRsiState,
     let state = states.remove(matches[0]);
     let directions = match state.get("directions") {
         None => 1,
-        Some(value) => value.as_u64().ok_or_else(|| issue(
-            "RSI_IMPORT_TIMING_INVALID",
-            "Некорректные направления.",
-            "Исправьте метаданные.",
-        ))?,
+        Some(value) => value.as_u64().ok_or_else(|| {
+            issue(
+                "RSI_IMPORT_TIMING_INVALID",
+                "Некорректные направления.",
+                "Исправьте метаданные.",
+            )
+        })?,
     };
     if !matches!(directions, 1 | 4 | 8) {
         return Err(issue(
@@ -1056,9 +1058,13 @@ mod tests {
         let path = fx.root.join(&fx.rel).join("meta.json");
         for value in [json!("4"), json!(null), json!(-1), json!(1.5), json!({})] {
             let meta = json!({"version": 1, "size": {"x": 1, "y": 1},
-                "states": [{"name": "idle", "directions": value}]}).to_string();
+                "states": [{"name": "idle", "directions": value}]})
+            .to_string();
             fs::write(&path, &meta).unwrap();
-            assert_eq!(attach(&fx.root, &fx.request()).unwrap_err().code, "RSI_IMPORT_TIMING_INVALID");
+            assert_eq!(
+                attach(&fx.root, &fx.request()).unwrap_err().code,
+                "RSI_IMPORT_TIMING_INVALID"
+            );
             assert_eq!(fs::read_to_string(&path).unwrap(), meta);
             assert!(!fx.root.join(&fx.rel).join("idle.png").exists());
         }

@@ -159,8 +159,13 @@ fn read_manifest(
         )
         .with_details(error.to_string())
     })?;
-    if !((manifest.format == FORMAT && manifest.original_png_revision.as_deref().is_some_and(valid_sha))
-        || (manifest.format == "ss14-studio-rsi-delete-backup-metadata-v1" && manifest.original_png_revision.is_none()))
+    if !((manifest.format == FORMAT
+        && manifest
+            .original_png_revision
+            .as_deref()
+            .is_some_and(valid_sha))
+        || (manifest.format == "ss14-studio-rsi-delete-backup-metadata-v1"
+            && manifest.original_png_revision.is_none()))
         || manifest.rsi != rsi_path
         || !valid_state(&manifest.state)
         || !archive_id.starts_with(&format!("deleted-{}-", manifest.state))
@@ -426,19 +431,37 @@ fn restore_with_save(
         "meta.json.before",
     )?;
     let png = if let Some(expected) = &manifest.original_png_revision {
-        let png = read_regular(&archive.join(format!("{}.png", manifest.state)), MAX_PNG_BYTES, "PNG")?;
+        let png = read_regular(
+            &archive.join(format!("{}.png", manifest.state)),
+            MAX_PNG_BYTES,
+            "PNG",
+        )?;
         if revision(&png) != *expected {
-            return Err(issue("RSI_RESTORE_ARCHIVE_CORRUPTED", "Контрольная сумма архивного PNG не совпадает.", "Проверьте архив."));
+            return Err(issue(
+                "RSI_RESTORE_ARCHIVE_CORRUPTED",
+                "Контрольная сумма архивного PNG не совпадает.",
+                "Проверьте архив.",
+            ));
         }
         Some(png)
     } else {
         match fs::symlink_metadata(archive.join(format!("{}.png", manifest.state))) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-            _ => return Err(issue("RSI_RESTORE_ARCHIVE_UNSAFE", "Архив метаданных содержит неожиданный PNG.", "Проверьте архив.")),
+            _ => {
+                return Err(issue(
+                    "RSI_RESTORE_ARCHIVE_UNSAFE",
+                    "Архив метаданных содержит неожиданный PNG.",
+                    "Проверьте архив.",
+                ))
+            }
         }
     };
     if revision(&original) != manifest.original_meta_revision {
-        return Err(issue("RSI_RESTORE_ARCHIVE_CORRUPTED", "Контрольная сумма архивных метаданных не совпадает.", "Проверьте архив."));
+        return Err(issue(
+            "RSI_RESTORE_ARCHIVE_CORRUPTED",
+            "Контрольная сумма архивных метаданных не совпадает.",
+            "Проверьте архив.",
+        ));
     }
     let updated = restored_metadata(&current, &original, &manifest.state)?;
     let png_path = folder.join(format!("{}.png", manifest.state));
