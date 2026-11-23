@@ -103,6 +103,7 @@ export default function App() {
   const [quickOpen, setQuickOpen] = useState(false);
   const [contentSearchOpen, setContentSearchOpen] = useState(false);
   const [contentSearchSeed, setContentSearchSeed] = useState('');
+  const projectGeneration = useRef(0);
   const [editorSettings, setEditorSettings] = useState(() => readEditorSettings(window.localStorage));
   const [localizationSettings, setLocalizationSettings] = useState(() => readLocalizationSettings(window.localStorage));
   useEffect(() => {
@@ -142,7 +143,26 @@ export default function App() {
   const [picking, setPicking] = useState(false);
   const [explorerMode, setExplorerMode] = useState<'files' | 'prototypes'>('files');
   const [workspaceRevision, setWorkspaceRevision] = useState(0);
-  const [jumpTarget, setJumpTarget] = useState<{ path: string; line: number; token: number } | null>(null);
+  const [jumpTarget, setJumpTargetState] = useState<{ path: string; line: number; token: number; interaction: number } | null>(null);
+  const interaction = useRef(0);
+  const navigationInteraction = useRef(0);
+  useEffect(() => {
+    const markInteraction = (event: Event) => {
+      interaction.current++;
+      if (event.type !== 'focusin') navigationInteraction.current++;
+    };
+    window.addEventListener('pointerdown', markInteraction, true);
+    window.addEventListener('keydown', markInteraction, true);
+    window.addEventListener('focusin', markInteraction, true);
+    return () => {
+      window.removeEventListener('pointerdown', markInteraction, true);
+      window.removeEventListener('keydown', markInteraction, true);
+      window.removeEventListener('focusin', markInteraction, true);
+    };
+  }, []);
+  const setJumpTarget = (target: { path: string; line: number; token: number } | null, at = interaction.current) => {
+    setJumpTargetState(target && { ...target, interaction: at });
+  };
   const jumpCounter = useRef(0);
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState<ResourceKind>('all');
@@ -151,7 +171,13 @@ export default function App() {
   const [page, setPage] = useState(0);
   const [results, setResults] = useState<ResourcePage>({ total: 0, items: [] });
   const [searching, setSearching] = useState(false);
-  const [tabState, setTabState] = useState<TabState>({ tabs: [], active: null });
+  const [tabState, setTabStateValue] = useState<TabState>({ tabs: [], active: null });
+  const tabStateRef = useRef(tabState);
+  const setTabState = (update: TabState | ((state: TabState) => TabState)) => {
+    const next = typeof update === 'function' ? update(tabStateRef.current) : update;
+    tabStateRef.current = next;
+    setTabStateValue(next);
+  };
   const selected = tabState.tabs.find((tab) => tabId(tab) === tabState.active) ?? null;
   const documents = useRef(new Map<string, ResourceDocument>());
   const [document, setDocument] = useState<ResourceDocument | null>(null);
@@ -208,6 +234,7 @@ export default function App() {
   // Resolve persisted/indexed locators against the actual shared draft, never an old line number.
   const lastPrototypeJump = useRef<string | null>(null);
   const lastPrototypeTab = useRef<string | null>(null);
+  const prototypeInteraction = useRef(interaction.current);
   const [prototypeJumpRequest, setPrototypeJumpRequest] = useState(0);
   const [outlineJump, setOutlineJump] = useState<{ tab: string; key: string; line: number; token: number } | null>(null);
   useEffect(() => {
@@ -223,6 +250,7 @@ export default function App() {
     }
     const id = tabId(selected);
     let cancelled = false;
+    const jumpInteraction = prototypeInteraction.current;
     void studio.inspectYamlOutline(target.file, activeText).then((outline) => {
       if (cancelled) return;
       const match = resolvePrototypeTab(outline.declarations, target, outline.truncated);
@@ -239,7 +267,7 @@ export default function App() {
         const token = ++jumpCounter.current;
         setOutlineJump({ tab: id, key: outlineDeclarationKey(match), line: match.line, token });
         setYamlCursor({ path: target.file, line: match.line });
-        setJumpTarget({ path: target.file, line: match.line, token });
+        setJumpTarget({ path: target.file, line: match.line, token }, jumpInteraction);
       }
     }).catch((failure) => { if (!cancelled) setError(normalizeStudioError(failure)); });
     return () => { cancelled = true; };
@@ -423,6 +451,8 @@ export default function App() {
   }, [overview?.project_root, opening, query, kind, fileView, explorerMode, prototypeQuery, prototypeKind]);
 
   async function loadProject(requestedPath: string) {
+    projectGeneration.current++;
+    const projectInteraction = interaction.current;
     setCreatingPrototype(false);
     setCreatingFluent(false);
     setCreatingRsi(false);
@@ -482,6 +512,7 @@ export default function App() {
       setPendingAction(null);
       setOverview(next);
       setResults({ total: 0, items: [] });
+      prototypeInteraction.current = projectInteraction;
       setTabState(restored);
       setDriftReport(null);
       autoRefreshHandled.current = 0;
@@ -783,7 +814,11 @@ export default function App() {
     setDrafts((previous) => ({
       ...previous, [snapshot.path]: snapshot.content,
     }));
-    if (tabState.active !== result.state.active) setFieldTarget(null);
+    if (tabState.active !== result.state.active) {
+      setFieldTarget(null);
+      setJumpTarget(null);
+      prototypeInteraction.current = interaction.current;
+    }
     setTabState(result.state);
     void focusResource(snapshot.path);
     setNotice('Черновик восстановлен в редактор. Исходный YAML пока не изменён.');
@@ -853,6 +888,10 @@ export default function App() {
     const closing = tabState.tabs.find((tab) => tabId(tab) === action.path);
     if (!closing) return;
     const next = closeTab(tabState, action.path);
+    if (next.active !== tabState.active) {
+      setJumpTarget(null);
+      prototypeInteraction.current = interaction.current;
+    }
     setTabState(next);
     if (!next.tabs.some((tab) => tab.path === closing.path)) {
       documents.current.delete(closing.path);
@@ -1033,7 +1072,8 @@ export default function App() {
       setRsiRequested(preferredRsiState === undefined ? null : { path: item.path, state: preferredRsiState });
     }
     if (selectedPathRef.current !== item.path) closeComparison();
-    const outcome = openTab(tabState, item);
+    const currentTabs = tabStateRef.current;
+    const outcome = openTab(currentTabs, item);
     if (!outcome.ok) {
       setError({
         code: 'TAB_LIMIT_REACHED',
@@ -1042,25 +1082,37 @@ export default function App() {
       });
       return false;
     }
-    if (tabState.active !== tabId(item)) setFieldTarget(null);
+    if (currentTabs.active !== tabId(item)) {
+      setFieldTarget(null);
+      setJumpTarget(null);
+      prototypeInteraction.current = interaction.current;
+    }
     setTabState(outcome.state);
-    if (tabState.active !== tabId(item) || (!document && !reading)) {
+    if (currentTabs.active !== tabId(item) || (!document && !reading)) {
       void focusResource(item.path);
     }
     return true;
   }
 
+  const prototypeNavigationVersion = useRef(0);
   async function navigatePrototypeIdentifier(identifier: string, sourcePath: string, kindFilter = '') {
     if (!overview || opening || saving || refreshing || transitioning) return;
     const root = overview.project_root;
+    const navigationFocus = interaction.current;
+    const navigationIntent = navigationInteraction.current;
+    const sourceTab = tabStateRef.current.active;
+    const request = ++prototypeNavigationVersion.current;
+    const current = () => request === prototypeNavigationVersion.current
+      && navigationInteraction.current === navigationIntent && tabStateRef.current.active === sourceTab
+      && selectedPathRef.current === sourcePath && projectRootRef.current === root;
     try {
       const result = await studio.searchPrototypes(identifier, kindFilter, 0, 100);
-      if (selectedPathRef.current !== sourcePath || projectRootRef.current !== root) return;
+      if (!current()) return;
       const exact = result.items.filter((item) => item.id === identifier
         && (!kindFilter || item.kind === kindFilter));
       // Partial, generated variants and duplicate IDs require explicit choice.
       if (exact.length === 1 && result.total <= 100) {
-        openPrototypeSource(exact[0].file, exact[0].line, exact[0]);
+        openPrototypeSource(exact[0].file, exact[0].line, exact[0], navigationFocus);
       } else {
         setContentSearchSeed(identifier);
         setQuickOpen(false);
@@ -1069,7 +1121,7 @@ export default function App() {
           + '» не найдено. Выберите нужный исходник в поиске по содержимому.');
       }
     } catch (failure) {
-      if (selectedPathRef.current === sourcePath && projectRootRef.current === root) {
+      if (current()) {
         setError(normalizeStudioError(failure));
       }
     }
@@ -1090,14 +1142,17 @@ export default function App() {
     }
   }
 
-  function openPrototypeSource(file: string, line: number, entry?: PrototypeDeclaration): boolean {
+  function openPrototypeSource(file: string, line: number, entry?: PrototypeDeclaration, at = interaction.current): boolean {
     setShowYamlOutline(true);
     const opened = openResource({ path: file, kind: 'yaml', ...(entry ? { prototype: { file, kind: entry.kind, id: entry.id, document_index: entry.document_index, item_index: entry.item_index, variant_index: entry.variant_index, mode: entry.mode } } : {}) });
     if (!opened) return false;
     if (!entry) {
       setYamlCursor({ path: file, line });
-      setJumpTarget({ path: file, line, token: ++jumpCounter.current });
-    } else setPrototypeJumpRequest((request) => request + 1);
+      setJumpTarget({ path: file, line, token: ++jumpCounter.current }, at);
+    } else {
+      prototypeInteraction.current = at;
+      setPrototypeJumpRequest((request) => request + 1);
+    }
     return true;
   }
 
@@ -1261,6 +1316,8 @@ export default function App() {
   function selectTab(path: string) {
     if (saving || transitioning || opening || refreshing || tabState.active === path) return;
     setFieldTarget(null);
+    setJumpTarget(null);
+    prototypeInteraction.current = interaction.current;
     closeComparison();
     setTabState((state) => ({ ...state, active: path }));
     const tab = tabState.tabs.find((item) => tabId(item) === path);
@@ -1479,10 +1536,31 @@ export default function App() {
       : 'FTL создан: ' + created.file + '. Редактор готов для дальнейшей работы.');
   }
 
-  function openContentHit(hit: ContentSearchHit) {
-    setContentSearchOpen(false);
-    setJumpTarget({ path: hit.path, line: hit.line, token: ++jumpCounter.current });
-    openResource({ path: hit.path, kind: hit.kind });
+  async function openContentHit(hit: ContentSearchHit, signal: AbortSignal): Promise<boolean> {
+    if (!overview || saving || transitioning || opening || refreshing) return false;
+    const item = { path: hit.path, kind: hit.kind };
+    if (!openTab(tabStateRef.current, item).ok) return openResource(item);
+    const root = overview.project_root;
+    const generation = projectGeneration.current;
+    const sourceTabs = tabStateRef.current;
+    const navigationFocus = interaction.current;
+    const current = () => !signal.aborted && projectGeneration.current === generation
+      && projectRootRef.current === root && tabStateRef.current === sourceTabs;
+    let loaded = documents.current.get(hit.path);
+    if (!loaded) {
+      try { loaded = await studio.readResource(hit.path, root); }
+      catch (failure) { if (current()) throw failure; return false; }
+    }
+    if (!current()) return false;
+    if (!documents.current.has(hit.path)) documents.current.set(hit.path, loaded);
+    if (!openResource(item)) return false;
+    const content = documents.current.get(hit.path)!.content;
+    setDrafts((previous) => previous[hit.path] === undefined
+      ? { ...previous, [hit.path]: content } : previous);
+    // Invalidate any earlier in-flight read of the same tab as well.
+    void focusResource(hit.path);
+    setJumpTarget({ path: hit.path, line: hit.line, token: ++jumpCounter.current }, navigationFocus);
+    return true;
   }
 
   return <div className="app">
@@ -1804,8 +1882,9 @@ export default function App() {
                 path: selected.path, line, token: ++jumpCounter.current,
               })}
               onRevealSource={(file, line) => {
-                setJumpTarget({ path: file, line, token: ++jumpCounter.current });
-                openResource({ path: file, kind: 'ftl' });
+                if (openResource({ path: file, kind: 'ftl' })) {
+                  setJumpTarget({ path: file, line, token: ++jumpCounter.current });
+                }
               }}/>} 
           {fieldTarget && selected.kind === 'yaml' && selected.path === fieldTarget.file
             && document?.path === selected.path && !reading && (prototypePanel === 'fields'
@@ -1882,7 +1961,9 @@ export default function App() {
                 setDrafts(next);
               } : undefined}
               revealLine={jumpTarget?.path === selected.path ? jumpTarget.line : undefined}
-              jumpToken={jumpTarget?.path === selected.path ? jumpTarget.token : 0}/> :
+              jumpToken={jumpTarget?.path === selected.path ? jumpTarget.token : 0}
+              shouldFocusJump={() => jumpTarget?.interaction === interaction.current}
+              onJumpConsumed={(token) => setJumpTargetState((current) => current?.token === token ? null : current)}/> :
               <div className="placeholder">Не удалось открыть ресурс. Объяснение ошибки показано выше.</div>}
         </> : <div className="placeholder"><FileCode2 size={44} strokeWidth={1.2}/><h2>Выбери ресурс слева</h2><p>Здесь откроется его исходный текст.</p></div>}
       </section>
@@ -1891,8 +1972,9 @@ export default function App() {
       opening={opening} refreshing={refreshing} dirtyCount={dirtyPaths.length}
       notice={notice} error={error} revision={workspaceRevision}
       onOpenIssue={(file, line) => {
-        setJumpTarget({ path: file, line, token: ++jumpCounter.current });
-        void openResource({ path: file, kind: 'yaml' });
+        if (openResource({ path: file, kind: 'yaml' })) {
+          setJumpTarget({ path: file, line, token: ++jumpCounter.current });
+        }
       }}/>
   </div>;
 }

@@ -5,7 +5,7 @@ import { normalizeStudioError } from '../lib/errors';
 
 interface Props {
   onClose: () => void;
-  onOpen: (hit: ContentSearchHit) => void;
+  onOpen: (hit: ContentSearchHit, signal: AbortSignal) => Promise<boolean>;
   initialQuery?: string;
 }
 
@@ -17,14 +17,17 @@ export default function ContentSearchPanel({ onClose, onOpen, initialQuery = '' 
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const openingHit = useRef(false);
+  const openRequest = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     inputRef.current?.focus();
-    return () => { previous?.focus(); };
+    return () => { openRequest.current?.abort(); if (!openingHit.current) previous?.focus(); };
   }, []);
 
   useEffect(() => {
+    openRequest.current?.abort();
     let active = true;
     if (query.trim().length < 2) {
       setResults(null);
@@ -53,13 +56,31 @@ export default function ContentSearchPanel({ onClose, onOpen, initialQuery = '' 
   }, [query, kind]);
 
   const items = !busy ? results?.items ?? [] : [];
-  function open(hit: ContentSearchHit) {
+  function close() {
+    openRequest.current?.abort();
     onClose();
-    onOpen(hit);
+  }
+  async function open(hit: ContentSearchHit) {
+    openRequest.current?.abort();
+    const request = new AbortController();
+    openRequest.current = request;
+    try {
+      const opened = await onOpen(hit, request.signal);
+      if (request.signal.aborted) return;
+      if (opened) {
+        openingHit.current = true;
+        onClose();
+      } else inputRef.current?.focus();
+    } catch (failure) {
+      if (request.signal.aborted) return;
+      const detail = normalizeStudioError(failure);
+      setError(detail.message + ' ' + detail.hint);
+      inputRef.current?.focus();
+    }
   }
 
   return <div className="content-search-backdrop" onMouseDown={(event) => {
-    if (event.target === event.currentTarget) onClose();
+    if (event.target === event.currentTarget) close();
   }}>
     <section className="content-search-modal" role="dialog" aria-modal="true"
       aria-label="Поиск по содержимому проекта"
@@ -67,7 +88,7 @@ export default function ContentSearchPanel({ onClose, onOpen, initialQuery = '' 
         if (event.key === 'Escape') {
           event.preventDefault();
           event.stopPropagation();
-          onClose();
+          close();
         } else if (event.key === 'ArrowDown') {
           event.preventDefault();
           setSelected((i) => Math.min(items.length - 1, i + 1));
@@ -83,15 +104,15 @@ export default function ContentSearchPanel({ onClose, onOpen, initialQuery = '' 
         <Search size={18}/>
         <input type="search" value={query} ref={inputRef} autoComplete="off"
           aria-label="Текст для поиска в файлах" placeholder="Поиск текста в YAML, FTL, RSI…"
-          onChange={(event) => setQuery(event.target.value)}/>
+          onChange={(event) => { openRequest.current?.abort(); setQuery(event.target.value); }}/>
         <select value={kind} aria-label="Тип файлов"
-          onChange={(event) => setKind(event.target.value as ResourceKind)}>
+          onChange={(event) => { openRequest.current?.abort(); setKind(event.target.value as ResourceKind); }}>
           <option value="all">Все</option>
           <option value="yaml">YAML</option>
           <option value="ftl">FTL</option>
           <option value="rsi">RSI</option>
         </select>
-        <button type="button" aria-label="Закрыть поиск" onClick={onClose}><X size={18}/></button>
+        <button type="button" aria-label="Закрыть поиск" onClick={close}><X size={18}/></button>
       </header>
       <div className="content-search-info">
         {busy ? 'Ищу по файлам…' :

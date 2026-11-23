@@ -6,7 +6,7 @@ import { componentHoverMarkdown } from './component-hover';
 import { yamlLocaleClickField } from './yaml-locale-navigation';
 import { missingEntityLocaleUnderlines } from './yaml-locale-markers';
 import type { EditorSettings } from '../lib/editor-settings';
-import { identifierAtColumn } from '../lib/editor-navigation';
+import { consumeEditorJump, identifierAtColumn, revealEditorLine } from '../lib/editor-navigation';
 
 interface Props {
   settings: EditorSettings;
@@ -14,6 +14,8 @@ interface Props {
   document: ResourceDocument;
   revealLine?: number;
   jumpToken?: number;
+  shouldFocusJump: () => boolean;
+  onJumpConsumed: (token: number) => void;
   value: string;
   editable: boolean;
   onChange?: (value: string) => void;
@@ -28,10 +30,19 @@ interface Props {
  * Lazy-loads Monaco only when a resource is opened, and disposes the model,
  * workers' consumers and editor on tab switch/unmount.
  */
-export default function MonacoPreview({ resource, document, revealLine, jumpToken, value, editable, onChange, onNavigateIdentifier, onNavigateRsi, onNavigateLocalization, onCursorLineChange, gameLocales = [], settings }: Props) {
+export default function MonacoPreview({ resource, document, revealLine, jumpToken, shouldFocusJump, onJumpConsumed, value, editable, onChange, onNavigateIdentifier, onNavigateRsi, onNavigateLocalization, onCursorLineChange, gameLocales = [], settings }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const editorRef = useRef<{ revealLineInCenter(line: number): void; setPosition(position: { lineNumber: number; column: number }): void } | null>(null);
-  const latestJump = useRef(revealLine);
+  const editorRef = useRef<Parameters<typeof revealEditorLine>[0] | null>(null);
+  const latestJump = useRef({ revealLine, jumpToken, shouldFocusJump, onJumpConsumed });
+  latestJump.current = { revealLine, jumpToken, shouldFocusJump, onJumpConsumed };
+  const consumedJump = useRef(0);
+  const applyJump = (editor: Parameters<typeof revealEditorLine>[0]) => {
+    const jump = latestJump.current;
+    consumeEditorJump(editor, {
+      line: jump.revealLine, token: jump.jumpToken,
+      shouldFocus: jump.shouldFocusJump, consume: jump.onJumpConsumed,
+    }, consumedJump);
+  };
   const contentRef = useRef<{ getValue(): string; setValue(value: string): void } | null>(null);
   const updateOptionsRef = useRef<{ updateOptions(value: {
     readOnly?: boolean; domReadOnly?: boolean; fontSize?: number; tabSize?: number;
@@ -93,11 +104,7 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    latestJump.current = revealLine;
-    if (revealLine && editorRef.current) {
-      editorRef.current.revealLineInCenter(revealLine);
-      editorRef.current.setPosition({ lineNumber: revealLine, column: 1 });
-    }
+    if (editorRef.current) applyJump(editorRef.current);
   }, [revealLine, jumpToken]);
 
   useEffect(() => {
@@ -344,10 +351,7 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
             scheduleLocaleCheck();
             if (resource.kind === 'yaml') onCursorLineChangeRef.current?.(event.position.lineNumber);
           });
-          if (latestJump.current) {
-            editor.revealLineInCenter(latestJump.current);
-            editor.setPosition({ lineNumber: latestJump.current, column: 1 });
-          }
+          applyJump(editor);
           if (resource.kind === 'yaml') {
             onCursorLineChangeRef.current?.(editor.getPosition()?.lineNumber ?? 1);
           }

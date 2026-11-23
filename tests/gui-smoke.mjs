@@ -78,6 +78,199 @@ try {
   await keys(path, process.env.SMOKE_PROJECT);
   await click('.project-bar button[type=submit]');
   await click('.resource-row[title="Resources/Prototypes/smoke.yml"]');
+  await until('editor before focus checks', () => find('.monaco-shell textarea.inputarea'));
+
+  // Resolve two Ctrl-click searches in reverse order; the older result must not win.
+  await script(`
+    const original = window.__TAURI_INTERNALS__.invoke;
+    window.__navigationGate = { held: false, settled: false, release: null };
+    window.__TAURI_INTERNALS__.invoke = function(command, args, ...rest) {
+      if (command === 'search_prototypes' && args.query === 'SmokeSecond' && !window.__navigationGate.held) {
+        window.__navigationGate.held = true;
+        return new Promise((resolve, reject) => { window.__navigationGate.release = () =>
+          original.call(this, command, args, ...rest).then(value => {
+            resolve(value); setTimeout(() => { window.__navigationGate.settled = true; }, 0);
+          }, reject); });
+      }
+      return original.call(this, command, args, ...rest);
+    };
+  `);
+  const ctrlClickWord = async (word) => script(`
+    const lines = [...document.querySelectorAll('.monaco-shell .view-line')];
+    const line = lines.find(el => el.textContent.includes(${JSON.stringify(word)}));
+    const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+    let node; while ((node = walker.nextNode()) && !node.textContent.includes(${JSON.stringify(word)})) {}
+    const range = document.createRange();
+    const offset = node.textContent.indexOf(${JSON.stringify(word)});
+    range.setStart(node, offset); range.setEnd(node, offset + ${word.length});
+    const rect = range.getBoundingClientRect();
+    const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
+    document.elementFromPoint(x, y).dispatchEvent(new MouseEvent('mousedown',
+      { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: 1, ctrlKey: true }));
+  `);
+  await ctrlClickWord('SmokeSecond');
+  await until('first prototype search held', () => script('return window.__navigationGate.held;'));
+  await ctrlClickWord('SmokeFirst');
+  await until('newer prototype selected', () => find('[role=tab][data-prototype-id="SmokeFirst"][aria-selected=true]'));
+  await script('window.__navigationGate.release();');
+  await until('older prototype search settled', () => script('return window.__navigationGate.settled;'));
+  assert.ok(await find('[role=tab][data-prototype-id="SmokeFirst"][aria-selected=true]'), 'older search must not override newer navigation');
+  assert.equal(await find('[role=tab][data-prototype-id="SmokeSecond"]'), undefined, 'older search must not open a tab');
+  await click('.tab[data-prototype-id="SmokeFirst"] .tab-close');
+  await click('[role=tab][title="Resources/Prototypes/smoke.yml"]');
+
+  // Hold the actual IPC response so interaction occurs while the document is loading.
+  await click('[data-testid=folder-view]');
+  await click('.resource-tree-row[title="Resources/Prototypes"]');
+  await click('.resource-tree-toggle[data-resource-path="Resources/Prototypes/focus.yml"]');
+  await until('focus prototype outline loaded', () => find('[data-testid=tree-prototype][data-prototype-id="FocusDelayed"]'));
+  await script(`
+    const original = window.__TAURI_INTERNALS__.invoke;
+    window.__focusGate = { held: false, release: null };
+    window.__TAURI_INTERNALS__.invoke = function(command, args, ...rest) {
+      if (command === 'read_resource' && args.path === 'Resources/Prototypes/focus.yml' && !window.__focusGate.held) {
+        window.__focusGate.held = true;
+        return new Promise((resolve, reject) => { window.__focusGate.release = () => original.call(this, command, args, ...rest).then(resolve, reject); });
+      }
+      return original.call(this, command, args, ...rest);
+    };
+  `);
+  await click('[data-testid=tree-prototype][data-prototype-id="FocusDelayed"]');
+  await until('held document read', () => script('return window.__focusGate.held;'));
+  await click('#project-path');
+  await script('window.__focusGate.release();');
+  await until('delayed prototype loaded', () => script("return document.querySelector('.monaco-shell .view-lines')?.textContent?.includes('FocusDelayed');"));
+  await until('prototype jump applied', () => script(`
+    const selected = document.querySelector('.prototype-outline-item.active b');
+    const cursor = document.querySelector('.monaco-shell .cursors-layer .cursor');
+    return selected?.textContent === 'FocusDelayed' && parseFloat(cursor?.style.top) > 0;
+  `));
+  assert.equal(await script('return document.activeElement?.id;'), 'project-path', 'delayed prototype must not steal later focus');
+
+  // Escape restores the original focus; opening a search hit transfers it to Monaco.
+  await keys(await find('#project-path'), '\uE009\uE008f\uE000');
+  const search = await until('content search', () => find('.content-search-modal input[type=search]'));
+  await keys(search, '\uE00C');
+  await until('search closed', async () => !(await find('.content-search-modal')));
+  assert.equal(await script('return document.activeElement?.id;'), 'project-path', 'dismissing search restores focus');
+  await keys(await find('#project-path'), '\uE009\uE008f\uE000');
+  await keys(await until('content search reopened', () => find('.content-search-modal input[type=search]')), 'FocusNeedle');
+  await until('content hit', () => find('.content-search-list [role=option]'));
+  await click('.content-search-list [role=option]');
+  await until('search result focused', () => script("return document.activeElement?.matches('.monaco-shell textarea.inputarea');"));
+
+  // A rejected open must keep the search and its keyboard focus intact.
+  for (let i = 1; i <= 9; i++) {
+    await click(`.resource-tree-filename[title="Resources/Prototypes/filler${i}.yml"]`);
+    await until('filler tab opened', () => find(`[role=tab][title="Resources/Prototypes/filler${i}.yml"]`));
+  }
+  await keys(await find('#project-path'), '\uE009\uE008f\uE000');
+  await keys(await until('search at tab limit', () => find('.content-search-modal input[type=search]')), 'SmokeSecond');
+  await until('tab limit search hit', () => find('.content-search-list [role=option]'));
+  await until('unopened result', () => script(`
+    const hit = [...document.querySelectorAll('.content-search-list [role=option]')]
+      .find(el => el.textContent.includes('Resources/Prototypes/tabs.yml'));
+    if (!hit) return false; hit.click(); return true;
+  `));
+  assert.ok(await find('.content-search-modal'), 'failed open must not close search');
+  assert.ok(await script("return document.activeElement?.matches('.content-search-modal input[type=search]');"), 'failed open restores search focus');
+  await keys(await find('.content-search-modal input[type=search]'), '\uE00C');
+  for (let i = 1; i <= 9; i++) {
+    await click(`.tab:has([role=tab][title="Resources/Prototypes/filler${i}.yml"]) .tab-close`);
+    await until('filler tab closed', async () => !(await find(`[role=tab][title="Resources/Prototypes/filler${i}.yml"]`)));
+  }
+
+  // A delayed read failure must leave the query and results intact.
+  await script(`
+    const original = window.__TAURI_INTERNALS__.invoke;
+    window.__failureGate = { held: false, fail: null };
+    window.__TAURI_INTERNALS__.invoke = function(command, args, ...rest) {
+      if (command === 'read_resource_bound' && args.path === 'Resources/Prototypes/tabs.yml' && !window.__failureGate.held) {
+        window.__failureGate.held = true;
+        window.__failureGate.root = args.expectedProjectRoot;
+        return new Promise((resolve, reject) => { window.__failureGate.fail = () => reject(new Error('delayed read failed')); });
+      }
+      return original.call(this, command, args, ...rest);
+    };
+  `);
+  await keys(await find('#project-path'), '\uE009\uE008f\uE000');
+  await keys(await until('search for failed read', () => find('.content-search-modal input[type=search]')), 'SmokeSecond');
+  await until('failed read hit', () => script(`
+    const hit = [...document.querySelectorAll('.content-search-list [role=option]')]
+      .find(el => el.textContent.includes('Resources/Prototypes/tabs.yml'));
+    if (!hit) return false; hit.click(); return true;
+  `));
+  await until('read held before failure', () => script('return window.__failureGate.held;'));
+  assert.ok(await script('return window.__failureGate.root;'), 'search read must be project-bound');
+  await script('window.__failureGate.fail();');
+  await until('failure shown in search', () => find('.content-search-modal [role=alert]'));
+  assert.equal(await script("return document.querySelector('.content-search-modal input').value;"), 'SmokeSecond');
+  assert.ok(await find('.content-search-list [role=option]'), 'failed read retains results');
+  assert.equal(await find('[role=tab][title="Resources/Prototypes/tabs.yml"]'), undefined, 'failed read opens no tab');
+  await script(`
+    const original = window.__TAURI_INTERNALS__.invoke;
+    window.__staleFailure = { held: false, fail: null };
+    window.__TAURI_INTERNALS__.invoke = function(command, args, ...rest) {
+      if (command === 'read_resource_bound' && args.path === 'Resources/Prototypes/tabs.yml' && !window.__staleFailure.held) {
+        window.__staleFailure.held = true;
+        window.__staleFailure.root = args.expectedProjectRoot;
+        return new Promise((resolve, reject) => { window.__staleFailure.fail = () => reject(new Error('stale failure')); });
+      }
+      return original.call(this, command, args, ...rest);
+    };
+  `);
+  await until('retry hit', () => script(`
+    const hit = [...document.querySelectorAll('.content-search-list [role=option]')]
+      .find(el => el.textContent.includes('Resources/Prototypes/tabs.yml'));
+    if (!hit) return false; hit.click(); return true;
+  `));
+  await until('retry held', () => script('return window.__staleFailure.held;'));
+  assert.ok(await script('return window.__staleFailure.root;'), 'retry read must be project-bound');
+  await keys(await find('.content-search-modal input[type=search]'), 'x');
+  await until('new query settled', () => script("return document.querySelector('.content-search-list')?.getAttribute('aria-busy') === 'false';"));
+  await script('window.__staleFailure.fail();');
+  assert.equal(await find('.content-search-modal [role=alert]'), undefined, 'stale failure must not replace newer search');
+  assert.equal(await find('[role=tab][title="Resources/Prototypes/tabs.yml"]'), undefined, 'stale request opens no tab');
+  await keys(await find('.content-search-modal input[type=search]'), '\uE00C');
+
+  // Delay another read, dismiss search before it resolves; it must not open a tab.
+  await click('[role=tab][title="Resources/Prototypes/smoke.yml"]');
+  await until('smoke editor restored', () => find('.monaco-shell textarea.inputarea'));
+  await script(`
+    const original = window.__TAURI_INTERNALS__.invoke;
+    window.__switchGate = { held: false, settled: false, release: null };
+    window.__TAURI_INTERNALS__.invoke = function(command, args, ...rest) {
+      if (command === 'read_resource_bound' && args.path === 'Resources/Prototypes/tabs.yml' && !window.__switchGate.held) {
+        window.__switchGate.held = true;
+        window.__switchGate.root = args.expectedProjectRoot;
+        return new Promise((resolve, reject) => { window.__switchGate.release = () => original.call(this, command, args, ...rest).then(value => { resolve(value); setTimeout(() => { window.__switchGate.settled = true; }, 0); }, reject); });
+      }
+      return original.call(this, command, args, ...rest);
+    };
+  `);
+  await keys(await find('.monaco-shell textarea.inputarea'), '\uE009\uE008f\uE000');
+  await keys(await until('search for pending jump', () => find('.content-search-modal input[type=search]')), 'SmokeSecond');
+  await until('pending search hit', () => find('.content-search-list [role=option]'));
+  await until('pending tabs result', () => script(`
+    const hit = [...document.querySelectorAll('.content-search-list [role=option]')]
+      .find(el => el.textContent.includes('Resources/Prototypes/tabs.yml'));
+    if (!hit) return false; hit.click(); return true;
+  `));
+  await until('held tab read', () => script('return window.__switchGate.held;'));
+  assert.ok(await script('return window.__switchGate.root;'), 'pending search read must be project-bound');
+  await keys(await find('.content-search-modal input[type=search]'), '\uE00C');
+  await until('pending search dismissed', async () => !(await find('.content-search-modal')));
+  await script('window.__switchGate.release();');
+  await until('cancelled read settled', () => script('return window.__switchGate.settled;'));
+  assert.equal(await find('[role=tab][title="Resources/Prototypes/tabs.yml"]'), undefined, 'cancelled read opens no tab');
+  await click('.resource-tree-filename[title="Resources/Prototypes/tabs.yml"]');
+  await click('[role=tab][title="Resources/Prototypes/tabs.yml"]');
+  await until('returned prototype loaded', () => script("return document.querySelector('.monaco-shell .view-lines')?.textContent?.includes('SmokeSecond');"));
+  await until('returned editor cursor', () => find('.monaco-shell .cursors-layer .cursor'));
+  assert.equal(await script("return document.querySelector('.monaco-shell .cursors-layer .cursor').style.top;"), '0px', 'abandoned jump must not reveal its old line');
+  assert.equal(await script("return document.activeElement?.matches('.monaco-shell textarea.inputarea');"), false, 'abandoned jump must not focus the editor');
+  await click('[role=tab][title="Resources/Prototypes/smoke.yml"]');
+  await click('.explorer-switch button:first-child');
   await edit(saved, 'SmokeSaved');
   await click('[data-testid=save-resource]');
   try {
