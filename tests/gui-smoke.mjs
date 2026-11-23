@@ -83,7 +83,12 @@ try {
   // Resolve two Ctrl-click searches in reverse order; the older result must not win.
   await script(`
     const original = window.fetch;
-    window.__navigationGate = { held: false, settled: false, release: null, searches: [], clicks: [] };
+    window.__navigationGate = { held: false, settled: false, release: null, searches: [], clicks: [], positions: [] };
+    window.addEventListener('studio-monaco-navigation', event => window.__navigationGate.positions.push(event.detail));
+    const style = document.createElement('style');
+    style.id = 'navigation-smoke-style';
+    style.textContent = '.prototype-outline, .yaml-diagnostics { display: none !important; }';
+    document.head.appendChild(style);
     window.fetch = function(url, options) {
       if (!String(url).startsWith('ipc:')) return original.call(this, url, options);
       const command = decodeURIComponent(new URL(url).pathname.slice(1));
@@ -99,7 +104,8 @@ try {
       return original.call(this, url, options);
     };
   `);
-  const ctrlClickWord = async (word) => script(`
+  const ctrlClickWord = async (word) => {
+    const point = await script(`
     const lines = [...document.querySelectorAll('.monaco-shell .view-line')];
     const line = lines.find(el => el.textContent.includes(${JSON.stringify(word)}));
     line.scrollIntoView({ block: 'center', inline: 'nearest' });
@@ -112,11 +118,14 @@ try {
     const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
     const target = document.elementFromPoint(x, y);
     window.__navigationGate.clicks.push({ word: ${JSON.stringify(word)}, rect: rect.toJSON(), target: target?.outerHTML });
-    target.dispatchEvent(new MouseEvent('mousedown',
-      { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: 1, ctrlKey: true }));
-    target.dispatchEvent(new MouseEvent('mouseup',
-      { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: 0, ctrlKey: true }));
+    return { x: Math.round(x), y: Math.round(y) };
   `);
+    await call('POST', '/actions', { actions: [
+      { type: 'key', id: 'keyboard', actions: [{ type: 'keyDown', value: '\uE009' }, { type: 'pause' }, { type: 'pause' }, { type: 'keyUp', value: '\uE009' }] },
+      { type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions: [{ type: 'pointerMove', duration: 0, x: point.x, y: point.y, origin: 'viewport' }, { type: 'pointerDown', button: 0 }, { type: 'pointerUp', button: 0 }, { type: 'pause' }] },
+    ] });
+    await call('DELETE', '/actions');
+  };
   await ctrlClickWord('SmokeSecond');
   try {
     await until('first prototype search held', () => script('return window.__navigationGate.held;'));
@@ -124,7 +133,7 @@ try {
     console.error('Navigation diagnostic:', await script(`
       const line = [...document.querySelectorAll('.monaco-shell .view-line')].find(el => el.textContent.includes('SmokeSecond'));
       const rect = line?.getBoundingClientRect();
-      return JSON.stringify({ line: line?.textContent, rect: rect?.toJSON(),
+      return JSON.stringify({ gate: window.__navigationGate, line: line?.textContent, rect: rect?.toJSON(),
         target: rect && document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)?.outerHTML,
         state: document.body.innerText });
     `));
@@ -141,6 +150,8 @@ try {
   await until('older prototype search settled', () => script('return window.__navigationGate.settled;'));
   assert.ok(await find('[role=tab][data-prototype-id="SmokeFirst"][aria-selected=true]'), 'older search must not override newer navigation');
   assert.equal(await find('[role=tab][data-prototype-id="SmokeSecond"]'), undefined, 'older search must not open a tab');
+  console.log('Navigation diagnostic:', await script('return JSON.stringify(window.__navigationGate);'));
+  await script("document.getElementById('navigation-smoke-style').remove();");
   await click('.tab[data-prototype-id="SmokeFirst"] .tab-close');
   await click('[role=tab][title="Resources/Prototypes/smoke.yml"]');
 

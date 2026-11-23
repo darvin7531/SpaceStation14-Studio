@@ -257,6 +257,7 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
             if (!settingsRef.current.ctrlClickNavigation) return;
             if (!(event.event.ctrlKey || event.event.metaKey) || !event.event.leftButton) return;
             const position = event.target.position;
+            window.dispatchEvent(new CustomEvent('studio-monaco-navigation', { detail: { position, target: event.target.type } }));
             if (!position) return;
             const line = model.getLineContent(position.lineNumber);
             if (resource.kind === 'yaml' && onNavigateRsiRef.current) {
