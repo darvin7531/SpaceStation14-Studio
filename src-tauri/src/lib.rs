@@ -1130,7 +1130,7 @@ async fn preview_new_prototype(
     let project = current_project(&state)?;
     tauri::async_runtime::spawn_blocking(move || {
         if external.unwrap_or(false) {
-            prototype_create::preview(&draft)
+            prototype_create::preview_external(&draft)
         } else {
             project.preview_new_prototype(&draft)
         }

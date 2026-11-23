@@ -207,6 +207,16 @@ pub fn preview(draft: &PrototypeDraft) -> Result<PrototypePreview, StudioError> 
     })
 }
 
+pub fn preview_external(draft: &PrototypeDraft) -> Result<PrototypePreview, StudioError> {
+    let mut preview = preview(draft)?;
+    if !draft.sprite.is_empty() {
+        preview
+            .warnings
+            .push("RSI не проверяется на существование при создании вне проекта.".into());
+    }
+    Ok(preview)
+}
+
 fn validate_target(path: &str) -> Result<(), StudioError> {
     let invalid_path = || {
         invalid(
@@ -583,6 +593,24 @@ mod tests {
             create(&fixture.0, &draft).unwrap_err().code,
             "PROTOTYPE_FILE_EXISTS"
         );
+    }
+
+    #[test]
+    fn external_preview_warns_about_unchecked_rsi() {
+        let fixture = Fixture::new();
+        let mut draft = fixture.draft("ExternalItem");
+        assert!(preview_external(&draft).unwrap().warnings.is_empty());
+        draft.sprite = "Test.rsi".into();
+        let warnings = preview_external(&draft).unwrap().warnings;
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("RSI") && w.contains("не проверяется")));
+        draft.sprite_state = "idle".into();
+        assert!(preview_external(&draft)
+            .unwrap()
+            .warnings
+            .iter()
+            .any(|w| w.contains("Состояние")));
     }
 
     #[test]
