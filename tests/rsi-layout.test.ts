@@ -1,8 +1,21 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  buildRsiFrameLayout, isRsiLayoutError, parseRsiMetadata, regroupRsiDelays, RSI_DIRECTIONS,
+  buildRsiFrameLayout, isRsiLayoutError, parseRsiMetadata, regroupRsiDelays, RSI_DIRECTIONS, selectRsiPreviewState,
 } from '../src/lib/rsi-layout';
+
+test('selects requested valid state or first valid metadata state for preview', () => {
+  const { states } = parseRsiMetadata(JSON.stringify({
+    version: 1, size: { x: 32, y: 32 },
+    states: [{ name: 'bad', directions: 3 }, { name: 'first' }, { name: 'second' }],
+  }));
+  assert.equal(selectRsiPreviewState(states, 'second')?.name, 'second');
+  assert.equal(selectRsiPreviewState(states, 'missing')?.name, 'first');
+  assert.equal(selectRsiPreviewState(states, 'bad')?.name, 'first');
+  assert.equal(selectRsiPreviewState(states, null)?.name, 'first');
+  assert.equal(selectRsiPreviewState(states, '')?.name, 'first');
+  assert.equal(selectRsiPreviewState([], 'missing'), undefined);
+});
 
 test('parses supported RSI v1 metadata and preserves direction-specific delays', () => {
   const result = parseRsiMetadata(JSON.stringify({

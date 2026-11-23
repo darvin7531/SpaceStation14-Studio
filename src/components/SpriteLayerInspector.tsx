@@ -3,7 +3,7 @@ import { AlertCircle, ArrowUpRight, Image as ImageIcon, Layers } from 'lucide-re
 import { studio, type SourceSpriteLayer, type SourceSpriteLink } from '../lib/api';
 import { normalizeStudioError } from '../lib/errors';
 import {
-  buildRsiFrameLayout, isRsiLayoutError, parseRsiMetadata, type RsiFrameLayout,
+  buildRsiFrameLayout, isRsiLayoutError, parseRsiMetadata, selectRsiPreviewState, type RsiFrameLayout,
 } from '../lib/rsi-layout';
 import RsiStatePlayer from './RsiStatePlayer';
 import { useI18n } from '../i18n';
@@ -31,6 +31,7 @@ interface LayerTarget {
 interface FramePreview {
   path: string;
   state: string;
+  requestedState: string | null;
   dataUrl: string;
   imageWidth: number;
   imageHeight: number;
@@ -82,7 +83,7 @@ export default function SpriteLayerInspector({ sprite, layers, total, busy, onOp
     let active = true;
     setPreview(null);
     setError(null);
-    if (!selectedPath || !selectedState || !selectedIndexed) {
+    if (!selectedPath || !selectedIndexed) {
       setLoading(false);
       return () => { active = false; };
     }
@@ -91,13 +92,13 @@ export default function SpriteLayerInspector({ sprite, layers, total, busy, onOp
       const document = await studio.readResource(selectedPath);
       const parsed = parseRsiMetadata(document.content);
       if (!parsed.size) throw new Error(parsed.errors[0] ?? 'RSI не содержит корректного размера кадра.');
-      const state = parsed.states.find((candidate) => candidate.name === selectedState);
-      if (!state) throw new Error('В meta.json нет состояния «' + selectedState + '».');
-      const sheet = await studio.readRsiSheet(selectedPath, selectedState + '.png');
+      const state = selectRsiPreviewState(parsed.states, selectedState);
+      if (!state) throw new Error(parsed.errors[0] ?? 'В meta.json нет корректных состояний.');
+      const sheet = await studio.readRsiSheet(selectedPath, state.name + '.png');
       const layout = buildRsiFrameLayout(parsed.size, state, sheet.width, sheet.height);
       if (isRsiLayoutError(layout)) throw new Error(layout.error);
       if (active) setPreview({
-        path: selectedPath, state: selectedState, dataUrl: sheet.data_url,
+        path: selectedPath, state: state.name, requestedState: selectedState, dataUrl: sheet.data_url,
         imageWidth: sheet.width, imageHeight: sheet.height, layout,
       });
     })().catch((failure: unknown) => {
@@ -109,7 +110,7 @@ export default function SpriteLayerInspector({ sprite, layers, total, busy, onOp
   }, [selectedPath, selectedState, selectedIndexed]);
 
   if (!targets.length) return null;
-  const matches = preview?.path === selectedPath && preview.state === selectedState;
+  const matches = preview?.path === selectedPath && preview.requestedState === selectedState;
   const canNavigate = Boolean(selected?.path && selected.indexed);
   return <div className="sprite-layer-inspector" aria-label="Просмотр Sprite и слоёв">
     <div className="sprite-layer-title">
@@ -152,11 +153,11 @@ export default function SpriteLayerInspector({ sprite, layers, total, busy, onOp
         В исходном YAML нет безопасного прямого пути RSI. Путь может задаваться наследованием или динамически.
       </p> : !selected.indexed ? <p className="sprite-layer-hint">
         RSI не найден в индексе открытого проекта. Проверьте путь Sprite.sprite.
-      </p> : !selected.state ? <p className="sprite-layer-hint">
-        Состояние не указано напрямую. Оно может задаваться наследованием, map-кодом или другим компонентом.
       </p> : loading ? <p role="status" className="sprite-layer-hint">Чтение RSI и PNG…</p>
         : error ? <p role="alert" className="sprite-layer-error"><AlertCircle size={14}/>{error}</p>
-          : matches && preview ? <><div className="sprite-zoom" role="group" aria-label={t('sprite.zoom')}>
+          : matches && preview ? <>{preview.state !== selectedState && <p className="sprite-layer-hint">
+              Запрошенное состояние не указано или отсутствует в корректных метаданных. Показано первое состояние RSI: {preview.state}.
+            </p>}<div className="sprite-zoom" role="group" aria-label={t('sprite.zoom')}>
               <button type="button" disabled={zoom <= 0.5} aria-label={t('sprite.zoomOut')}
                 onClick={() => setZoom((value) => spriteZoom(value, -1))}>−</button>
               <output aria-live="polite">{Math.round(zoom * 100)}%</output>

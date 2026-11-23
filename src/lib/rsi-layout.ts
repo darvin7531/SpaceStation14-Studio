@@ -25,6 +25,10 @@ export interface RsiMetadata {
   warnings: string[];
 }
 
+export function selectRsiPreviewState(states: RsiState[], requested: string | null): RsiState | undefined {
+  return states.find((state) => state.name === requested) ?? states[0];
+}
+
 export interface RsiSpriteFrame {
   x: number;
   y: number;
