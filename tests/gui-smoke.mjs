@@ -83,11 +83,12 @@ try {
   // Resolve two Ctrl-click searches in reverse order; the older result must not win.
   await script(`
     const original = window.fetch;
-    window.__navigationGate = { held: false, settled: false, release: null };
+    window.__navigationGate = { held: false, settled: false, release: null, searches: [], clicks: [] };
     window.fetch = function(url, options) {
       if (!String(url).startsWith('ipc:')) return original.call(this, url, options);
       const command = decodeURIComponent(new URL(url).pathname.slice(1));
       const args = options?.body ? JSON.parse(options.body) : {};
+      if (command === 'search_prototypes') window.__navigationGate.searches.push(args.query);
       if (command === 'search_prototypes' && args.query === 'SmokeSecond' && !window.__navigationGate.held) {
         window.__navigationGate.held = true;
         return new Promise((resolve, reject) => { window.__navigationGate.release = () =>
@@ -110,6 +111,7 @@ try {
     const rect = range.getBoundingClientRect();
     const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
     const target = document.elementFromPoint(x, y);
+    window.__navigationGate.clicks.push({ word: ${JSON.stringify(word)}, rect: rect.toJSON(), target: target?.outerHTML });
     target.dispatchEvent(new MouseEvent('mousedown',
       { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: 1, ctrlKey: true }));
     target.dispatchEvent(new MouseEvent('mouseup',
@@ -129,7 +131,12 @@ try {
     throw error;
   }
   await ctrlClickWord('SmokeFirst');
-  await until('newer prototype selected', () => find('[role=tab][data-prototype-id="SmokeFirst"][aria-selected=true]'));
+  try {
+    await until('newer prototype selected', () => find('[role=tab][data-prototype-id="SmokeFirst"][aria-selected=true]'));
+  } catch (error) {
+    console.error('Second navigation diagnostic:', await script('return JSON.stringify({ gate: window.__navigationGate, state: document.body.innerText });'));
+    throw error;
+  }
   await script('window.__navigationGate.release();');
   await until('older prototype search settled', () => script('return window.__navigationGate.settled;'));
   assert.ok(await find('[role=tab][data-prototype-id="SmokeFirst"][aria-selected=true]'), 'older search must not override newer navigation');
