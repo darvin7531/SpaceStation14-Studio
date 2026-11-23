@@ -64,7 +64,7 @@ export default function RsiRestorePanel({ path, revision, onRestored }: Props) {
     </summary>
     <form onSubmit={(event) => void submit(event)}>
       <p>Восстановление добавляет исходное состояние в текущий <code>meta.json</code>
-        и создаёт его PNG заново, если он был в архиве. Другие состояния и последующие изменения метаданных
+        и создаёт его PNG заново. Другие состояния и последующие изменения метаданных
         сохраняются. Архив остаётся на диске.</p>
       {loading && <p>Чтение резервных копий…</p>}
       {listError && <p role="alert" className="rsi-error">

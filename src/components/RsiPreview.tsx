@@ -174,10 +174,6 @@ export default function RsiPreview({
     {selectedState && <RsiDeletePanel
       key={'delete:' + path + ':' + selectedState.name + ':' + revision}
       path={path} revision={revision} name={selectedState.name} onDeleted={onDeleted}/>}
-    {list && !listing && inspection.states.filter((state) =>
-      !list.sheets.some((sheet) => sheet.name === state.name + '.png')).map((state) =>
-      <RsiDeletePanel key={'delete-missing:' + path + ':' + state.name + ':' + revision}
-        path={path} revision={revision} name={state.name} onDeleted={onDeleted}/>)}
     <RsiRestorePanel path={path} revision={revision} onRestored={onRestored}/>
 
     <div className="rsi-stage">
