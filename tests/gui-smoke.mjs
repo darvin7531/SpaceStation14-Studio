@@ -110,12 +110,22 @@ try {
     const form = document.querySelector('.create-proto-modal form');
     const input = form.querySelector('input[placeholder=MyNewItem]');
     input.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', ctrlKey:true, bubbles:true, cancelable:true}));
+    // A queued input and destination click can arrive before React renders disabled controls.
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'LateEdit');
+    input.dispatchEvent(new Event('input', {bubbles:true}));
+    form.querySelectorAll('.create-proto-mode')[1].querySelectorAll('button')[1].click();
     form.requestSubmit();
     input.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true, cancelable:true}));
   `);
   await until('wizard write held', () => script('return window.__wizardGate.release !== null;'));
   assert.equal(await script('return window.__wizardGate.writes;'), 1, 'keyboard and button submits share a synchronous guard');
   assert.ok(await find('.create-proto-modal'), 'escape cannot dismiss an in-flight write');
+  await until('wizard draft disabled', () => script("return [...document.querySelectorAll('.create-proto-modal input, .create-proto-modal textarea, .create-proto-modal button')].every(el => el.matches(':disabled'));"));
+  assert.equal(await script("return document.querySelector('.create-proto-modal input[placeholder=MyNewItem]').value;"), 'WizardKeyboardSmoke', 'late input must not change the submitted draft');
+  assert.ok(await script("return document.querySelectorAll('.create-proto-mode')[1].querySelector('button.selected') === document.querySelectorAll('.create-proto-mode')[1].querySelector('button');"), 'late destination change is ignored');
+  assert.ok(await script("return document.activeElement === document.querySelector('.create-proto-modal form');"), 'focus remains inside the busy wizard');
+  assert.equal(await script("return document.activeElement.dispatchEvent(new KeyboardEvent('keydown', {key:'Tab', bubbles:true, cancelable:true}));"), false, 'busy tab is intercepted');
+  assert.ok(await script("return document.activeElement === document.querySelector('.create-proto-modal form');"), 'tab cannot escape the busy wizard');
   await script('window.__wizardGate.release();');
   await until('wizard closes after create', async () => !(await find('.create-proto-modal')));
   await access(join(process.env.SMOKE_PROJECT, 'Resources/Prototypes/_PrototypeStudio/WizardKeyboardSmoke.yml'));

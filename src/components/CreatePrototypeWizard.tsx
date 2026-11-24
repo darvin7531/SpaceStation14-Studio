@@ -64,6 +64,7 @@ export default function CreatePrototypeWizard({
   const [creating, setCreating] = useState(false);
   const [pickingFolder, setPickingFolder] = useState(false);
   const busyRef = useRef(false);
+  const creatingRef = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -73,12 +74,12 @@ export default function CreatePrototypeWizard({
     const form = formRef.current;
     const focusable = () => Array.from(form?.querySelectorAll<HTMLElement>(
       'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    ) ?? []).filter((element) => element.getClientRects().length > 0);
+    ) ?? []).filter((element) => !element.matches(':disabled') && element.getClientRects().length > 0);
     form?.querySelector<HTMLInputElement>('input')?.focus();
     const focusInside = (event: FocusEvent) => {
       const target = event.target as HTMLElement | null;
       // A separately mounted dialog owns its own focus and shortcuts.
-      if (!form?.contains(target) && !target?.closest('[role="dialog"], dialog[open]')) focusable()[0]?.focus();
+      if (!form?.contains(target) && !target?.closest('[role="dialog"], dialog[open]')) (focusable()[0] ?? form)?.focus();
     };
     const keydown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -87,6 +88,7 @@ export default function CreatePrototypeWizard({
       if (event.key === 'Tab' && !event.ctrlKey && !event.metaKey && !event.altKey) {
         const items = focusable();
         const index = items.indexOf(document.activeElement as HTMLElement);
+        if (!items.length) { event.preventDefault(); form?.focus(); return; }
         if (items.length && (index < 0 || (event.shiftKey ? index === 0 : index === items.length - 1))) {
           event.preventDefault();
           items[event.shiftKey ? items.length - 1 : 0].focus();
@@ -111,8 +113,12 @@ export default function CreatePrototypeWizard({
   }, []);
 
 
+  useEffect(() => {
+    if (creating) formRef.current?.focus();
+  }, [creating]);
+
   function switchDestination(next: 'project' | 'external') {
-    if (next === destination) return;
+    if (creatingRef.current || next === destination) return;
     setChecking(true);
     setPreview(null);
     setValidationError(null);
@@ -121,7 +127,7 @@ export default function CreatePrototypeWizard({
   }
 
   function switchMode(next: PrototypeDestinationMode) {
-    if (next === mode) return;
+    if (creatingRef.current || next === mode) return;
     setChecking(true);
     setPreview(null);
     setValidationError(null);
@@ -164,6 +170,7 @@ export default function CreatePrototypeWizard({
   }, [mode, draft.file]);
 
   function update<K extends keyof NewPrototypeDraft>(field: K, value: NewPrototypeDraft[K]) {
+    if (creatingRef.current) return;
     // Do not leave an old valid preview enabled during the debounce window.
     setChecking(true);
     setPreview(null);
@@ -257,6 +264,7 @@ export default function CreatePrototypeWizard({
     event.preventDefault();
     if (busyRef.current || creating || pickingFolder || checking || !preview || targetIsDirty) return;
     busyRef.current = true;
+    creatingRef.current = true;
     setCreating(true);
     setCreateError(null);
     try {
@@ -273,6 +281,7 @@ export default function CreatePrototypeWizard({
       setCreateError(normalizeStudioError(error));
     } finally {
       busyRef.current = false;
+      creatingRef.current = false;
       setCreating(false);
     }
   }
@@ -280,7 +289,7 @@ export default function CreatePrototypeWizard({
   return <div className="create-proto-backdrop" role="presentation">
     <section className="create-proto-modal" role="dialog" aria-modal="true"
       aria-labelledby="create-proto-title">
-      <form ref={formRef} className="create-proto-layout" onSubmit={(event) => void create(event)}>
+      <form ref={formRef} tabIndex={-1} className="create-proto-layout" onSubmit={(event) => void create(event)}>
         <div className="create-proto-form">
           <header className="create-proto-head">
             <div><small><FilePlus2 size={14}/> {t('wizard.proto.newContent')}</small>
@@ -302,11 +311,11 @@ export default function CreatePrototypeWizard({
 
           {mode === 'new' && <div className="create-proto-mode" role="group" aria-label={t('wizard.proto.destination')}>
             <button type="button" className={destination === 'project' ? 'selected' : ''}
-              onClick={() => switchDestination('project')}>{t('wizard.proto.project')}</button>
+              disabled={creating} onClick={() => switchDestination('project')}>{t('wizard.proto.project')}</button>
             <button type="button" className={destination === 'external' ? 'selected' : ''}
-              onClick={() => switchDestination('external')}>{t('wizard.common.external')}</button>
+              disabled={creating} onClick={() => switchDestination('external')}>{t('wizard.common.external')}</button>
           </div>}
-          <fieldset className="create-proto-group">
+          <fieldset className="create-proto-group" disabled={creating}>
             <legend>{t('wizard.proto.identity')}</legend>
             <label>{t('wizard.proto.type')}
               <input required list="new-prototype-kinds" value={draft.kind}
@@ -333,7 +342,7 @@ export default function CreatePrototypeWizard({
             </label>
           </fieldset>
 
-          <fieldset className="create-proto-group">
+          <fieldset className="create-proto-group" disabled={creating}>
             <legend>{t('wizard.proto.descriptionSection')}</legend>
             <label>{t('wizard.proto.name')}
               <input value={draft.name} onChange={(event) => update('name', event.target.value)}/>
@@ -348,7 +357,7 @@ export default function CreatePrototypeWizard({
             </label>
           </fieldset>
 
-          {draft.kind === 'entity' && <fieldset className="create-proto-group">
+          {draft.kind === 'entity' && <fieldset className="create-proto-group" disabled={creating}>
             <legend>{t('wizard.proto.components')}</legend>
             <label>{t('wizard.proto.sprite')}
               <input value={draft.sprite} placeholder="Objects/Tools/myitem.rsi"
@@ -373,7 +382,7 @@ export default function CreatePrototypeWizard({
             <small>{t('wizard.proto.componentHint')}</small>
           </fieldset>}
 
-          <fieldset className="create-proto-group">
+          <fieldset className="create-proto-group" disabled={creating}>
             <legend>{mode === 'new' ? t('wizard.proto.fileNew') : t('wizard.proto.fileExisting')}</legend>
             <label>{mode === 'new' && destination === 'external'
               ? t('wizard.proto.pathExternal')
