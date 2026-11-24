@@ -43,7 +43,7 @@ async function find(selector) {
 async function click(selector) {
   await until(selector, async () => {
     const id = await find(selector);
-    if (!id) return false;
+    if (!id || !(await call('GET', `/element/${id}/enabled`))) return false;
     try { await call('POST', `/element/${id}/click`, {}); } catch (error) {
       if (!/stale element reference/i.test(error.message)) throw error;
       return false;
@@ -529,6 +529,7 @@ try {
   // An inactive conflict must leave the draft accessible and unblock comparison.
   await edit(saved, 'SmokeSaved');
   await click('[role=tab][data-prototype-id="SmokeSecond"]');
+  await until('other tab selected before inactive close', () => find('[role=tab][data-prototype-id="SmokeSecond"][aria-selected=true]'));
   await script(`
     window.__closeOriginalFetch = window.fetch;
     window.fetch = function(url, options) {
