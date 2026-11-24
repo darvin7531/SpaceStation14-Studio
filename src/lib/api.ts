@@ -560,6 +560,7 @@ export interface RsiSizeUpdate {
 }
 
 export interface RsiTimingUpdate {
+  expected_missing_png?: boolean;
   expected_png_revision?: string;
   path: string;
   expected_revision: string;
@@ -884,8 +885,8 @@ export const studio = {
   updateRsiSize(request: RsiSizeUpdate): Promise<ImportedRsiState> {
     return invoke('update_rsi_size', { request });
   },
-  updateRsiTiming(request: RsiTimingUpdate): Promise<ImportedRsiState> {
-    return invoke('update_rsi_timing', { request });
+  updateRsiTiming(request: RsiTimingUpdate, expectedProjectRoot: string): Promise<ImportedRsiState> {
+    return invoke('update_rsi_timing', { request, expectedProjectRoot });
   },
   renameRsiState(request: RsiRenameRequest): Promise<RenamedRsiState> {
     return invoke('rename_rsi_state', { request });

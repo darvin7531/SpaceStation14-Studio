@@ -20,6 +20,8 @@ pub struct RsiTimingUpdate {
     pub name: String,
     pub delays: Vec<Vec<f64>>,
     pub expected_png_revision: Option<String>,
+    #[serde(default)]
+    pub expected_missing_png: bool,
 }
 
 fn issue(code: &'static str, message: &str, hint: &str) -> StudioError {
@@ -156,6 +158,13 @@ fn updated_metadata(
         }
     };
 
+    if update.expected_missing_png { validated_delays(&old_delays)?; }
+    if update.expected_missing_png && update.delays.len() != directions as usize
+        && update.delays.iter().any(|row| row.len() != update.delays[0].len())
+    {
+        return Err(issue("RSI_TIMING_SHAPE_INVALID", "Кадры нельзя равномерно распределить по направлениям.", "Выберите совместимое число направлений."));
+    }
+
     if old_delays.iter().map(Vec::len).sum::<usize>()
         != update.delays.iter().map(Vec::len).sum::<usize>()
     {
@@ -234,6 +243,12 @@ pub fn update(root: &Path, request: &RsiTimingUpdate) -> Result<ImportedRsiState
             "Выберите состояние из списка.",
         ));
     }
+    if request.expected_missing_png && request.expected_png_revision.is_some() {
+        return Err(issue("RSI_TIMING_PNG_REVISION_INVALID", "Противоречивые ожидания PNG.", "Обновите RSI."));
+    }
+    if request.expected_missing_png && !request.name.bytes().all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'_' | b'-')) {
+        return Err(issue("RSI_TIMING_NAME_INVALID", "Некорректное имя состояния.", "Проверьте имя."));
+    }
     let folder = safe_import_directory(root, &request.path)?;
     let metadata_file = folder.join("meta.json");
     let original = bounded_metadata(&metadata_file)?;
@@ -277,7 +292,7 @@ pub fn update(root: &Path, request: &RsiTimingUpdate) -> Result<ImportedRsiState
                 "Обновите RSI.",
             )
         })?;
-    if old_state
+    if !request.expected_missing_png && old_state
         .get("directions")
         .and_then(Value::as_u64)
         .unwrap_or(1)
@@ -346,18 +361,44 @@ pub fn update(root: &Path, request: &RsiTimingUpdate) -> Result<ImportedRsiState
             ));
         }
     }
+    let archive = if request.expected_missing_png {
+        let archive = crate::rsi_delete::archive_dir(&folder, &request.name)?;
+        crate::rsi_delete::write_backup_file(&archive.join("meta.json.before"), &original)?;
+        let manifest = serde_json::to_vec_pretty(&serde_json::json!({
+            "format": "ss14-studio-rsi-delete-backup-metadata-v1",
+            "rsi": request.path,
+            "state": request.name,
+            "original_meta_revision": request.expected_revision,
+            "original_png_revision": null,
+            "recovery": "Stop external writers and manually reconcile the archived metadata with current files; do not replace meta.json wholesale."
+        })).map_err(|error| issue("RSI_TIMING_ARCHIVE_FAILED", "Не удалось сформировать архив.", "Исходные данные не изменены.").with_details(error.to_string()))?;
+        crate::rsi_delete::write_backup_file(&archive.join("manifest.json"), &manifest)?;
+        for directory in [&archive, archive.parent().unwrap_or(&folder)] {
+            crate::rsi_delete::sync_directory(directory).map_err(|error| issue("RSI_TIMING_ARCHIVE_FAILED", "Не удалось синхронизировать архив.", "Исходные данные не изменены.").with_details(error.to_string()))?;
+        }
+        Some(archive)
+    } else { None };
     let result = resource_edit::save_rsi_metadata(
         root,
         &format!("{}/meta.json", request.path),
         &request.expected_revision,
         content,
-    )?;
+    ).map_err(|error| {
+        if let Some(archive) = &archive {
+            issue("RSI_TIMING_ARCHIVED_SAVE_FAILED", "Архив создан, но meta.json не обновлён.", "Сохраните архив и проверьте текущие файлы.")
+                .with_details(format!("Ошибка: {error:?}; архив: {}", archive.display()))
+        } else { error }
+    })?;
+    let warning = if archive.is_some() {
+        let notice = "PNG не проверялся и не изменялся: внешний процесс мог создать его. Внешние записи могут конкурировать с сохранением; проверьте файлы и восстановите архив вручную при необходимости.";
+        Some(match result.durability_warning { Some(warning) => format!("{warning} {notice}"), None => notice.into() })
+    } else { result.durability_warning };
     Ok(ImportedRsiState {
         name: request.name.clone(),
         revision: result.document.revision,
         content: result.document.content,
-        warning: result.durability_warning,
-        archive_path: None,
+        warning,
+        archive_path: archive.map(|path| path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/")),
     })
 }
 
@@ -393,6 +434,7 @@ mod tests {
                 expected_revision: revision(&original),
                 name: "walk".into(),
                 expected_png_revision: None,
+                expected_missing_png: false,
                 delays: vec![
                     vec![0.15, 0.25],
                     vec![0.35, 0.45],
@@ -406,6 +448,68 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+
+    #[test]
+    fn metadata_only_direction_change_archives_and_never_touches_png() {
+        let fixture = Fixture::new();
+        let folder = fixture.root.join(&fixture.relative);
+        let meta = folder.join("meta.json");
+        let png = folder.join("walk.png");
+        let original = fs::read(&meta).unwrap();
+        let mut request = fixture.request();
+        request.expected_missing_png = true;
+        request.delays = vec![vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]];
+        // A PNG may appear after the UI listed the directory; it must remain untouched.
+        let result = update(&fixture.root, &request).unwrap();
+        assert_eq!(fs::read(&png).unwrap(), b"unchanged PNG");
+        assert_eq!(serde_json::from_str::<Value>(&result.content).unwrap()["states"][0]["directions"], 1);
+        let archive = fixture.root.join(result.archive_path.unwrap());
+        assert_eq!(fs::read(archive.join("meta.json.before")).unwrap(), original);
+        assert!(!archive.join("walk.png").exists());
+        assert!(result.warning.is_some());
+        assert_eq!(update(&fixture.root, &request).unwrap_err().code, "RSI_TIMING_CONFLICT");
+    }
+
+    #[test]
+    fn metadata_only_rejects_uneven_regroup_and_contradictory_png_revision() {
+        let fixture = Fixture::new();
+        let original = fs::read(fixture.root.join(&fixture.relative).join("meta.json")).unwrap();
+        let mut request = fixture.request();
+        request.expected_missing_png = true;
+        request.delays = vec![vec![0.1], vec![0.2], vec![0.3], vec![0.4], vec![0.5], vec![0.6], vec![0.7], vec![0.8]];
+        request.expected_png_revision = Some("0".repeat(64));
+        assert!(update(&fixture.root, &request).is_err());
+        request.expected_png_revision = None;
+        assert_eq!(fs::read(fixture.root.join(&fixture.relative).join("meta.json")).unwrap(), original);
+        let meta = fixture.root.join(&fixture.relative).join("meta.json");
+        let one_direction = br#"{"version":1,"states":[{"name":"walk","delays":[[0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8]]}]}"#;
+        fs::write(&meta, one_direction).unwrap();
+        request.expected_revision = revision(one_direction);
+        request.delays = vec![vec![0.1, 0.2, 0.3], vec![0.4], vec![0.5, 0.6], vec![0.7, 0.8]];
+        assert_eq!(update(&fixture.root, &request).unwrap_err().code, "RSI_TIMING_SHAPE_INVALID");
+        assert_eq!(fs::read(&meta).unwrap(), one_direction);
+    }
+
+    #[test]
+    fn missing_png_direction_change_rejects_malformed_metadata_without_writes() {
+        let fixture = Fixture::new();
+        let folder = fixture.root.join(&fixture.relative);
+        fs::remove_file(folder.join("walk.png")).unwrap();
+        let meta = folder.join("meta.json");
+        let bad = br#"{"version":1,"states":[{"name":"walk","directions":4,"directions":1}]}"#;
+        fs::write(&meta, bad).unwrap();
+        let mut request = fixture.request();
+        request.expected_missing_png = true;
+        request.delays = vec![vec![1.0; 4]];
+        assert_eq!(update(&fixture.root, &request).unwrap_err().code, "RSI_TIMING_META_INVALID");
+        assert_eq!(fs::read(&meta).unwrap(), bad);
+        assert!(!folder.join(".ss14-studio-archive").exists());
+        fs::write(&meta, br#"{"version":1,"states":[{"name":"walk","directions":4,"delays":[[1],[1],[1],[1]]}]}"#).unwrap();
+        request.expected_revision = revision(&fs::read(&meta).unwrap());
+        let result = update(&fixture.root, &request).unwrap();
+        assert!(!folder.join("walk.png").exists());
+        assert!(result.archive_path.is_some());
     }
 
     #[test]

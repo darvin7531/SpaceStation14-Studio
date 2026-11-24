@@ -173,8 +173,13 @@ export default function RsiPreview({
 
     {frameLayout && selectedState && image && inspection.size && !loadingImage && !imageError && <RsiTimingPanel
       key={path + ':' + selectedState.name + ':' + revision}
-      path={path} revision={revision} state={selectedState} pngRevision={image.revision}
+      projectRoot={projectRoot} path={path} revision={revision} state={selectedState} pngRevision={image.revision}
       onUpdated={onTimingUpdated}/>}
+    {list && !listing && inspection.states.filter((state) =>
+      missingRsiStateNames(metadata, list.sheets.map((sheet) => sheet.name)).includes(state.name)).map((state) =>
+      <RsiTimingPanel key={'timing-missing:' + path + ':' + state.name + ':' + revision}
+        projectRoot={projectRoot} path={path} revision={revision} state={state} expectedMissingPng
+        onUpdated={onTimingUpdated}/>)}
     {selectedState && <RsiDeletePanel
       key={'delete:' + path + ':' + selectedState.name + ':' + revision}
       path={path} revision={revision} name={selectedState.name} onDeleted={onDeleted}/>}

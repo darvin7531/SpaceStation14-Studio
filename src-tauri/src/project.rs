@@ -3380,6 +3380,7 @@ mod tests {
             expected_revision: first.revision,
             name: "walk".into(),
             expected_png_revision: None,
+            expected_missing_png: false,
             delays: vec![vec![0.5, 0.6]],
         };
         let result = index.update_rsi_timing(&update).unwrap();

@@ -566,9 +566,10 @@ async fn update_rsi_size(
 #[tauri::command]
 async fn update_rsi_timing(
     request: RsiTimingUpdate,
+    expected_project_root: String,
     state: State<'_, WorkspaceState>,
 ) -> Result<ImportedRsiState, StudioError> {
-    let index = current_project(&state)?;
+    let index = project_for_rsi_write(&state, &expected_project_root)?;
     tauri::async_runtime::spawn_blocking(move || index.update_rsi_timing(&request))
         .await
         .map_err(interrupted)?

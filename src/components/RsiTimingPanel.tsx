@@ -6,14 +6,16 @@ import { normalizeStudioError, type StudioError } from '../lib/errors';
 import { RSI_DIRECTIONS, regroupRsiDelays, type RsiState } from '../lib/rsi-layout';
 
 interface Props {
+  projectRoot: string;
   path: string;
   revision: string;
   state: RsiState;
-  pngRevision: string;
+  pngRevision?: string;
+  expectedMissingPng?: boolean;
   onUpdated: (result: ImportedRsiState) => void;
 }
 
-export default function RsiTimingPanel({ path, revision, state, pngRevision, onUpdated }: Props) {
+export default function RsiTimingPanel({ projectRoot, path, revision, state, pngRevision, expectedMissingPng, onUpdated }: Props) {
   const [delays, setDelays] = useState<number[][]>(
     () => state.delays.map((direction) => [...direction]),
   );
@@ -43,8 +45,8 @@ export default function RsiTimingPanel({ path, revision, state, pngRevision, onU
     setError(null);
     try {
       const updated = await studio.updateRsiTiming({
-        path, expected_revision: revision, expected_png_revision: pngRevision, name: state.name, delays,
-      });
+        path, expected_revision: revision, expected_png_revision: pngRevision, expected_missing_png: expectedMissingPng, name: state.name, delays,
+      }, projectRoot);
       onUpdated(updated);
     } catch (failure) {
       setError(normalizeStudioError(failure));
@@ -56,7 +58,9 @@ export default function RsiTimingPanel({ path, revision, state, pngRevision, onU
   return <details className="rsi-timing-panel">
     <summary><Save size={15}/> Направления и задержки: {state.name}</summary>
     <form onSubmit={(event) => void submit(event)}>
-      <p>PNG не изменяется. При изменении направлений существующие кадры и длительности распределяются по порядку; дополнительные ячейки PNG не используются. Проверяются ревизии метаданных и PNG.</p>
+      <p>{expectedMissingPng
+        ? 'PNG не проверяется и не изменяется, даже если появится во время сохранения. Метаданные сохраняются в архив; внешние записи могут конкурировать с сохранением. Проверьте файлы и восстановите архив вручную при необходимости.'
+        : 'PNG не изменяется. При изменении направлений существующие кадры и длительности распределяются по порядку; дополнительные ячейки PNG не используются. Проверяются ревизии метаданных и PNG.'}</p>
       <label>Направления <select value={delays.length} disabled={saving} onChange={(event) => {
         const count = Number(event.target.value);
         const regrouped = regroupRsiDelays(delays, state.delays, count);

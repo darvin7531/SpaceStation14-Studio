@@ -1473,7 +1473,7 @@ export default function App() {
     setDocument((current) => current?.path === path ? updated : current);
     setDrafts((previous) => ({ ...previous, [path]: result.content }));
     const baseNotice = result.archive_path
-      ? 'Состояние RSI «' + result.name + '» заменено. Предыдущая версия сохранена: ' + result.archive_path
+      ? (action === 'timing' ? 'Состояние RSI «' + result.name + '» обновлено. Резервная копия метаданных: ' : 'Состояние RSI «' + result.name + '» заменено. Предыдущая версия сохранена: ') + result.archive_path
       : action === 'credits'
         ? 'Лицензия и авторство RSI сохранены. PNG не изменены.'
         : action === 'size'
@@ -1965,7 +1965,7 @@ export default function App() {
                 }}
                 onBatchRefresh={(root) => refreshRsiBatch(selected.path, root)}
                 onBatchOutcome={(message) => updateBatchOutcomes([...batchOutcomesRef.current, { projectRoot: overview.project_root, path: selected.path, message }])}
-                onTimingUpdated={(result) => onRsiImported(selected.path, result, 'timing')}
+                onTimingUpdated={(result) => { if (projectRootRef.current === overview.project_root) onRsiImported(selected.path, result, 'timing'); }}
                 onCreditsUpdated={(result) => onRsiImported(selected.path, result, 'credits')}
                 onSizeUpdated={(result) => onRsiImported(selected.path, result, 'size')}
                 onDeleted={(result) => onRsiDeleted(selected.path, result)}
