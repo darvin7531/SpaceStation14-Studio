@@ -1,3 +1,4 @@
+import { useI18n } from '../i18n';
 import { useState, type FormEvent } from 'react';
 import { AlertTriangle, Pencil } from 'lucide-react';
 import { studio, type RenamedRsiState } from '../lib/api';
@@ -15,6 +16,7 @@ interface Props {
 export default function RsiRenamePanel({
   path, revision, name, expectedPngRevision, expectedMissingPng = false, onRenamed,
 }: Props) {
+  const { t, language } = useI18n();
   const [nextName, setNextName] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [saving, setSaving] = useState(false);
@@ -44,21 +46,17 @@ export default function RsiRenamePanel({
   }
 
   return <details className="rsi-import-panel">
-    <summary><Pencil size={15}/> Переименовать состояние «{name}»</summary>
+    <summary><Pencil size={15}/> {t('rsi.rename.title', { name })}</summary>
     <form onSubmit={(event) => void submit(event)}>
-      {expectedMissingPng ? <p>Studio сохранит резервную копию <code>meta.json</code> и изменит имя состояния. PNG не изменяются; архив восстанавливается вручную. Остановите внешние процессы записи до завершения операции: они не блокируются и могут создать PNG со старым или новым именем после проверки, изменив связь состояния с изображением.</p> : <p>Studio создаст резервную копию <code>meta.json</code> и исходного PNG,
-        затем создаст PNG с новым именем и изменит только поле <code>name</code>
-        выбранного состояния. Другие состояния, тайминги и изображения сохраняются.</p>}
-      <p className="rsi-warning"><AlertTriangle size={15}/>
-        Ссылки на состояние «{name}» в других YAML, коде и ресурсах автоматически
-        не переписываются. После переименования проверьте их вручную.</p>
+      <p>{t(expectedMissingPng ? 'rsi.rename.missingIntro' : 'rsi.rename.intro')}</p>
+      <p className="rsi-warning"><AlertTriangle size={15}/>{t('rsi.rename.warning', { name })}</p>
       <div className="rsi-import-fields">
-        <label>Новое имя состояния
+        <label>{t('rsi.rename.name')}
           <input type="text" required maxLength={128} pattern="[a-z0-9_-]+"
             value={nextName} autoComplete="off" spellCheck={false} disabled={saving}
             onChange={(event) => setNextName(event.target.value)} placeholder="idle_new"/>
         </label>
-        <label>Подтверждение: введите «{name}»
+        <label>{t('rsi.rename.confirm', { name })}
           <input type="text" required value={confirmation} disabled={saving}
             autoComplete="off" spellCheck={false}
             onChange={(event) => setConfirmation(event.target.value)} placeholder={name}/>
@@ -66,10 +64,12 @@ export default function RsiRenamePanel({
       </div>
       {error && <div className="rsi-error" role="alert">
         <AlertTriangle size={16}/>
-        <span>{error.message} {error.hint} <code>{error.code}</code></span>
+        <span>{language === 'ru' ? `${error.message} ${error.hint}` : t('rsi.error.operation')} <code>{error.code}</code></span>
+        {language === 'en' && <pre>{error.message} {error.hint}</pre>}
+        {error.details && <pre>{error.details}</pre>}
       </div>}
       <button type="submit" disabled={saving || !validName || confirmation !== name}>
-        <Pencil size={15}/>{saving ? 'Переименовываю…' : 'Переименовать с резервной копией'}
+        <Pencil size={15}/>{saving ? t('rsi.rename.busy') : t('rsi.rename.submit')}
       </button>
     </form>
   </details>;

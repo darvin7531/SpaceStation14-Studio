@@ -1,4 +1,9 @@
 import assert from 'node:assert/strict';
+import { createElement, type ReactElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { I18nProvider } from '../src/i18n';
+import RsiImportPanel from '../src/components/RsiImportPanel';
+import RsiRenamePanel from '../src/components/RsiRenamePanel';
 import test from 'node:test';
 import { uiText } from '../src/lib/ui-language';
 import { planRsiBatch } from '../src/lib/rsi-batch-plan';
@@ -22,4 +27,35 @@ test('RSI validation is localized without losing filenames or technical details'
   const state = { name: 'idle', directions: 1 as const, delays: [[1]] };
   assert.deepEqual(buildRsiFrameLayout({ x: 32, y: 32 }, state, 33, 32, 'en'),
     { error: 'PNG dimensions are not a multiple of frame size 32×32 from meta.json.' });
+});
+
+
+test('single import and rename safety messages interpolate without changing user names', () => {
+  for (const language of ['en', 'ru'] as const) {
+    assert.match(uiText(language, 'rsi.rename.warning', { name: 'idle_old' }), /idle_old/);
+    assert.match(uiText(language, 'rsi.import.selected', { name: 'My Sprite.png', size: 8 }), /My Sprite\.png.*8/);
+    assert.notEqual(uiText(language, 'rsi.import.dropLabel'), 'rsi.import.dropLabel');
+    assert.notEqual(uiText(language, 'rsi.import.errorExtension'), 'rsi.import.errorExtension');
+  }
+  assert.match(uiText('en', 'rsi.rename.missingIntro'), /external writers/);
+  assert.match(uiText('ru', 'rsi.rename.missingIntro'), /внешние процессы/);
+});
+
+
+test('single import and rename panels render English labels and safety warnings', () => {
+  const previous = globalThis.window;
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: { localStorage: { getItem: () => 'en' } } });
+  try {
+    const render = (node: ReactElement) => renderToStaticMarkup(createElement(I18nProvider, null, node));
+    const imported = render(createElement(RsiImportPanel, { path: 'test.rsi', revision: 'rev', projectRoot: 'root', onImported: () => {}, onAttempt: () => {} }));
+    assert.match(imported, /aria-label="Drop PNG to import"/);
+    assert.match(imported, /Existing images and states are not overwritten/);
+    const renamed = render(createElement(RsiRenamePanel, { path: 'test.rsi', revision: 'rev', name: 'idle', expectedMissingPng: true, onRenamed: () => {} }));
+    assert.match(renamed, /Stop external writers/);
+    assert.match(renamed, /not rewritten automatically/);
+    assert.match(renamed, /Confirm: enter/);
+  } finally {
+    if (previous === undefined) Reflect.deleteProperty(globalThis, 'window');
+    else Object.defineProperty(globalThis, 'window', { configurable: true, value: previous });
+  }
 });

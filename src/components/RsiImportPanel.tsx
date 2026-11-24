@@ -1,3 +1,4 @@
+import { useI18n } from '../i18n';
 import { useRef, useState, type DragEvent, type FormEvent } from 'react';
 import { AlertCircle, ImagePlus } from 'lucide-react';
 import { studio, type ImportedRsiState } from '../lib/api';
@@ -23,6 +24,7 @@ const PNG_LIMIT = 8 * 1024 * 1024;
 export default function RsiImportPanel({
   path, revision, onImported, replaceState, expectedPngRevision, attachState, projectRoot, onAttempt,
 }: Props) {
+  const { t, language } = useI18n();
   const attaching = Boolean(attachState);
   const existingState = replaceState ?? attachState;
   const replacing = Boolean(replaceState);
@@ -107,7 +109,7 @@ export default function RsiImportPanel({
     }
     setUploading(true);
     try {
-      const data_url = !metadataOnly && file ? await readPngAsDataUrl(file) : '';
+      const data_url = !metadataOnly && file ? await readPngAsDataUrl(file, language) : '';
       const preserveDelays = Boolean(replaceState
         && directions === replaceState.directions
         && replaceState.delays.length === directions
@@ -144,77 +146,74 @@ export default function RsiImportPanel({
   }
 
   return <details className="rsi-import-panel" data-testid={attaching ? 'rsi-attach' : replacing ? 'rsi-replace' : 'rsi-import'}>
-    <summary><ImagePlus size={15}/>{attaching ? 'Добавить PNG: ' + attachState?.name : replacing
-      ? 'Заменить PNG и перестроить кадры: ' + replaceState?.name
-      : 'Добавить состояние RSI'}</summary>
+    <summary><ImagePlus size={15}/>{attaching ? t('rsi.import.attachTitle', { name: attachState?.name }) : replacing
+      ? t('rsi.import.replaceTitle', { name: replaceState?.name }) : t('rsi.import.title')}</summary>
     <form onSubmit={(event) => void submit(event)}>
-      {attaching ? <p>PNG добавляется без изменения метаданных; существующий файл не перезаписывается.</p> : replacing
-        ? <p>Старая версия состояния и PNG сначала попадут в <code>.ss14-studio-archive</code>.
-            Новая сетка может изменить число направлений и кадров. При ошибке Studio попытается
-            восстановить прежнее состояние; внешние изменения не перезаписываются.</p>
-        : <p>Добавление записывает состояние в <code>meta.json</code>; PNG создаётся только при импорте.
-            Существующие изображения и состояния не перезаписываются.</p>}
+      <p>{t(attaching ? 'rsi.import.attachIntro' : replacing ? 'rsi.import.replaceIntro' : 'rsi.import.intro')}</p>
       {!existingState && <label><input type="checkbox" checked={metadataOnly} disabled={uploading}
-        onChange={(event) => { const next = toggleRsiImportMode(event.target.checked); setMetadataOnly(next.metadataOnly); setFile(next.file); if (input.current) input.current.value = ''; }}/> Только метаданные, без PNG</label>}
-      {metadataOnly && <p>PNG не создаётся. Изображение можно добавить позже через Studio.</p>}
+        onChange={(event) => { const next = toggleRsiImportMode(event.target.checked); setMetadataOnly(next.metadataOnly); setFile(next.file); if (input.current) input.current.value = ''; }}/> {t('rsi.import.metadataOnly')}</label>}
+      {metadataOnly && <p>{t('rsi.import.metadataHint')}</p>}
       {!metadataOnly && <>
       <div className={'rsi-dropzone' + (dragging ? ' dragging' : '')}
-        role="group" aria-label="Перетащить PNG для импорта"
+        role="group" aria-label={t('rsi.import.dropLabel')}
         onDragOver={(event) => { event.preventDefault(); if (!uploading) setDragging(true); }}
         onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }}
         onDrop={onDrop}>
-        Перетащите сюда один PNG-лист или выберите файл ниже.
+        {t('rsi.import.drop')}
       </div>
       <div className="rsi-import-fields">
-        <label>PNG-лист
+        <label>{t('rsi.import.file')}
           <input ref={input} type="file" accept="image/png,.png" disabled={uploading}
             onChange={(event) => chooseFile(event.target.files?.[0] ?? null)}/>
         </label>
       </div></>}
       <div className="rsi-import-fields">
         {existingState
-          ? <label>Состояние<strong>{existingState.name}</strong></label>
-          : <label>Имя состояния
+          ? <label>{t('rsi.import.state')}<strong>{existingState.name}</strong></label>
+          : <label>{t('rsi.import.name')}
               <input type="text" value={name} required maxLength={128}
                 pattern="[a-z0-9_-]+" disabled={uploading}
                 onChange={(event) => setName(event.target.value)} placeholder="walk"/>
             </label>}
-        <label>Направления
+        <label>{t('rsi.import.directions')}
           <select value={directions} disabled={uploading || attaching}
             onChange={(event) => setDirections(Number(event.target.value) as 1 | 4 | 8)}>
-            <option value={1}>1 — одно</option>
-            <option value={4}>4 — стороны света</option>
-            <option value={8}>8 — с диагоналями</option>
+            <option value={1}>{t('rsi.import.one')}</option>
+            <option value={4}>{t('rsi.import.four')}</option>
+            <option value={8}>{t('rsi.import.eight')}</option>
           </select>
         </label>
-        <label>Кадров на направление
+        <label>{t('rsi.import.frames')}
           <input type="number" min={1} max={Math.min(128, Math.floor(256 / directions))} step={1}
             value={frames} disabled={uploading || attaching}
             onChange={(event) => setFrames(Number(event.target.value))}/>
         </label>
-        <label>Длительность кадра, сек
+        <label>{t('rsi.import.delay')}
           <input type="number" min={0.01} max={60} step={0.01}
             value={delay} disabled={uploading || attaching}
             onChange={(event) => setDelay(Number(event.target.value))}/>
         </label>
       </div>
       {!attaching && <p className="rsi-import-hint">
-        Порядок кадров: сначала все кадры юга, затем севера, востока, запада и диагоналей.
-        PNG должен содержать ровно направления × кадры ячеек. Если сетка не меняется,
-        покадровые задержки исходного состояния сохраняются.
+        {t('rsi.import.gridHint')}
       </p>}
-      {attaching && <p>PNG должен содержать все кадры из метаданных; дополнительные ячейки допустимы.</p>}
-      {!metadataOnly && file && <small>Выбран: {file.name} · {Math.ceil(file.size / 1024)} КиБ</small>}
+      {attaching && <p>{t('rsi.import.attachHint')}</p>}
+      {!metadataOnly && file && <small>{t('rsi.import.selected', { name: file.name, size: Math.ceil(file.size / 1024) })}</small>}
       {error && <div className="rsi-error" role="alert"><AlertCircle size={16}/>
-        <span>{error.message} {error.hint} <code>{error.code}</code></span>
+        <span>{error.code === 'RSI_IMPORT_FILE_EXTENSION' ? t('rsi.import.errorExtension')
+          : error.code === 'RSI_IMPORT_PNG_TOO_LARGE' && error.message === 'Выберите непустой PNG не больше 8 МиБ.' ? t('rsi.import.errorSize')
+          : error.code === 'RSI_IMPORT_SINGLE_FILE' ? t('rsi.import.errorSingle')
+          : error.code === 'RSI_REPLACE_PNG_REVISION_MISSING' ? t('rsi.import.errorRevision')
+          : language === 'ru' ? `${error.message} ${error.hint}` : t('rsi.error.operation')} <code>{error.code}</code></span>
+        {language === 'en' && !['RSI_IMPORT_FILE_EXTENSION', 'RSI_IMPORT_SINGLE_FILE', 'RSI_REPLACE_PNG_REVISION_MISSING'].includes(error.code) && !(error.code === 'RSI_IMPORT_PNG_TOO_LARGE' && error.message === 'Выберите непустой PNG не больше 8 МиБ.') && <pre>{error.message} {error.hint}</pre>}
         {error.details && <pre>{error.details}</pre>}
       </div>}
       <button type="submit" disabled={uploading || (!metadataOnly && !file) || (!replacing && !name)
           || (!attaching && (!Number.isInteger(frames) || frames < 1 || frames > 128 || frames * directions > 256))
           || (replacing && !expectedPngRevision)}>
         <ImagePlus size={15}/>{uploading
-          ? (replacing ? 'Заменяю…' : 'Импортирую…')
-          : (attaching ? 'Добавить PNG' : replacing ? 'Заменить PNG и перестроить кадры' : metadataOnly ? 'Создать без PNG' : 'Добавить новое состояние')}
+          ? t(replacing ? 'rsi.import.busyReplace' : 'rsi.import.busy')
+          : t(attaching ? 'rsi.import.attaching' : replacing ? 'rsi.import.replacing' : metadataOnly ? 'rsi.import.creating' : 'rsi.import.add')}
       </button>
     </form>
   </details>;

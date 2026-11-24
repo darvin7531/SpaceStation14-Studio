@@ -2,13 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { I18nProvider } from '../src/i18n';
 import RsiRenamePanel from '../src/components/RsiRenamePanel';
 
 test('metadata-only rename explains manual recovery and starts disabled', () => {
-  const html = renderToStaticMarkup(createElement(RsiRenamePanel, {
+  const html = renderToStaticMarkup(createElement(I18nProvider, null, createElement(RsiRenamePanel, {
     path: 'Resources/Textures/test.rsi', revision: 'a'.repeat(64), name: 'idle',
     expectedMissingPng: true, onRenamed: () => {},
-  }));
+  })));
   assert.match(html, /PNG не изменяются/);
   assert.match(html, /восстанавливается вручную/);
   assert.match(html, /Остановите внешние процессы записи/);
