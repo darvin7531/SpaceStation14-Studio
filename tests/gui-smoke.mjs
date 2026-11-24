@@ -134,6 +134,7 @@ try {
   await keys(await find('.create-proto-modal input[list=new-prototype-kinds]'), '\uE00C');
   await until('wizard dismissed', async () => !(await find('.create-proto-modal')));
   assert.ok(await script("return document.activeElement === document.querySelector('.create-proto-open');"), 'escape restores launcher focus');
+  await click('.explorer > .explorer-switch:first-child button:first-child');
   await click('[role=tab][title="Resources/Prototypes/smoke.yml"]');
   await until('original editor restored', () => script("return [...document.querySelectorAll('.monaco-shell .view-line')].some(line => line.textContent.includes('SmokeSecond'));"));
 
