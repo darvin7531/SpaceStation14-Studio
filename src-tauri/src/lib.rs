@@ -750,9 +750,10 @@ async fn save_yaml_resource(
     path: String,
     expected_revision: String,
     content: String,
+    expected_project_root: String,
     state: State<'_, WorkspaceState>,
 ) -> Result<SaveResult, StudioError> {
-    let index = current_project(&state)?;
+    let index = project_for_operation(&state, Some(&expected_project_root))?;
     tauri::async_runtime::spawn_blocking(move || {
         index.save_yaml(&path, &expected_revision, content)
     })
@@ -780,37 +781,10 @@ async fn save_ftl_resource(
     path: String,
     expected_revision: String,
     content: String,
-    state: State<'_, WorkspaceState>,
-) -> Result<SaveResult, StudioError> {
-    save_ftl_resource_impl(path, expected_revision, content, None, state).await
-}
-
-#[tauri::command]
-async fn save_ftl_resource_bound(
-    path: String,
-    expected_revision: String,
-    content: String,
     expected_project_root: String,
     state: State<'_, WorkspaceState>,
 ) -> Result<SaveResult, StudioError> {
-    save_ftl_resource_impl(
-        path,
-        expected_revision,
-        content,
-        Some(expected_project_root),
-        state,
-    )
-    .await
-}
-
-async fn save_ftl_resource_impl(
-    path: String,
-    expected_revision: String,
-    content: String,
-    expected_project_root: Option<String>,
-    state: State<'_, WorkspaceState>,
-) -> Result<SaveResult, StudioError> {
-    let index = project_for_operation(&state, expected_project_root.as_deref())?;
+    let index = project_for_operation(&state, Some(&expected_project_root))?;
     tauri::async_runtime::spawn_blocking(move || index.save_ftl(&path, &expected_revision, content))
         .await
         .map_err(interrupted)?
@@ -1508,7 +1482,6 @@ pub fn run() -> Result<(), tauri::Error> {
             save_yaml_resource,
             analyze_fluent_resource,
             save_ftl_resource,
-            save_ftl_resource_bound,
             preview_new_fluent,
             create_new_fluent,
             create_new_fluent_bound,
@@ -1539,6 +1512,40 @@ pub fn run() -> Result<(), tauri::Error> {
 #[cfg(test)]
 mod rsi_project_binding_tests {
     use super::*;
+
+    #[test]
+    fn editor_saves_reject_a_different_project_even_with_matching_files() {
+        let base = std::env::temp_dir().join(format!("studio-editor-binding-{}", std::process::id()));
+        let a = base.join("a");
+        let b = base.join("b");
+        for root in [&a, &b] {
+            std::fs::create_dir_all(root.join("Resources/Prototypes")).unwrap();
+            std::fs::create_dir_all(root.join("Resources/Locale/en-US")).unwrap();
+            std::fs::write(root.join("Resources/Prototypes/test.yml"), "- type: entity\n  id: Test\n").unwrap();
+            std::fs::write(root.join("Resources/Locale/en-US/test.ftl"), "test = Original\n").unwrap();
+        }
+        let first = Arc::new(ProjectIndex::open(a.to_str().unwrap()).unwrap());
+        let expected = first.overview().project_root.clone();
+        let yaml = "Resources/Prototypes/test.yml";
+        let ftl = "Resources/Locale/en-US/test.ftl";
+        let yaml_revision = first.read_resource(yaml).unwrap().revision;
+        let ftl_revision = first.read_resource(ftl).unwrap().revision;
+        let state = WorkspaceState(Mutex::new(Some(first)));
+        *state.0.lock().unwrap() = Some(Arc::new(ProjectIndex::open(b.to_str().unwrap()).unwrap()));
+        for (path, revision, content) in [(yaml, yaml_revision, "- type: entity\n  id: Changed\n"), (ftl, ftl_revision, "test = Changed\n")] {
+            let before = std::fs::read(b.join(path)).unwrap();
+            let result = project_for_operation(&state, Some(&expected)).and_then(|index| {
+                if path == yaml {
+                    index.save_yaml(path, &revision, content.into())
+                } else {
+                    index.save_ftl(path, &revision, content.into())
+                }
+            });
+            assert_eq!(result.unwrap_err().code, "PROJECT_CHANGED");
+            assert_eq!(std::fs::read(b.join(path)).unwrap(), before);
+        }
+        std::fs::remove_dir_all(base).unwrap();
+    }
 
     #[test]
     fn rejects_a_project_switch_before_any_rsi_write() {

@@ -806,11 +806,11 @@ export const studio = {
   analyzeYamlResource(path: string, content: string): Promise<YamlSyntaxReport> {
     return invoke('analyze_yaml_resource', { path, content });
   },
-  saveYamlResource(path: string, expectedRevision: string, content: string): Promise<SaveResult> {
-    return invoke('save_yaml_resource', { path, expectedRevision, content });
+  saveYamlResource(path: string, expectedRevision: string, content: string, expectedProjectRoot: string): Promise<SaveResult> {
+    return invoke('save_yaml_resource', { path, expectedRevision, content, expectedProjectRoot });
   },
-  saveFtlResource(path: string, expectedRevision: string, content: string, expectedProjectRoot?: string): Promise<SaveResult> {
-    return invoke(expectedProjectRoot === undefined ? 'save_ftl_resource' : 'save_ftl_resource_bound', { path, expectedRevision, content, ...(expectedProjectRoot === undefined ? {} : { expectedProjectRoot }) });
+  saveFtlResource(path: string, expectedRevision: string, content: string, expectedProjectRoot: string): Promise<SaveResult> {
+    return invoke('save_ftl_resource', { path, expectedRevision, content, expectedProjectRoot });
   },
   analyzeFluentResource(path: string, content: string): Promise<FluentInspection> {
     return invoke('analyze_fluent_resource', { path, content });

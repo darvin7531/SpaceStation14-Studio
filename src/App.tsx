@@ -987,7 +987,7 @@ export default function App() {
   }
 
   async function saveCurrent() {
-    if (!selected || !isEditableText(selected.kind) || saving || refreshing) return;
+    if (!overview || !selected || !isEditableText(selected.kind) || opening || transitioning || saving || refreshing) return;
     const file = selected.path;
     const baseline = documents.current.get(file);
     if (!baseline) return;
@@ -1003,7 +1003,7 @@ export default function App() {
       void compareCurrent();
       return;
     }
-    const key = journalKey(overview!.project_root, file);
+    const key = journalKey(overview.project_root, file);
     const timer = journalTimers.current.get(key);
     if (timer !== undefined) {
       window.clearTimeout(timer);
@@ -1015,8 +1015,8 @@ export default function App() {
     setError(null);
     try {
       const result = selected.kind === 'yaml'
-        ? await studio.saveYamlResource(file, sourceRevision, submitted)
-        : await studio.saveFtlResource(file, sourceRevision, submitted);
+        ? await studio.saveYamlResource(file, sourceRevision, submitted, overview.project_root)
+        : await studio.saveFtlResource(file, sourceRevision, submitted, overview.project_root);
       documents.current.set(file, result.document);
       setDriftReport((current) => current ? {
         ...current, items: current.items.filter((item) => item.path !== file),
@@ -1064,7 +1064,7 @@ export default function App() {
     };
     window.addEventListener('keydown', shortcut);
     return () => window.removeEventListener('keydown', shortcut);
-  }, [selected?.path, document?.revision, drafts, saving, refreshing]);
+  }, [overview, selected?.path, document?.revision, drafts, draftBases, opening, transitioning, saving, refreshing]);
 
   function openResource(item: EditorTab, preferredRsiState?: string | null): boolean {
     if (saving || transitioning || opening || refreshing) return false;
