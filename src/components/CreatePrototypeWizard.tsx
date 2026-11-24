@@ -12,6 +12,7 @@ import {
   type NewPrototypePreview,
 } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
+import { prototypeWizardShortcut } from '../lib/prototype-wizard-shortcut';
 
 export type PrototypeDestinationMode = 'new' | 'append';
 
@@ -61,6 +62,8 @@ export default function CreatePrototypeWizard({
   const [createError, setCreateError] = useState<StudioError | null>(null);
   const [checking, setChecking] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [pickingFolder, setPickingFolder] = useState(false);
+
 
   function switchDestination(next: 'project' | 'external') {
     if (next === destination) return;
@@ -173,8 +176,6 @@ export default function CreatePrototypeWizard({
     };
   }, [draft, mode, destination, targetIsDirty]);
 
-  const [pickingFolder, setPickingFolder] = useState(false);
-
   async function pickProjectFolder() {
     if (mode !== 'new' || destination !== 'project') return;
     setPickingFolder(true);
@@ -229,7 +230,15 @@ export default function CreatePrototypeWizard({
   return <div className="create-proto-backdrop" role="presentation">
     <section className="create-proto-modal" role="dialog" aria-modal="true"
       aria-labelledby="create-proto-title">
-      <form className="create-proto-layout" onSubmit={(event) => void create(event)}>
+      <form className="create-proto-layout" onSubmit={(event) => void create(event)}
+        onKeyDown={(event) => {
+          const action = prototypeWizardShortcut(event.nativeEvent, creating || pickingFolder);
+          if (!action) return;
+          event.preventDefault();
+          event.stopPropagation();
+          if (action === 'close') onClose();
+          else event.currentTarget.requestSubmit();
+        }}>
         <div className="create-proto-form">
           <header className="create-proto-head">
             <div><small><FilePlus2 size={14}/> {t('wizard.proto.newContent')}</small>
@@ -258,7 +267,7 @@ export default function CreatePrototypeWizard({
           <fieldset className="create-proto-group">
             <legend>{t('wizard.proto.identity')}</legend>
             <label>{t('wizard.proto.type')}
-              <input required list="new-prototype-kinds" value={draft.kind}
+              <input autoFocus required list="new-prototype-kinds" value={draft.kind}
                 onChange={(event) => update('kind', event.target.value)}/>
               <datalist id="new-prototype-kinds">
                 {[...new Set([...availableKinds, 'entity', 'reagent', 'tile', 'construction', 'recipe'])]
