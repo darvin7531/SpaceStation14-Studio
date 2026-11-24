@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { indexedRsiPath, yamlCompletionContext, yamlComponentHoverTarget, yamlSpriteLinkTarget, yamlEditorContextLines, yamlEditorCompletionContext, yamlEditorComponentHoverTarget, yamlComponentInsertText } from '../src/editor/yaml-completion';
+import { indexedRsiPath, yamlCompletionContext, yamlComponentHoverTarget, yamlSpriteLinkTarget, yamlEditorContextLines, yamlEditorCompletionContext, yamlEditorComponentHoverTarget, yamlComponentInsertText, yamlCompletionEndColumn } from '../src/editor/yaml-completion';
 
 test('editor completions and hover retain context beyond 64 lines without crossing prototypes', () => {
   const lines = ['- type: entity', '  components:', '  - type: Old', '- type: entity', '  components:',
@@ -118,4 +118,11 @@ test('editor requests skip irrelevant lines and invalidate cached context on edi
   lines[1] = '  unrelated:';
   version++;
   assert.equal(yamlEditorCompletionContext(model, lines.length, 8), null);
+});
+
+
+test('completion replaces the remaining token without consuming YAML delimiters', () => {
+  assert.equal(yamlCompletionEndColumn('  - type: Sprite # comment', 14, 'component-type'), 17);
+  assert.equal(yamlCompletionEndColumn('  parent: [Base, Other]', 14, 'prototype-parent'), 16);
+  assert.equal(yamlCompletionEndColumn('    sprite: "Objects/Test.rsi"', 18, 'rsi-path'), 30);
 });

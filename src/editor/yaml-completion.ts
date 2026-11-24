@@ -14,6 +14,12 @@ export function yamlComponentInsertText(line: string, context: YamlCompletionCon
   return (line[context.startColumn - 2] === '-' ? ' ' : '') + 'type: ' + name;
 }
 
+export function yamlCompletionEndColumn(line: string, column: number, kind: YamlCompletionContext['kind']): number {
+  const suffix = line.slice(column - 1);
+  const token = kind === 'rsi-path' ? /^[A-Za-z0-9_./-]*/ : /^[A-Za-z0-9_-]*/;
+  return column + (suffix.match(token)?.[0].length ?? 0);
+}
+
 type EditorModel = { getLineContent(line: number): string; getVersionId(): number };
 const editorContexts = new WeakMap<EditorModel, { version: number; lineNumber: number; lines: string[] }>();
 
