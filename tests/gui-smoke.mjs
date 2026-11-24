@@ -373,6 +373,7 @@ try {
   await script('window.__switchGate.release();');
   await until('cancelled read settled', () => script('return window.__switchGate.settled;'));
   assert.equal(await find('[role=tab][title="Resources/Prototypes/tabs.yml"]'), undefined, 'cancelled read opens no tab');
+  await script('document.querySelector(\'.resource-tree-filename[title="Resources/Prototypes/tabs.yml"]\').scrollIntoView({ block: "center" });');
   await click('.resource-tree-filename[title="Resources/Prototypes/tabs.yml"]');
   await click('[role=tab][title="Resources/Prototypes/tabs.yml"]');
   await until('returned prototype loaded', () => script("return document.querySelector('.monaco-shell .view-lines')?.textContent?.replace(/\\s+/g, ' ').includes('id: SmokeSecond');"));
