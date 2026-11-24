@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { studio, type ResourceDocument, type ResourceEntry } from '../lib/api';
-import { yamlRsiInsertText, indexedRsiPath, yamlEditorCompletionContext, yamlEditorComponentHoverTarget, yamlSpriteLinkTarget, yamlComponentInsertText, yamlCompletionEndColumn, yamlFieldInsertText, yamlCurrentCompletion } from './yaml-completion';
+import { yamlRsiCandidates, yamlRsiInsertText, yamlEditorCompletionContext, yamlEditorComponentHoverTarget, yamlSpriteLinkTarget, yamlComponentInsertText, yamlCompletionEndColumn, yamlFieldInsertText, yamlCurrentCompletion } from './yaml-completion';
 import { componentHoverMarkdown } from './component-hover';
 import { yamlLocaleClickField } from './yaml-locale-navigation';
 import { missingEntityLocaleUnderlines } from './yaml-locale-markers';
@@ -180,12 +180,13 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
                           }));
                       }
                     } else if (target.kind === 'rsi-path') {
-                      const page = await studio.searchResources(target.query, 'rsi', 0, 80);
-                      entries = page.items.filter((item) => item.path.startsWith('Resources/Textures/') && indexedRsiPath(item.path) !== null)
-                        .map((item) => ({
-                          label: item.path.slice('Resources/Textures/'.length),
-                          detail: item.path,
-                          insertText: yamlRsiInsertText(source.getLineContent(position.lineNumber), target, item.path.slice('Resources/Textures/'.length)),
+                      const paths = await yamlRsiCandidates(target.query,
+                        (query, offset, limit) => studio.searchResources(query, 'rsi', offset, limit),
+                        () => token.isCancellationRequested || cancelled);
+                      entries = paths.map((path) => ({
+                          label: path.slice('Resources/Textures/'.length),
+                          detail: path,
+                          insertText: yamlRsiInsertText(source.getLineContent(position.lineNumber), target, path.slice('Resources/Textures/'.length)),
                         }));
                     }
                     if (token.isCancellationRequested || cancelled) return { suggestions: [] };

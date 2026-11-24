@@ -32,7 +32,7 @@ export function yamlCompletionEndColumn(line: string, column: number, kind: Yaml
   return column + (suffix.match(token)?.[0].length ?? 0);
 }
 
-type EditorModel = { getLineContent(line: number): string; getVersionId(): number };
+type EditorModel = { getLineContent(line: number): string; getVersionId(): number; getLineCount?: () => number };
 const editorContexts = new WeakMap<EditorModel, { version: number; lineNumber: number; lines: string[] }>();
 
 /** Include the entire current prototype, including unsaved edits. */
@@ -58,7 +58,16 @@ export function yamlEditorCompletionContext(model: EditorModel, lineNumber: numb
   const prefix = line.slice(0, column - 1);
   if (!/^\s*(?:parent:\s*(?:[A-Za-z0-9_-]*|\[[^\]\n]*)|-\s*(?:type:\s*)?[A-Za-z0-9_-]*|sprite:\s*(?:["'][^"'#\\]*|[^"'#\s]*)|[a-zA-Z_][\w-]*)$/.test(prefix)) return null;
   const lines = yamlEditorContextLines(model, lineNumber);
-  return yamlCompletionContext(lines, lines.length, column);
+  const context = yamlCompletionContext(lines, lines.length, column);
+  if (context?.kind !== 'component-field') return context;
+  const allLines = [...lines];
+  const depth = line.match(/^\s*/)?.[0].length ?? 0;
+  for (let next = lineNumber + 1; next <= (model.getLineCount?.() ?? lineNumber); next++) {
+    const text = model.getLineContent(next);
+    if (text.trim() && !/^\s*#/.test(text) && (text.match(/^\s*/)?.[0].length ?? 0) < depth) break;
+    allLines.push(text);
+  }
+  return yamlCompletionContext(allLines, lines.length, column);
 }
 
 export function yamlEditorComponentHoverTarget(model: EditorModel, lineNumber: number, column: number) {
@@ -83,7 +92,7 @@ const RSI_COMPONENTS = new Set(['Sprite', 'Clothing', 'Icon', 'HumanoidAppearanc
 /** Find a component and its already declared fields without treating other YAML lists as components. */
 function componentScope(lines: readonly string[], lineNumber: number) {
   let sectionIndent: number | null = null;
-  let component: { type: string; depth: number; fields: Set<string> } | null = null;
+  let component: { type: string; depth: number; start: number; fields: Set<string> } | null = null;
   for (let i = 0; i < lineNumber - 1; i += 1) {
     const line = lines[i];
     if (!line.trim() || /^\s*#/.test(line)) continue;
@@ -103,14 +112,22 @@ function componentScope(lines: readonly string[], lineNumber: number) {
     if (component && depth <= component.depth) component = null;
     const entry = line.match(/^\s*-\s*type:\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:#.*)?$/);
     if (entry) {
-      component = { type: entry[1], depth, fields: new Set() };
-    } else if (component && depth > component.depth) {
-      const field = line.match(/^\s*([a-zA-Z_][\w-]*):\s*/);
-      if (field) component.fields.add(field[1]);
+      component = { type: entry[1], depth, start: i, fields: new Set() };
     }
   }
   const line = lines[lineNumber - 1] ?? '';
   const depth = line.match(/^\s*/)?.[0].length ?? 0;
+  if (component && depth > component.depth) {
+    for (let i = component.start + 1; i < lines.length; i++) {
+      if (i === lineNumber - 1) continue;
+      const text = lines[i];
+      if (!text.trim() || /^\s*#/.test(text)) continue;
+      const fieldDepth = text.match(/^\s*/)?.[0].length ?? 0;
+      if (fieldDepth <= component.depth) break;
+      const field = fieldDepth === depth && text.match(/^\s*([a-zA-Z_][\w-]*):\s*/);
+      if (field) component.fields.add(field[1]);
+    }
+  }
   return {
     inside: sectionIndent !== null && (depth > sectionIndent ||
       (depth === sectionIndent && /^\s*-\s*/.test(line))),
@@ -200,6 +217,26 @@ export function indexedRsiPath(raw: string): string | null {
   if (parts.length < 4 || parts[0] !== 'Resources' || parts[1] !== 'Textures'
       || parts.some((part) => !part || part === '.' || part === '..')) return null;
   return path;
+}
+
+export async function yamlRsiCandidates(
+  query: string,
+  search: (query: string, offset: number, limit: number) => Promise<{ total: number; items: { path: string }[] }>,
+  cancelled: () => boolean = () => false,
+): Promise<string[]> {
+  const prefix = 'Resources/Textures/' + query;
+  const paths: string[] = [];
+  let offset = 0;
+  while (!cancelled() && paths.length < 80) {
+    const page = await search(prefix, offset, 80);
+    for (const item of page.items) {
+      if (item.path.startsWith('Resources/Textures/') && item.path.toLowerCase().startsWith(prefix.toLowerCase()) && indexedRsiPath(item.path)) paths.push(item.path);
+      if (paths.length === 80) break;
+    }
+    offset += page.items.length;
+    if (!page.items.length || offset >= page.total) break;
+  }
+  return paths;
 }
 
 /** Encode an indexed path for the scalar already being edited. */

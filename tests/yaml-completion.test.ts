@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { yamlRsiInsertText, indexedRsiPath, yamlCompletionContext, yamlComponentHoverTarget, yamlSpriteLinkTarget, yamlEditorContextLines, yamlEditorCompletionContext, yamlEditorComponentHoverTarget, yamlComponentInsertText, yamlCompletionEndColumn, yamlFieldInsertText, yamlCurrentCompletion } from '../src/editor/yaml-completion';
+import { yamlRsiCandidates, yamlRsiInsertText, indexedRsiPath, yamlCompletionContext, yamlComponentHoverTarget, yamlSpriteLinkTarget, yamlEditorContextLines, yamlEditorCompletionContext, yamlEditorComponentHoverTarget, yamlComponentInsertText, yamlCompletionEndColumn, yamlFieldInsertText, yamlCurrentCompletion } from '../src/editor/yaml-completion';
 
 test('editor completions and hover retain context beyond 64 lines without crossing prototypes', () => {
   const lines = ['- type: entity', '  components:', '  - type: Old', '- type: entity', '  components:',
@@ -66,6 +66,21 @@ test('component entry and DataField contexts preserve existing fields', () => {
   assert.equal(yamlCompletionContext([
     '- type: entity', '  components:', '  - type: Sprite', '  unrelated:', '    foo',
   ], 5, 8), null);
+});
+
+test('component fields include siblings after the cursor but not nested or other component fields', () => {
+  const lines = ['- type: entity', '  components:', '  - type: Sprite', '    before: x',
+    '    sca', '    nested:', '      scale: x', '    state: icon', '  - type: Icon', '    scale: x'];
+  const model = { getLineContent: (n: number) => lines[n - 1], getLineCount: () => lines.length, getVersionId: () => 1 };
+  assert.deepEqual(yamlEditorCompletionContext(model, 5, 8)?.existingFields, ['before', 'nested', 'state']);
+  assert.deepEqual(yamlCompletionContext(lines, 5, 8)?.existingFields, ['before', 'nested', 'state']);
+});
+
+test('RSI completion finds prefix matches after a full page of substring matches', async () => {
+  const items = [...Array.from({ length: 80 }, (_, i) => ({ path: `Resources/Textures/x/Resources/Textures/Obj${i}.rsi` })),
+    { path: 'Resources/Textures/Objects/real.rsi' }];
+  const candidates = await yamlRsiCandidates('Obj', async (_query, offset, limit) => ({ total: items.length, items: items.slice(offset, offset + limit) }));
+  assert.deepEqual(candidates, ['Resources/Textures/Objects/real.rsi']);
 });
 
 test('component completion inserts valid spacing for bare and partial list entries', () => {
