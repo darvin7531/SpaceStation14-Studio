@@ -30,11 +30,13 @@ export async function deleteDraftPreservingChanges(
     await remove();
   } finally {
     let content = latest();
-    while (content !== undefined && content !== submitted) {
-      await persist(content);
-      const next = latest();
-      if (next === content) break;
-      content = next;
+    if (content !== submitted) {
+      while (content !== undefined) {
+        await persist(content);
+        const next = latest();
+        if (next === content) break;
+        content = next;
+      }
     }
   }
 }

@@ -101,6 +101,25 @@ test('edits during persistence of a reverted draft are preserved and prevent clo
   assert.equal(closed, false);
 });
 
+test('failure persisting a reverted draft prevents close', async () => {
+  let draft = 'A';
+  let journal: string | undefined = 'A';
+  let closed = false;
+  await assert.rejects(saveAndClose({
+    current: () => draft === 'A',
+    save: async () => {},
+    cleanup: () => deleteDraftPreservingChanges(async () => { journal = undefined; draft = 'B'; },
+      () => draft, 'A', async (content) => {
+        if (content === 'A') throw Error('revert persistence failed');
+        journal = content;
+        draft = 'A';
+      }),
+    close: () => { closed = true; },
+  }), /revert persistence failed/);
+  assert.equal(journal, 'B');
+  assert.equal(closed, false);
+});
+
 test('recovery deletion and persistence failures prevent close', async () => {
   for (const failure of ['delete', 'persist']) {
     let draft = 'A';
