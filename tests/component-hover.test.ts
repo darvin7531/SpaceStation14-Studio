@@ -33,11 +33,13 @@ test('hover exposes C# source, required fields and example YAML', () => {
 
 test('component hover follows the interface language including uncertain schemas', () => {
   const english = componentHoverMarkdown(fixture, 'en');
+  assert.match(english, /C# source: `Shared\/SpriteComponent\.cs:10`/);
   assert.match(english, /Direct DataFields/);
   assert.match(english, /visible.*required/);
   assert.match(english, /Example YAML/);
   assert.match(english, /without verifying engine inheritance/);
   assert.doesNotMatch(english, /обязательно|Пример|Прямые/);
+  assert.match(componentHoverMarkdown(fixture, 'ru'), /C# исходник: `Shared\/SpriteComponent\.cs:10`/);
   assert.match(componentHoverMarkdown(fixture, 'ru'), /Прямые DataField/);
   assert.match(ambiguousComponentHoverMarkdown('Sprite', 'en'), /ambiguous.*incomplete/i);
   assert.match(ambiguousComponentHoverMarkdown('Sprite', 'ru'), /неоднозначна/);

@@ -57,7 +57,7 @@ export function componentHoverMarkdown(definition: CSharpDefinition, language: L
     '### ' + safeMarkdown(definition.name),
     '\x60' + safeMarkdown(definition.class_name) + '\x60',
     '',
-    'C# source: \x60' + safeMarkdown(definition.file) + ':' + definition.line + '\x60',
+    (language === 'en' ? 'C# source: ' : 'C# исходник: ') + '\x60' + safeMarkdown(definition.file) + ':' + definition.line + '\x60',
   ];
   if (definition.summary) lines.push('', safeDocumentation(definition.summary));
   if (definition.fields.length) {
