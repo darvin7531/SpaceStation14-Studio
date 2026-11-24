@@ -1870,13 +1870,13 @@ export default function App() {
               onOpenRsi={(path, state) => openResource({ path, kind: 'rsi' }, state)}
               onOpenFtl={(path) => openResource({ path, kind: 'ftl' })}/>}
           {selected.kind === 'yaml' && document?.path === selected.path && !reading
-            && <YamlDiagnosticsPanel key={selected.path} path={selected.path} source={activeText}
+            && <YamlDiagnosticsPanel key={'yaml-diagnostics:' + selected.path} path={selected.path} source={activeText}
               enabled={editorSettings.liveValidation} delayMs={editorSettings.validationDelay}
               onRevealLine={(line) => setJumpTarget({
                 path: selected.path, line, token: ++jumpCounter.current,
               })}/>}
           {selected.kind === 'ftl' && document?.path === selected.path && !reading
-            && <FluentDiagnosticsPanel key={selected.path} path={selected.path} source={activeText}
+            && <FluentDiagnosticsPanel key={'fluent-diagnostics:' + selected.path} path={selected.path} source={activeText}
               enabled={editorSettings.liveValidation} delayMs={editorSettings.validationDelay}
               onRevealLine={(line) => setJumpTarget({
                 path: selected.path, line, token: ++jumpCounter.current,

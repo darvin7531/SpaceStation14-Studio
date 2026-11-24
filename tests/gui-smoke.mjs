@@ -345,6 +345,8 @@ try {
   `));
 
   await click('.resource-row[title="Resources/Textures/smoke.rsi"]');
+  await until('RSI viewer', () => find('.rsi-viewer'));
+  assert.equal(await script("return document.querySelectorAll('.editor > .yaml-diagnostics, .editor > .fluent-diagnostics').length;"), 0, 'diagnostics from previous tabs must unmount');
   try {
     await click('[data-testid=rsi-import] summary');
   } catch (error) {
