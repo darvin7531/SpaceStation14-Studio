@@ -345,7 +345,21 @@ try {
   `));
 
   await click('.resource-row[title="Resources/Textures/smoke.rsi"]');
-  await click('[data-testid=rsi-import] summary');
+  try {
+    await click('[data-testid=rsi-import] summary');
+  } catch (error) {
+    console.error('RSI import layout:', JSON.stringify(await script(`
+      const target = document.querySelector('[data-testid=rsi-import] summary');
+      const ancestors = [];
+      for (let el = target; el; el = el.parentElement) {
+        const style = getComputedStyle(el), rect = el.getBoundingClientRect();
+        ancestors.push({ tag: el.tagName, class: el.className, rect: rect.toJSON(), display: style.display,
+          visibility: style.visibility, overflow: style.overflow, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight });
+      }
+      return { ancestors, width: innerWidth, height: innerHeight };
+    `)));
+    throw error;
+  }
   await click('[data-testid=rsi-import] input[type=checkbox]');
   await keys(await until('state name', () => find('[data-testid=rsi-import] input[type=text]')), 'idle');
   await click('[data-testid=rsi-import] button[type=submit]');
