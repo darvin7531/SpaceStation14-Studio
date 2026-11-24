@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dirtyDocumentPaths, reconcileSavedDraft } from '../src/lib/draft-state';
+import { dirtyDocumentPaths, hasUnprotectedDraft, reconcileSavedDraft } from '../src/lib/draft-state';
 
 test('unchanged source is not marked dirty', () => {
   const loaded = new Map([['a.yml', { content: 'same' }]]);
@@ -32,4 +32,12 @@ test('saved text resets dirty state when nothing changed during request', () => 
 
 test('a recovered draft cannot appear clean or dirty until its source is loaded', () => {
   assert.deepEqual(dirtyDocumentPaths({ 'new.yml': 'recovered text' }, new Map()), []);
+});
+
+test('append completion preserves edits made after submission and unloaded recovery drafts', () => {
+  const loaded = new Map([['a.yml', { content: 'original' }]]);
+  assert.equal(hasUnprotectedDraft('a.yml', { 'a.yml': 'later edit' }, loaded, {}), true);
+  assert.equal(hasUnprotectedDraft('a.yml', { 'a.yml': 'original' }, loaded, {}), false);
+  assert.equal(hasUnprotectedDraft('a.yml', { 'a.yml': 'recovered' }, new Map(), {}), true);
+  assert.equal(hasUnprotectedDraft('a.yml', {}, loaded, { 'a.yml': 'recovery base' }), true);
 });

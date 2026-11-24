@@ -848,8 +848,8 @@ export const studio = {
   previewNewPrototype(draft: NewPrototypeDraft, external = false): Promise<NewPrototypePreview> {
     return invoke('preview_new_prototype', { draft, external });
   },
-  createNewPrototype(draft: NewPrototypeDraft): Promise<CreatedPrototype> {
-    return invoke('create_new_prototype', { draft });
+  createNewPrototype(draft: NewPrototypeDraft, expectedProjectRoot: string): Promise<CreatedPrototype> {
+    return invoke('create_new_prototype', { draft, expectedProjectRoot });
   },
   createExternalPrototype(draft: NewPrototypeDraft): Promise<ExternalCreatedPrototype | null> {
     return invoke('create_external_prototype', { draft });
@@ -857,8 +857,8 @@ export const studio = {
   previewAppendPrototype(draft: NewPrototypeDraft): Promise<AppendPrototypePreview> {
     return invoke('preview_append_prototype', { draft });
   },
-  appendPrototype(draft: NewPrototypeDraft, expectedRevision: string): Promise<CreatedPrototype> {
-    return invoke('append_prototype', { draft, expectedRevision });
+  appendPrototype(draft: NewPrototypeDraft, expectedRevision: string, expectedProjectRoot: string): Promise<CreatedPrototype> {
+    return invoke('append_prototype', { draft, expectedRevision, expectedProjectRoot });
   },
   listRsiSheets(path: string): Promise<RsiSheetList> {
     return invoke('list_rsi_sheets', { path });

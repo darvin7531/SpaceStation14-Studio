@@ -65,15 +65,48 @@ export default function CreatePrototypeWizard({
   const [pickingFolder, setPickingFolder] = useState(false);
   const busyRef = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const form = formRef.current;
+    const focusable = () => Array.from(form?.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ) ?? []).filter((element) => element.getClientRects().length > 0);
     form?.querySelector<HTMLInputElement>('input')?.focus();
-    return () => {
-      if (previous?.isConnected && (document.activeElement === document.body || form?.contains(document.activeElement))) {
-        previous.focus();
+    const focusInside = (event: FocusEvent) => {
+      const target = event.target as HTMLElement | null;
+      // A separately mounted dialog owns its own focus and shortcuts.
+      if (!form?.contains(target) && !target?.closest('[role="dialog"], dialog[open]')) focusable()[0]?.focus();
+    };
+    const keydown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const otherDialog = target?.closest('[role="dialog"], dialog[open]');
+      if (otherDialog && !otherDialog.contains(form)) return;
+      if (event.key === 'Tab' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        const items = focusable();
+        const index = items.indexOf(document.activeElement as HTMLElement);
+        if (items.length && (index < 0 || (event.shiftKey ? index === 0 : index === items.length - 1))) {
+          event.preventDefault();
+          items[event.shiftKey ? items.length - 1 : 0].focus();
+        }
+        return;
       }
+      const action = prototypeWizardShortcut(event, busyRef.current);
+      if (event.key === 'Escape' || action) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+      if (action === 'close') onCloseRef.current();
+      if (action === 'submit') form?.requestSubmit();
+    };
+    document.addEventListener('focusin', focusInside);
+    window.addEventListener('keydown', keydown, true);
+    return () => {
+      document.removeEventListener('focusin', focusInside);
+      window.removeEventListener('keydown', keydown, true);
+      if (previous?.isConnected && (document.activeElement === document.body || form?.contains(document.activeElement))) previous.focus();
     };
   }, []);
 
@@ -232,8 +265,8 @@ export default function CreatePrototypeWizard({
         if (result) onExternalCreated(result);
       } else {
         const result = mode === 'append'
-          ? await studio.appendPrototype(draft, (preview as AppendPrototypePreview).expected_revision)
-          : await studio.createNewPrototype(draft);
+          ? await studio.appendPrototype(draft, (preview as AppendPrototypePreview).expected_revision, projectRoot)
+          : await studio.createNewPrototype(draft, projectRoot);
         onCreated(result, mode);
       }
     } catch (error) {
@@ -247,15 +280,7 @@ export default function CreatePrototypeWizard({
   return <div className="create-proto-backdrop" role="presentation">
     <section className="create-proto-modal" role="dialog" aria-modal="true"
       aria-labelledby="create-proto-title">
-      <form ref={formRef} className="create-proto-layout" onSubmit={(event) => void create(event)}
-        onKeyDown={(event) => {
-          const action = prototypeWizardShortcut(event.nativeEvent, busyRef.current || creating || pickingFolder);
-          if (!action) return;
-          event.preventDefault();
-          event.stopPropagation();
-          if (action === 'close') onClose();
-          else event.currentTarget.requestSubmit();
-        }}>
+      <form ref={formRef} className="create-proto-layout" onSubmit={(event) => void create(event)}>
         <div className="create-proto-form">
           <header className="create-proto-head">
             <div><small><FilePlus2 size={14}/> {t('wizard.proto.newContent')}</small>

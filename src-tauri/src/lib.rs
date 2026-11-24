@@ -1131,9 +1131,10 @@ async fn preview_new_prototype(
 #[tauri::command]
 async fn create_new_prototype(
     draft: PrototypeDraft,
+    expected_project_root: String,
     state: State<'_, WorkspaceState>,
 ) -> Result<CreatePrototypeResult, StudioError> {
-    let original = current_project(&state)?;
+    let original = project_for_operation(&state, Some(&expected_project_root))?;
     let project = original.clone();
     let (created, refreshed) = tauri::async_runtime::spawn_blocking(move || {
         let created = project.create_new_prototype(&draft)?;
@@ -1222,9 +1223,10 @@ async fn preview_append_prototype(
 async fn append_prototype(
     draft: PrototypeDraft,
     expected_revision: String,
+    expected_project_root: String,
     state: State<'_, WorkspaceState>,
 ) -> Result<CreatePrototypeResult, StudioError> {
-    let original = current_project(&state)?;
+    let original = project_for_operation(&state, Some(&expected_project_root))?;
     let project = original.clone();
     let created = tauri::async_runtime::spawn_blocking(move || {
         project.append_prototype(&draft, &expected_revision)

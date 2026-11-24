@@ -17,7 +17,7 @@ import { readTabSession, retainAvailableTabs, writeTabSession } from './lib/tab-
 import { canApplyPrototypeFields, outlineDeclarationKey, resolvePrototypeTab } from './lib/outline-selection';
 import { readRecentProjects, rememberRecentProject, writeRecentProjects } from './lib/recent-projects';
 import { LAST_PROJECT_KEY, readLastProject, readWorkspaceUi, writeWorkspaceUi } from './lib/workspace-ui';
-import { dirtyDocumentPaths, reconcileSavedDraft } from './lib/draft-state';
+import { dirtyDocumentPaths, hasUnprotectedDraft, reconcileSavedDraft } from './lib/draft-state';
 import { DraftWriteQueue, journalKey } from './lib/draft-queue';
 import { persistExitRecovery } from './lib/exit-recovery';
 import { reviewDecision } from './lib/review-guard';
@@ -1351,6 +1351,8 @@ export default function App() {
       if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
       const key = event.key.toLowerCase();
       if (creatingPrototype) {
+        const dialog = (event.target as HTMLElement | null)?.closest('[role="dialog"], dialog[open]');
+        if (dialog && !dialog.classList.contains('create-proto-modal')) return;
         if (['s', 'p', 'f', 'w', 'tab'].includes(key)) event.preventDefault();
         return;
       }
@@ -1408,7 +1410,7 @@ export default function App() {
       setPage(0);
       setExplorerMode('prototypes');
       if (mode === 'append') {
-        if (isDirty(result.file)) {
+        if (hasUnprotectedDraft(result.file, draftsRef.current, documents.current, draftBasesRef.current)) {
           setNotice('Прототип добавлен на диск, но во вкладке остался отдельный несохранённый черновик. Не закрывайте его: сравните с изменённым файлом.');
           return;
         }
@@ -1618,12 +1620,17 @@ export default function App() {
       onExternalCreated={onExternalFluentCreated}
       preferredDraft={quickFixFluentDraft ?? undefined}
       preferredFile={selected?.kind === 'ftl' ? selected.path : undefined}/>}
-    {creatingPrototype && overview && <CreatePrototypeWizard
-      projectRoot={overview.project_root}
-      onClose={() => setCreatingPrototype(false)} onCreated={onPrototypeCreated}
-      onExternalCreated={onExternalPrototypeCreated}
+    {creatingPrototype && overview && (() => {
+      const root = overview.project_root;
+      const generation = projectGeneration.current;
+      const current = () => projectRootRef.current === root && projectGeneration.current === generation;
+      return <CreatePrototypeWizard
+      projectRoot={root}
+      onClose={() => { if (current()) setCreatingPrototype(false); }}
+      onCreated={(result, mode) => { if (current()) onPrototypeCreated(result, mode); }}
+      onExternalCreated={(result) => { if (current()) onExternalPrototypeCreated(result); }}
       dirtyPaths={dirtyPaths}
-      preferredExistingFile={selected?.kind === 'yaml' ? selected.path : undefined}/>}
+      preferredExistingFile={selected?.kind === 'yaml' ? selected.path : undefined}/>; })()}
     <header className="titlebar">
       <div className="brand"><span className="logo">S</span><div><strong>SS14 Studio</strong><small>RUST REWORK</small></div></div>
       <div className="titlebar-actions">
