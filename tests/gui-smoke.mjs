@@ -566,7 +566,8 @@ try {
       const command = String(url).startsWith('ipc:') ? decodeURIComponent(new URL(url).pathname.slice(1)) : '';
       if (command === 'delete_draft') {
         window.fetch = window.__closeOriginalFetch;
-        return new Response('cleanup failed', {headers:{'Tauri-Response':'error', 'Content-Type':'text/plain'}});
+        return new Response(JSON.stringify({code:'DRAFT_DELETE_FAILED', message:'cleanup failed', hint:'retry'}),
+          {headers:{'Tauri-Response':'error', 'Content-Type':'application/json'}});
       }
       const response = await window.__closeOriginalFetch.call(this, url, options);
       if (command !== 'save_yaml_resource') return response;
