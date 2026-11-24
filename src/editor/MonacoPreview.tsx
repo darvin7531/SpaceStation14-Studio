@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { studio, type ResourceDocument, type ResourceEntry } from '../lib/api';
-import { yamlEditorCompletionContext, yamlEditorComponentHoverTarget, yamlSpriteLinkTarget, yamlComponentInsertText, yamlCompletionEndColumn } from './yaml-completion';
+import { yamlEditorCompletionContext, yamlEditorComponentHoverTarget, yamlSpriteLinkTarget, yamlComponentInsertText, yamlCompletionEndColumn, yamlFieldInsertText, yamlCurrentCompletion } from './yaml-completion';
 import { componentHoverMarkdown } from './component-hover';
 import { yamlLocaleClickField } from './yaml-locale-navigation';
 import { missingEntityLocaleUnderlines } from './yaml-locale-markers';
@@ -151,71 +151,73 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
               triggerCharacters: [' ', ':', '-', ',', '[', '/', '.', '"'],
               provideCompletionItems: async (source, position, _context, token) => {
                 if (source !== model || token.isCancellationRequested) return { suggestions: [] };
-                const target = yamlEditorCompletionContext(source, position.lineNumber, position.column);
-                if (!target) return { suggestions: [] };
-                try {
-                  let entries: { label: string; detail: string; insertText?: string }[] = [];
-                  if (target.kind === 'prototype-parent') {
-                    const page = await studio.searchPrototypes(target.query, '', 0, 80);
-                    entries = page.items.map((item) => ({
-                      label: item.id, detail: item.kind + ' · ' + item.file,
-                    }));
-                  } else if (target.kind === 'component-type' || target.kind === 'component-entry-start') {
-                    const page = await studio.searchCSharpDefinitions(target.query, 'component', 0, 80);
-                    if (page.complete) entries = page.items.map((item) => ({
-                      label: item.name, detail: item.class_name + ' · ' + item.file,
-                      insertText: yamlComponentInsertText(source.getLineContent(position.lineNumber), target, item.name),
-                    }));
-                  } else if (target.kind === 'component-field') {
-                    const batch = await studio.inspectComponentSchemas([target.componentType!]);
-                    const schema = batch.components.find((item) => item.type_name === target.componentType);
-                    if (batch.index_complete && schema?.status === 'unique' && schema.declarations.length === 1
-                        && !schema.declarations[0].parse_uncertain) {
-                      const used = new Set(target.existingFields ?? []);
-                      entries = schema.declarations[0].fields.filter((item) => !used.has(item.name))
+                return await yamlCurrentCompletion(source, async () => {
+                  const target = yamlEditorCompletionContext(source, position.lineNumber, position.column);
+                  if (!target) return { suggestions: [] };
+                  try {
+                    let entries: { label: string; detail: string; insertText?: string }[] = [];
+                    if (target.kind === 'prototype-parent') {
+                      const page = await studio.searchPrototypes(target.query, '', 0, 80);
+                      entries = page.items.map((item) => ({
+                        label: item.id, detail: item.kind + ' · ' + item.file,
+                      }));
+                    } else if (target.kind === 'component-type' || target.kind === 'component-entry-start') {
+                      const page = await studio.searchCSharpDefinitions(target.query, 'component', 0, 80);
+                      if (page.complete) entries = page.items.map((item) => ({
+                        label: item.name, detail: item.class_name + ' · ' + item.file,
+                        insertText: yamlComponentInsertText(source.getLineContent(position.lineNumber), target, item.name),
+                      }));
+                    } else if (target.kind === 'component-field') {
+                      const batch = await studio.inspectComponentSchemas([target.componentType!]);
+                      const schema = batch.components.find((item) => item.type_name === target.componentType);
+                      if (batch.index_complete && schema?.status === 'unique' && schema.declarations.length === 1
+                          && !schema.declarations[0].parse_uncertain) {
+                        const used = new Set(target.existingFields ?? []);
+                        entries = schema.declarations[0].fields.filter((item) => !used.has(item.name))
+                          .map((item) => ({
+                            label: item.name, detail: item.field_type + (item.required ? ' · required' : ''),
+                            insertText: yamlFieldInsertText(source.getLineContent(position.lineNumber), position.column, item.name),
+                          }));
+                      }
+                    } else if (target.kind === 'rsi-path') {
+                      const page = await studio.searchResources(target.query, 'rsi', 0, 80);
+                      entries = page.items.filter((item) => item.path.startsWith('Resources/Textures/'))
                         .map((item) => ({
-                          label: item.name, detail: item.field_type + (item.required ? ' · required' : ''),
-                          insertText: item.name + ': ',
+                          label: item.path.slice('Resources/Textures/'.length),
+                          detail: item.path,
                         }));
                     }
-                  } else if (target.kind === 'rsi-path') {
-                    const page = await studio.searchResources(target.query, 'rsi', 0, 80);
-                    entries = page.items.filter((item) => item.path.startsWith('Resources/Textures/'))
-                      .map((item) => ({
-                        label: item.path.slice('Resources/Textures/'.length),
-                        detail: item.path,
-                      }));
+                    if (token.isCancellationRequested || cancelled) return { suggestions: [] };
+                    const seen = new Set<string>();
+                    const candidates = entries.flatMap((item) => {
+                      if (!item.label.toLowerCase().startsWith(target.query.toLowerCase())) return [];
+                      if (seen.has(item.label)) return [];
+                      seen.add(item.label);
+                      return [{
+                        label: item.label,
+                        kind: target.kind === 'component-type' || target.kind === 'component-entry-start'
+                          ? monaco.languages.CompletionItemKind.Class
+                          : target.kind === 'component-field'
+                            ? monaco.languages.CompletionItemKind.Field
+                            : target.kind === 'rsi-path'
+                              ? monaco.languages.CompletionItemKind.File
+                              : monaco.languages.CompletionItemKind.Reference,
+                        insertText: item.insertText ?? item.label,
+                        detail: item.detail,
+                        range: {
+                          startLineNumber: position.lineNumber,
+                          endLineNumber: position.lineNumber,
+                          startColumn: target.startColumn,
+                          endColumn: yamlCompletionEndColumn(source.getLineContent(position.lineNumber), position.column, target.kind),
+                        },
+                      }];
+                    });
+                    return { suggestions: candidates };
+                  } catch {
+                    // A malformed/stale index must not make editing YAML impossible.
+                    return { suggestions: [] };
                   }
-                  if (token.isCancellationRequested || cancelled) return { suggestions: [] };
-                  const seen = new Set<string>();
-                  const candidates = entries.flatMap((item) => {
-                    if (!item.label.toLowerCase().startsWith(target.query.toLowerCase())) return [];
-                    if (seen.has(item.label)) return [];
-                    seen.add(item.label);
-                    return [{
-                      label: item.label,
-                      kind: target.kind === 'component-type' || target.kind === 'component-entry-start'
-                        ? monaco.languages.CompletionItemKind.Class
-                        : target.kind === 'component-field'
-                          ? monaco.languages.CompletionItemKind.Field
-                          : target.kind === 'rsi-path'
-                            ? monaco.languages.CompletionItemKind.File
-                            : monaco.languages.CompletionItemKind.Reference,
-                      insertText: item.insertText ?? item.label,
-                      detail: item.detail,
-                      range: {
-                        startLineNumber: position.lineNumber,
-                        endLineNumber: position.lineNumber,
-                        startColumn: target.startColumn,
-                        endColumn: yamlCompletionEndColumn(source.getLineContent(position.lineNumber), position.column, target.kind),
-                      },
-                    }];
-                  });
-                  return { suggestions: candidates };
-                } catch {
-                  // A malformed/stale index must not make editing YAML impossible.
-                  return { suggestions: [] };
-                }
+                }) ?? { suggestions: [] };
               },
             }) : null;
           const componentHover = resource.kind === 'yaml'

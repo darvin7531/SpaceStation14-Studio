@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { indexedRsiPath, yamlCompletionContext, yamlComponentHoverTarget, yamlSpriteLinkTarget, yamlEditorContextLines, yamlEditorCompletionContext, yamlEditorComponentHoverTarget, yamlComponentInsertText, yamlCompletionEndColumn } from '../src/editor/yaml-completion';
+import { indexedRsiPath, yamlCompletionContext, yamlComponentHoverTarget, yamlSpriteLinkTarget, yamlEditorContextLines, yamlEditorCompletionContext, yamlEditorComponentHoverTarget, yamlComponentInsertText, yamlCompletionEndColumn, yamlFieldInsertText, yamlCurrentCompletion } from '../src/editor/yaml-completion';
 
 test('editor completions and hover retain context beyond 64 lines without crossing prototypes', () => {
   const lines = ['- type: entity', '  components:', '  - type: Old', '- type: entity', '  components:',
@@ -125,4 +125,45 @@ test('completion replaces the remaining token without consuming YAML delimiters'
   assert.equal(yamlCompletionEndColumn('  - type: Sprite # comment', 14, 'component-type'), 17);
   assert.equal(yamlCompletionEndColumn('  parent: [Base, Other]', 14, 'prototype-parent'), 16);
   assert.equal(yamlCompletionEndColumn('    sprite: "Objects/Test.rsi"', 18, 'rsi-path'), 30);
+});
+
+
+test('applied completions preserve existing YAML delimiters and values', () => {
+  const apply = (line: string, column: number, name: string, before: string[]) => {
+    const lines = [...before, line];
+    const context = yamlCompletionContext(lines, lines.length, column)!;
+    const text = context.kind === 'component-field'
+      ? yamlFieldInsertText(line, column, name)
+      : yamlComponentInsertText(line, context, name);
+    const end = yamlCompletionEndColumn(line, column, context.kind);
+    return line.slice(0, context.startColumn - 1) + text + line.slice(end - 1);
+  };
+  const component = ['- type: entity', '  components:', '  - type: Sprite'];
+  assert.equal(apply('    scale: 1 # keep', 8, 'scale', component), '    scale: 1 # keep');
+  assert.equal(apply('    scale  : 1', 8, 'scale', component), '    scale  : 1');
+  assert.equal(apply('    sca # keep', 8, 'scale', component), '    scale:  # keep');
+  assert.equal(apply('  parent: [Base, Other]', 14, 'Basic', ['- type: entity']), '  parent: [Basic, Other]');
+  assert.equal(apply('    sprite: "Objects/Test.rsi" # keep', 18, 'Objects/New.rsi', component), '    sprite: "Objects/New.rsi" # keep');
+  assert.equal(apply('  - type: Sprite # keep', 14, 'Sprite', ['- type: entity', '  components:']), '  - type: Sprite # keep');
+  assert.equal(apply('  - Spr # keep', 7, 'Sprite', ['- type: entity', '  components:']), '  - type: Sprite # keep');
+});
+
+test('existing component type key is never replaced by an entry completion', () => {
+  const lines = ['- type: entity', '  components:', '  - type: Sprite'];
+  for (const column of [4, 5, 6, 7, 8, 9]) {
+    assert.equal(yamlCompletionContext(lines, 3, column), null, `column ${column}`);
+  }
+});
+
+test('asynchronous completions are discarded when the model changes', async () => {
+  let version = 1;
+  let line = '    sca';
+  const model = { getVersionId: () => version, getLineContent: () => line };
+  let resolve!: (value: string[]) => void;
+  const pending = yamlCurrentCompletion(model, () => new Promise<string[]>((done) => { resolve = done; }));
+  line = '    state: icon';
+  version++;
+  resolve(['scale']);
+  assert.equal(await pending, null);
+  assert.deepEqual(await yamlCurrentCompletion(model, async () => ['scale']), ['scale']);
 });

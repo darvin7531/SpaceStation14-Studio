@@ -14,6 +14,17 @@ export function yamlComponentInsertText(line: string, context: YamlCompletionCon
   return (line[context.startColumn - 2] === '-' ? ' ' : '') + 'type: ' + name;
 }
 
+export function yamlFieldInsertText(line: string, column: number, name: string): string {
+  const end = yamlCompletionEndColumn(line, column, 'component-field');
+  return name + (/^\s*:/.test(line.slice(end - 1)) ? '' : ': ');
+}
+
+export async function yamlCurrentCompletion<T>(model: EditorModel, request: () => Promise<T>): Promise<T | null> {
+  const version = model.getVersionId();
+  const result = await request();
+  return model.getVersionId() === version ? result : null;
+}
+
 export function yamlCompletionEndColumn(line: string, column: number, kind: YamlCompletionContext['kind']): number {
   const suffix = line.slice(column - 1);
   const token = kind === 'rsi-path' ? /^[A-Za-z0-9_./-]*/ : /^[A-Za-z0-9_-]*/;
@@ -137,7 +148,9 @@ export function yamlCompletionContext(
   match = prefix.match(/^(\s*-\s*type:\s*)([A-Za-z0-9_-]*)$/);
   if (match) return { kind: 'component-type', query: match[2], startColumn: column - match[2].length };
   match = prefix.match(/^\s*-\s*([A-Za-z0-9_-]*)$/);
-  if (match) return { kind: 'component-entry-start', query: match[1], startColumn: column - match[1].length };
+  if (match && !/^\s*-\s*type\s*:/.test(line)) {
+    return { kind: 'component-entry-start', query: match[1], startColumn: column - match[1].length };
+  }
   if (!scope.component) return null;
   match = prefix.match(/^\s*sprite:\s*(["']?)([^"'#\s]*)$/);
   if (match && RSI_COMPONENTS.has(scope.component.type)) {
