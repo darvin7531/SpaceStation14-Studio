@@ -306,6 +306,17 @@ async fn search_resources(
     .map_err(interrupted)
 }
 
+#[tauri::command]
+async fn search_rsi_prefix(
+    query: String,
+    state: State<'_, WorkspaceState>,
+) -> Result<Vec<project::ResourceEntry>, StudioError> {
+    let index = current_project(&state)?;
+    tauri::async_runtime::spawn_blocking(move || index.rsi_prefix_candidates(&query))
+        .await
+        .map_err(interrupted)
+}
+
 /// Check open resource revisions without accepting external changes.
 #[tauri::command]
 async fn probe_open_revisions(
@@ -1456,6 +1467,7 @@ pub fn run() -> Result<(), tauri::Error> {
             check_app_updates,
             install_app_update,
             search_resources,
+            search_rsi_prefix,
             browse_resource_folder,
             search_ui_sources,
             read_ui_source,

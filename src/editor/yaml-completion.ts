@@ -221,23 +221,16 @@ export function indexedRsiPath(raw: string): string | null {
 
 export async function yamlRsiCandidates(
   query: string,
-  search: (query: string, offset: number, limit: number) => Promise<{ total: number; items: { path: string }[] }>,
+  search: (query: string) => Promise<{ path: string }[]>,
   cancelled: () => boolean = () => false,
 ): Promise<string[]> {
-  const prefix = 'Resources/Textures/' + query;
-  const paths: string[] = [];
-  let offset = 0;
-  // ponytail: at most two substring-search pages; add backend prefix search for complete results.
-  for (let pageNumber = 0; pageNumber < 2 && !cancelled() && paths.length < 80; pageNumber++) {
-    const page = await search(prefix, offset, 80);
-    for (const item of page.items) {
-      if (item.path.startsWith('Resources/Textures/') && item.path.toLowerCase().startsWith(prefix.toLowerCase()) && indexedRsiPath(item.path)) paths.push(item.path);
-      if (paths.length === 80) break;
-    }
-    offset += page.items.length;
-    if (!page.items.length || offset >= page.total) break;
-  }
-  return paths;
+  if (cancelled()) return [];
+  const items = await search(query);
+  if (cancelled()) return [];
+  const prefix = ('Resources/Textures/' + query).toLowerCase();
+  return items.filter((item) => item.path.startsWith('Resources/Textures/')
+    && item.path.toLowerCase().startsWith(prefix) && indexedRsiPath(item.path))
+    .slice(0, 80).map((item) => item.path);
 }
 
 /** Encode an indexed path for the scalar already being edited. */

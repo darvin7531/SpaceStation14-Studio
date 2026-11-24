@@ -725,6 +725,9 @@ export const studio = {
   refreshProject(changedPaths?: string[], expectedProjectRoot?: string): Promise<ProjectRefresh> {
     return invoke(expectedProjectRoot === undefined ? 'refresh_project' : 'refresh_project_bound', { changedPaths, ...(expectedProjectRoot === undefined ? {} : { expectedProjectRoot }) });
   },
+  searchRsiPrefix(query: string): Promise<ResourceEntry[]> {
+    return invoke('search_rsi_prefix', { query });
+  },
   searchResources(query: string, kind: ResourceKind, offset: number, limit = 100): Promise<ResourcePage> {
     return invoke('search_resources', { query, kind, offset, limit });
   },

@@ -85,21 +85,17 @@ test('nested mappings do not offer component fields while sibling fields still d
   assert.equal(yamlEditorCompletionContext(model, 6, 8)?.kind, 'component-field');
 });
 
-test('RSI completion bounds searches when substring matches never match the prefix', async () => {
-  let calls = 0;
-  const candidates = await yamlRsiCandidates('Obj', async () => {
-    calls++;
-    return { total: 100000, items: Array.from({ length: 80 }, (_, i) => ({ path: `Resources/Textures/x/Resources/Textures/Obj${i}.rsi` })) };
-  });
-  assert.deepEqual(candidates, []);
-  assert.equal(calls, 2);
-});
-
-test('RSI completion finds prefix matches after a full page of substring matches', async () => {
-  const items = [...Array.from({ length: 80 }, (_, i) => ({ path: `Resources/Textures/x/Resources/Textures/Obj${i}.rsi` })),
+test('RSI completion requests native prefix matches once, beyond substring distractions', async () => {
+  const items = [...Array.from({ length: 200 }, (_, i) => ({ path: `Resources/Textures/A/Resources/Textures/Obj${i}.rsi` })),
     { path: 'Resources/Textures/Objects/real.rsi' }];
-  const candidates = await yamlRsiCandidates('Obj', async (_query, offset, limit) => ({ total: items.length, items: items.slice(offset, offset + limit) }));
+  let calls = 0;
+  const candidates = await yamlRsiCandidates('Obj', async (query) => {
+    calls++;
+    assert.equal(query, 'Obj');
+    return items.filter((item) => item.path.toLowerCase().startsWith(('Resources/Textures/' + query).toLowerCase())).slice(0, 80);
+  });
   assert.deepEqual(candidates, ['Resources/Textures/Objects/real.rsi']);
+  assert.equal(calls, 1);
 });
 
 test('component completion inserts valid spacing for bare and partial list entries', () => {

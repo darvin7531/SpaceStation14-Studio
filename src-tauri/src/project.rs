@@ -1288,6 +1288,18 @@ impl ProjectIndex {
         ResourcePage { total, items }
     }
 
+    pub fn rsi_prefix_candidates(&self, query: &str) -> Vec<ResourceEntry> {
+        let prefix = format!("resources/textures/{}", query.to_lowercase());
+        self.resources.iter().filter(|entry| {
+            entry.kind == "rsi"
+                && entry.path.starts_with("Resources/Textures/")
+                && entry.search_key.starts_with(&prefix)
+                && entry.path.ends_with(".rsi")
+                && !entry.path.chars().any(|c| c == '\\' || c <= '\u{1f}' || c == '\u{7f}')
+                && entry.path.split('/').all(|part| !part.is_empty() && part != "." && part != "..")
+        }).take(80).cloned().collect()
+    }
+
     /// Bounded search in indexed resource text. No regex, writes or filesystem
     /// traversal beyond the existing project index. Large forks return a
     /// clearly labelled partial result instead of blocking indefinitely.
@@ -2677,6 +2689,18 @@ mod tests {
         assert!(next.items[0].path.ends_with("B.yml"));
         let match_page = index.search("A.yaml", None, 0, 100);
         assert_eq!(match_page.total, 1);
+    }
+
+    #[test]
+    fn rsi_prefix_search_skips_substring_matches_and_limits_valid_results() {
+        let resources = (0..200).map(|i| format!("Resources/Textures/A/Resources/Textures/Obj{i:03}.rsi"))
+            .chain((0..90).map(|i| format!("Resources/Textures/Objects/{i:03}.rsi")))
+            .map(|path| ResourceEntry { search_key: path.to_lowercase(), path, kind: "rsi" }).collect();
+        let index = ProjectIndex::from_resources(PathBuf::new(), resources).unwrap();
+        let result = index.rsi_prefix_candidates("obj");
+        assert_eq!(result.len(), 80);
+        assert!(result.iter().all(|item| item.path.starts_with("Resources/Textures/Objects/")));
+        assert_eq!(index.search("Resources/Textures/Obj", Some("rsi"), 0, 80).total, 290);
     }
 
     #[test]

@@ -181,7 +181,7 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
                       }
                     } else if (target.kind === 'rsi-path') {
                       const paths = await yamlRsiCandidates(target.query,
-                        (query, offset, limit) => studio.searchResources(query, 'rsi', offset, limit),
+                        (query) => studio.searchRsiPrefix(query),
                         () => token.isCancellationRequested || cancelled);
                       entries = paths.map((path) => ({
                           label: path.slice('Resources/Textures/'.length),
