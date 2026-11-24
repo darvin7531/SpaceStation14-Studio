@@ -839,13 +839,14 @@ async fn read_draft(
 #[tauri::command]
 async fn persist_draft(
     path: String,
+    expected_project_root: String,
     base_revision: String,
     content: String,
     app: tauri::AppHandle,
     state: State<'_, WorkspaceState>,
     drafts: State<'_, DraftStorageLock>,
 ) -> Result<DraftWriteResult, StudioError> {
-    let project = current_project(&state)?;
+    let project = project_for_operation(&state, Some(&expected_project_root))?;
     if !project.is_editable_text_indexed(&path) {
         return Err(StudioError::new(
             "DRAFT_SOURCE_NOT_INDEXED",
@@ -870,11 +871,12 @@ async fn persist_draft(
 #[tauri::command]
 async fn delete_draft(
     path: String,
+    expected_project_root: String,
     app: tauri::AppHandle,
     state: State<'_, WorkspaceState>,
     drafts: State<'_, DraftStorageLock>,
 ) -> Result<(), StudioError> {
-    let project = current_project(&state)?;
+    let project = project_for_operation(&state, Some(&expected_project_root))?;
     let root = draft_storage_root(&app)?;
     let lock = drafts.0.clone();
     tauri::async_runtime::spawn_blocking(move || {

@@ -33,7 +33,7 @@ export default function PrototypeLocalizationPanel({ projectRoot, locator, sourc
   const [search, setSearch] = useState('');
   const [target, setTarget] = useState('');
   const [selected, setSelected] = useState<EntityLocaleField[]>(['name', 'description', 'suffix']);
-  const [preview, setPreview] = useState<{ baseline: ResourceDocument; patch: EntityLocalePatch; sourceSnapshot: string } | null>(null);
+  const [preview, setPreview] = useState<{ baseline: ResourceDocument; patch: EntityLocalePatch; sourceSnapshot: string; projectRoot: string } | null>(null);
   const [batchPreview, setBatchPreview] = useState<{
     sourceSnapshot: string;
     projectRoot: string;
@@ -90,7 +90,7 @@ export default function PrototypeLocalizationPanel({ projectRoot, locator, sourc
     try {
       // The old Electron implementation could create duplicate IDs in separate FTLs.
       // Check the indexed locale before editing, refusing incomplete scans instead of guessing.
-      const matches = await studio.searchResourceContent(entity.localization_id, 'ftl');
+      const matches = await studio.searchResourceContent(entity.localization_id, 'ftl', projectRoot);
       if (!matches.complete) {
         throw new Error(t('entityLocale.incompleteSearch'));
       }
@@ -101,10 +101,10 @@ export default function PrototypeLocalizationPanel({ projectRoot, locator, sourc
       if (otherDefinition) {
         throw new Error(t('entityLocale.duplicate', { path: otherDefinition.path, line: otherDefinition.line }));
       }
-      const baseline = await studio.readResource(target);
+      const baseline = await studio.readResource(target, projectRoot);
       if (baseline.path !== target) throw new Error(t('entityLocale.targetChanged'));
       const patch = buildEntityLocalePatch(baseline.content, entity, chosen);
-      setPreview({ baseline, patch, sourceSnapshot: source });
+      setPreview({ baseline, patch, sourceSnapshot: source, projectRoot });
       setNotice({ key: patch.changed ? 'entityLocale.previewReady' : 'entityLocale.alreadyPresent' });
     } catch (failure) {
       setError(normalizeStudioError(failure));
@@ -114,11 +114,11 @@ export default function PrototypeLocalizationPanel({ projectRoot, locator, sourc
   }
 
   async function save() {
-    if (!preview || !preview.patch.changed || disabled || !target || preview.baseline.path !== target || preview.sourceSnapshot !== source) return;
+    if (!preview || !preview.patch.changed || disabled || !target || preview.baseline.path !== target || preview.sourceSnapshot !== source || preview.projectRoot !== projectRoot) return;
     setApplying(true);
     setError(null);
     try {
-      const success = await onApply(target, preview.baseline, preview.patch.content);
+      const success = await onApply(target, preview.baseline, preview.patch.content, false, preview.sourceSnapshot, preview.projectRoot);
       if (!success) return;
       setPreview(null);
       setNotice({ key: 'entityLocale.updated' });

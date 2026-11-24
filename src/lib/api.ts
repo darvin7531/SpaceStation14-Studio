@@ -821,11 +821,11 @@ export const studio = {
   readDraft(path: string): Promise<DraftSnapshot | null> {
     return invoke('read_draft', { path });
   },
-  persistDraft(path: string, baseRevision: string, content: string): Promise<DraftWriteResult> {
-    return invoke('persist_draft', { path, baseRevision, content });
+  persistDraft(path: string, baseRevision: string, content: string, expectedProjectRoot: string): Promise<DraftWriteResult> {
+    return invoke('persist_draft', { path, baseRevision, content, expectedProjectRoot });
   },
-  deleteDraft(path: string): Promise<void> {
-    return invoke('delete_draft', { path });
+  deleteDraft(path: string, expectedProjectRoot: string): Promise<void> {
+    return invoke('delete_draft', { path, expectedProjectRoot });
   },
   previewNewRsi(draft: NewRsiDraft): Promise<NewRsiPreview> {
     return invoke('preview_new_rsi', { draft });

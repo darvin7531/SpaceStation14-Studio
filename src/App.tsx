@@ -1,3 +1,4 @@
+import { completeProjectSave } from './lib/project-save-guard';
 import { refreshAfterRsiImport } from './lib/rsi-import-refresh';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useI18n } from './i18n';
@@ -336,7 +337,7 @@ export default function App() {
         drafts: draftsRef.current,
         bases: draftBasesRef.current,
         queue: journal.current,
-        persist: (file, base, content) => studio.persistDraft(file, base, content),
+        persist: (file, base, content) => studio.persistDraft(file, base, content, overview.project_root),
       });
       cancelJournalTimers();
       await getCurrentWindow().destroy();
@@ -379,7 +380,7 @@ export default function App() {
         journalTimers.current.delete(key);
         if (epoch !== journalEpoch.current) return;
         journalSignatures.current.set(key, signature);
-        void journal.current.run(key, () => studio.persistDraft(file, base, content))
+        void journal.current.run(key, () => studio.persistDraft(file, base, content, overview.project_root))
           .then((saved) => {
             if (saved.durability_warning) setNotice(saved.durability_warning);
           })
@@ -452,6 +453,7 @@ export default function App() {
 
   async function loadProject(requestedPath: string) {
     projectGeneration.current++;
+    setSaving(false);
     const projectInteraction = interaction.current;
     setCreatingPrototype(false);
     setCreatingFluent(false);
@@ -568,7 +570,7 @@ export default function App() {
         if (!loaded || content === undefined) continue;
         const base = draftBases[file] ?? loaded.revision;
         const key = journalKey(overview.project_root, file);
-        const saved = await journal.current.run(key, () => studio.persistDraft(file, base, content));
+        const saved = await journal.current.run(key, () => studio.persistDraft(file, base, content, overview.project_root));
         if (saved.durability_warning) {
           throw {
             code: 'REFRESH_DRAFT_DURABILITY',
@@ -773,13 +775,19 @@ export default function App() {
 
   async function clearRecoveryCopy(file: string) {
     if (!overview) return;
-    const key = journalKey(overview.project_root, file);
+    const root = overview.project_root;
+    const generation = projectGeneration.current;
+    const key = journalKey(root, file);
     const timer = journalTimers.current.get(key);
     if (timer !== undefined) {
       window.clearTimeout(timer);
       journalTimers.current.delete(key);
     }
-    await journal.current.run(key, () => studio.deleteDraft(file));
+    await journal.current.run(key, () => {
+      if (generation !== projectGeneration.current) throw new Error('Проект изменился.');
+      return studio.deleteDraft(file, root);
+    });
+    if (generation !== projectGeneration.current) return;
     journalSignatures.current.delete(key);
     setRecoveries((previous) => ({
       ...previous,
@@ -987,7 +995,7 @@ export default function App() {
   }
 
   async function saveCurrent() {
-    if (!overview || !selected || !isEditableText(selected.kind) || opening || transitioning || saving || refreshing) return;
+    if (!overview || !selected || !isEditableText(selected.kind) || opening || transitioning || saving || refreshing || pendingAction || exitDialogOpen) return;
     const file = selected.path;
     const baseline = documents.current.get(file);
     if (!baseline) return;
@@ -1010,13 +1018,18 @@ export default function App() {
       journalTimers.current.delete(key);
     }
 
+    const generation = projectGeneration.current;
+    const current = () => projectGeneration.current === generation;
     setSaving(true);
     setNotice(null);
     setError(null);
     try {
-      const result = selected.kind === 'yaml'
-        ? await studio.saveYamlResource(file, sourceRevision, submitted, overview.project_root)
-        : await studio.saveFtlResource(file, sourceRevision, submitted, overview.project_root);
+      let cleanupWarning: string | null = null;
+      let durabilityWarning: string | null = null;
+      const completed = await completeProjectSave(selected.kind === 'yaml'
+        ? studio.saveYamlResource(file, sourceRevision, submitted, overview.project_root)
+        : studio.saveFtlResource(file, sourceRevision, submitted, overview.project_root), current, (result) => {
+      durabilityWarning = result.durability_warning ?? null;
       documents.current.set(file, result.document);
       setDriftReport((current) => current ? {
         ...current, items: current.items.filter((item) => item.path !== file),
@@ -1031,27 +1044,32 @@ export default function App() {
         delete next[file];
         return next;
       });
-      let cleanupWarning: string | null = null;
-      try {
-        await clearRecoveryCopy(file);
-      } catch (failure) {
-        cleanupWarning = 'Старая резервная копия не удалена: ' + normalizeStudioError(failure).message;
-      }
+      }, async () => {
+        try {
+          if (draftsRef.current[file] !== submitted) return;
+          await clearRecoveryCopy(file);
+        } catch (failure) {
+          cleanupWarning = 'Старая резервная копия не удалена: ' + normalizeStudioError(failure).message;
+        }
+      });
+      if (!completed) return;
       closeComparison();
       setWorkspaceRevision((previous) => previous + 1);
       setNotice([
         selected.kind === 'yaml'
           ? 'YAML сохранён. Индекс прототипов будет перестроен при следующем обращении.'
           : 'FTL сохранён без изменения форматирования. Диагностика доступна в панели Fluent.',
-        result.durability_warning,
+        durabilityWarning,
         cleanupWarning,
       ].filter(Boolean).join(' '));
     } catch (failure) {
-      const explained = normalizeStudioError(failure);
-      setError(explained);
-      if (explained.code === 'RESOURCE_CHANGED_ON_DISK') void compareCurrent();
+      if (current()) {
+        const explained = normalizeStudioError(failure);
+        setError(explained);
+        if (explained.code === 'RESOURCE_CHANGED_ON_DISK') void compareCurrent();
+      }
     } finally {
-      setSaving(false);
+      if (current()) setSaving(false);
     }
   }
 
@@ -1064,7 +1082,7 @@ export default function App() {
     };
     window.addEventListener('keydown', shortcut);
     return () => window.removeEventListener('keydown', shortcut);
-  }, [overview, selected?.path, document?.revision, drafts, draftBases, opening, transitioning, saving, refreshing]);
+  }, [overview, selected?.path, document?.revision, drafts, draftBases, opening, transitioning, saving, refreshing, pendingAction, exitDialogOpen]);
 
   function openResource(item: EditorTab, preferredRsiState?: string | null): boolean {
     if (saving || transitioning || opening || refreshing) return false;
@@ -1249,10 +1267,9 @@ export default function App() {
       throw new Error('Невозможно записать FTL во время другой операции.');
     }
     const root = overview.project_root;
-    if (keepSource) {
-      checkLocalizationSource(sourceSnapshot);
-      if (expectedProjectRoot !== root) throw new Error('Проект изменился.');
-    }
+    if (expectedProjectRoot !== root) throw new Error('Проект изменился.');
+    if (keepSource) checkLocalizationSource(sourceSnapshot);
+    const generation = projectGeneration.current;
     const opened = documents.current.get(file);
     if (opened && (draftsRef.current[file] ?? opened.content) !== opened.content) {
       throw new Error('У выбранного FTL уже есть несохранённый черновик. Сохраните или закройте его перед генерацией локализации.');
@@ -1264,8 +1281,8 @@ export default function App() {
     try {
       if (projectRootRef.current !== root) throw new Error('Проект изменился. Повторите действие.');
       // Rust requires the exact revision observed during the preview.
-      const result = await studio.saveFtlResource(file, baseline.revision, content, expectedProjectRoot);
-      if (projectRootRef.current !== root) return false;
+      const result = await studio.saveFtlResource(file, baseline.revision, content, root);
+      if (projectGeneration.current !== generation || projectRootRef.current !== root) return false;
       documents.current.set(file, result.document);
       setDrafts((previous) => {
         const next = { ...previous };
@@ -1288,7 +1305,7 @@ export default function App() {
       }
       return true;
     } finally {
-      setSaving(false);
+      if (projectGeneration.current === generation) setSaving(false);
     }
   }
 
