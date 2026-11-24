@@ -356,7 +356,10 @@ try {
         ancestors.push({ tag: el.tagName, class: el.className, rect: rect.toJSON(), display: style.display,
           visibility: style.visibility, overflow: style.overflow, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight });
       }
-      return { ancestors, width: innerWidth, height: innerHeight };
+      const editor = document.querySelector('.editor');
+      const children = [...editor.children].map(el => ({ tag: el.tagName, class: el.className,
+        rect: el.getBoundingClientRect().toJSON(), text: el.textContent.slice(0, 200) }));
+      return { ancestors, children, width: innerWidth, height: innerHeight };
     `)));
     throw error;
   }
