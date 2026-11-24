@@ -64,7 +64,6 @@ export default function CreatePrototypeWizard({
   const [creating, setCreating] = useState(false);
   const [pickingFolder, setPickingFolder] = useState(false);
   const busyRef = useRef(false);
-  const creatingRef = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -118,7 +117,7 @@ export default function CreatePrototypeWizard({
   }, [creating]);
 
   function switchDestination(next: 'project' | 'external') {
-    if (creatingRef.current || next === destination) return;
+    if (busyRef.current || next === destination) return;
     setChecking(true);
     setPreview(null);
     setValidationError(null);
@@ -127,7 +126,7 @@ export default function CreatePrototypeWizard({
   }
 
   function switchMode(next: PrototypeDestinationMode) {
-    if (creatingRef.current || next === mode) return;
+    if (busyRef.current || next === mode) return;
     setChecking(true);
     setPreview(null);
     setValidationError(null);
@@ -170,7 +169,7 @@ export default function CreatePrototypeWizard({
   }, [mode, draft.file]);
 
   function update<K extends keyof NewPrototypeDraft>(field: K, value: NewPrototypeDraft[K]) {
-    if (creatingRef.current) return;
+    if (busyRef.current) return;
     // Do not leave an old valid preview enabled during the debounce window.
     setChecking(true);
     setPreview(null);
@@ -251,6 +250,7 @@ export default function CreatePrototypeWizard({
         return;
       }
       const filename = draft.file.split('/').pop() || (draft.id || 'NewPrototype') + '.yml';
+      busyRef.current = false;
       update('file', folder + '/' + filename);
     } catch (failure) {
       setCreateError(normalizeStudioError(failure));
@@ -264,7 +264,6 @@ export default function CreatePrototypeWizard({
     event.preventDefault();
     if (busyRef.current || creating || pickingFolder || checking || !preview || targetIsDirty) return;
     busyRef.current = true;
-    creatingRef.current = true;
     setCreating(true);
     setCreateError(null);
     try {
@@ -281,7 +280,6 @@ export default function CreatePrototypeWizard({
       setCreateError(normalizeStudioError(error));
     } finally {
       busyRef.current = false;
-      creatingRef.current = false;
       setCreating(false);
     }
   }
@@ -304,18 +302,18 @@ export default function CreatePrototypeWizard({
           </p>
           <div className="create-proto-mode" role="group" aria-label={t('wizard.proto.mode')}>
             <button type="button" className={mode === 'new' ? 'selected' : ''}
-              disabled={creating} onClick={() => switchMode('new')}>{t('wizard.proto.newFile')}</button>
+              disabled={creating || pickingFolder} onClick={() => switchMode('new')}>{t('wizard.proto.newFile')}</button>
             <button type="button" className={mode === 'append' ? 'selected' : ''}
-              disabled={creating} onClick={() => switchMode('append')}>{t('wizard.proto.append')}</button>
+              disabled={creating || pickingFolder} onClick={() => switchMode('append')}>{t('wizard.proto.append')}</button>
           </div>
 
           {mode === 'new' && <div className="create-proto-mode" role="group" aria-label={t('wizard.proto.destination')}>
             <button type="button" className={destination === 'project' ? 'selected' : ''}
-              disabled={creating} onClick={() => switchDestination('project')}>{t('wizard.proto.project')}</button>
+              disabled={creating || pickingFolder} onClick={() => switchDestination('project')}>{t('wizard.proto.project')}</button>
             <button type="button" className={destination === 'external' ? 'selected' : ''}
-              disabled={creating} onClick={() => switchDestination('external')}>{t('wizard.common.external')}</button>
+              disabled={creating || pickingFolder} onClick={() => switchDestination('external')}>{t('wizard.common.external')}</button>
           </div>}
-          <fieldset className="create-proto-group" disabled={creating}>
+          <fieldset className="create-proto-group" disabled={creating || pickingFolder}>
             <legend>{t('wizard.proto.identity')}</legend>
             <label>{t('wizard.proto.type')}
               <input required list="new-prototype-kinds" value={draft.kind}
@@ -342,7 +340,7 @@ export default function CreatePrototypeWizard({
             </label>
           </fieldset>
 
-          <fieldset className="create-proto-group" disabled={creating}>
+          <fieldset className="create-proto-group" disabled={creating || pickingFolder}>
             <legend>{t('wizard.proto.descriptionSection')}</legend>
             <label>{t('wizard.proto.name')}
               <input value={draft.name} onChange={(event) => update('name', event.target.value)}/>
@@ -357,7 +355,7 @@ export default function CreatePrototypeWizard({
             </label>
           </fieldset>
 
-          {draft.kind === 'entity' && <fieldset className="create-proto-group" disabled={creating}>
+          {draft.kind === 'entity' && <fieldset className="create-proto-group" disabled={creating || pickingFolder}>
             <legend>{t('wizard.proto.components')}</legend>
             <label>{t('wizard.proto.sprite')}
               <input value={draft.sprite} placeholder="Objects/Tools/myitem.rsi"
@@ -382,7 +380,7 @@ export default function CreatePrototypeWizard({
             <small>{t('wizard.proto.componentHint')}</small>
           </fieldset>}
 
-          <fieldset className="create-proto-group" disabled={creating}>
+          <fieldset className="create-proto-group" disabled={creating || pickingFolder}>
             <legend>{mode === 'new' ? t('wizard.proto.fileNew') : t('wizard.proto.fileExisting')}</legend>
             <label>{mode === 'new' && destination === 'external'
               ? t('wizard.proto.pathExternal')
