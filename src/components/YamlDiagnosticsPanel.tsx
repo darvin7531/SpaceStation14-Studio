@@ -14,6 +14,18 @@ export function YamlDiagnosticResult({ report, onRevealLine }: { report: YamlSyn
   </button>;
 }
 
+export function YamlAnalysisFailure({ failure }: { failure: StudioError }) {
+  const { t, language } = useI18n();
+  const english: Record<string, string> = {
+    YAML_ANALYSIS_SIZE_LIMIT: 'The YAML draft exceeds the 4 MiB analysis limit. Reduce its size or use an external editor.',
+    YAML_NOT_INDEXED: 'The file is not in the current project YAML index. Select it from the resource list or refresh the index.',
+    PROJECT_NOT_OPEN: 'No project is open. Open the SS14 source root first.',
+  };
+  const text = language === 'ru' ? `${failure.message} ${failure.hint}`
+    : Object.hasOwn(english, failure.code) ? english[failure.code] : t('yamlDiagnostics.failure');
+  return <p role="alert"><AlertCircle size={15}/> {text}</p>;
+}
+
 interface Props {
   path: string;
   source: string;
@@ -29,7 +41,7 @@ interface Snapshot {
 
 /** Read-only draft validation, with stale-request results discarded. */
 export default function YamlDiagnosticsPanel({ path, source, enabled, delayMs, onRevealLine }: Props) {
-  const { t, language } = useI18n();
+  const { t } = useI18n();
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [failure, setFailure] = useState<StudioError | null>(null);
   const [manual, setManual] = useState<{ path: string; source: string; token: number } | null>(null);
@@ -65,7 +77,7 @@ export default function YamlDiagnosticsPanel({ path, source, enabled, delayMs, o
       }))}>{t('yamlDiagnostics.checkNow')}</button>}
     </header>
     {!shouldRun ? <p>{t('yamlDiagnostics.disabled')}</p>
-      : failure ? <p role="alert"><AlertCircle size={15}/> {language === 'ru' ? `${failure.message} ${failure.hint}` : t('yamlDiagnostics.failure')}</p>
+      : failure ? <YamlAnalysisFailure failure={failure}/>
         : report?.valid ? <p role="status"><CheckCircle2 size={15}/>
           {t('yamlDiagnostics.valid')}</p>
           : report ? <YamlDiagnosticResult report={report} onRevealLine={onRevealLine}/>
