@@ -1,5 +1,5 @@
 import { completeProjectSave } from './lib/project-save-guard';
-import { saveAndClose } from './lib/save-close';
+import { saveAndClose, deleteDraftPreservingChanges, closeCurrentTab } from './lib/save-close';
 import { refreshAfterRsiImport } from './lib/rsi-import-refresh';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useI18n } from './i18n';
@@ -13,7 +13,7 @@ import {
 import { studio, type DraftList, type DraftSnapshot, type CreatedPrototype, type CreatedFluent, type CreatedRsi, type DeletedRsiState, type ImportedRsiState, RenamedRsiState, type RestoredRsiState, type PrototypeDeclaration, type PrototypeFieldLocator, type ProjectOverview, type ResourceDocument, type ResourceEntry, type ResourceKind, type ResourcePage, type NewFluentDraft } from './lib/api';
 import { normalizeStudioError, type StudioError } from './lib/errors';
 import type { ProjectScanProgress } from './lib/api';
-import { closeTab, openTab, nextTabPath, reorderTab, tabId, isLastFileView, type EditorTab, type TabState } from './lib/tabs';
+import { openTab, nextTabPath, reorderTab, tabId, isLastFileView, type EditorTab, type TabState } from './lib/tabs';
 import { readTabSession, retainAvailableTabs, writeTabSession } from './lib/tab-session';
 import { canApplyPrototypeFields, outlineDeclarationKey, resolvePrototypeTab } from './lib/outline-selection';
 import { readRecentProjects, rememberRecentProject, writeRecentProjects } from './lib/recent-projects';
@@ -811,7 +811,7 @@ export default function App() {
       path: snapshot.path,
       kind: snapshot.path.toLowerCase().endsWith('.ftl') ? 'ftl' : 'yaml',
     };
-    const result = openTab(tabState, item);
+    const result = openTab(tabStateRef.current, item);
     if (!result.ok) {
       setError({
         code: 'TAB_LIMIT_REACHED',
@@ -820,12 +820,12 @@ export default function App() {
       });
       return false;
     }
-    setDraftBases((previous) => ({
-      ...previous, [snapshot.path]: snapshot.base_revision,
-    }));
-    setDrafts((previous) => ({
-      ...previous, [snapshot.path]: snapshot.content,
-    }));
+    const bases = { ...draftBasesRef.current, [snapshot.path]: snapshot.base_revision };
+    const nextDrafts = { ...draftsRef.current, [snapshot.path]: snapshot.content };
+    draftBasesRef.current = bases;
+    draftsRef.current = nextDrafts;
+    setDraftBases(bases);
+    setDrafts(nextDrafts);
     if (tabState.active !== result.state.active) {
       setFieldTarget(null);
       setJumpTarget(null);
@@ -872,7 +872,8 @@ export default function App() {
     if (!baseline || submitted === undefined) return;
     const base = draftBasesRef.current[file] ?? baseline.revision;
     if (base !== baseline.revision) {
-      setError({ code: 'RECOVERED_DRAFT_CONFLICT', message: 'Восстановленный черновик основан на другой версии файла.', hint: 'Сначала изучите различия и примите новую ревизию.' });
+      setError({ code: 'RECOVERED_DRAFT_CONFLICT', message: 'Восстановленный черновик основан на другой версии файла.', hint: 'Изучите различия во встроенном diff. Принятие новой ревизии не сохраняет файл автоматически.' });
+      if (selectedPathRef.current === file) void compareCurrent();
       return;
     }
     const root = overview.project_root;
@@ -881,7 +882,10 @@ export default function App() {
       && draftsRef.current[file] === submitted && tabStateRef.current.tabs.some((item) => tabId(item) === action.path);
     closingSave.current = true;
     setTransitioning(true);
+    setNotice(null);
     setError(null);
+    let warning: string | null = null;
+    let compareConflict = false;
     try {
       await saveAndClose({
         current,
@@ -889,7 +893,7 @@ export default function App() {
           const result = await (tab.kind === 'yaml'
             ? studio.saveYamlResource(file, base, submitted, root)
             : studio.saveFtlResource(file, base, submitted, root));
-          if (!current()) throw new Error('Документ или проект изменился во время сохранения.');
+          if (generation !== projectGeneration.current || projectRootRef.current !== root) throw new Error('Проект изменился во время сохранения.');
           documents.current.set(file, result.document);
           setDocument((value) => value?.path === file ? result.document : value);
           const bases = { ...draftBasesRef.current };
@@ -897,7 +901,8 @@ export default function App() {
           draftBasesRef.current = bases;
           setDraftBases(bases);
           setWorkspaceRevision((value) => value + 1);
-          if (result.durability_warning) throw new Error(result.durability_warning);
+          warning = result.durability_warning ?? null;
+          if (!current()) throw new Error('Документ или проект изменился во время сохранения.');
         },
         cleanup: async () => {
           const key = journalKey(root, file);
@@ -906,18 +911,29 @@ export default function App() {
           journalTimers.current.delete(key);
           await journal.current.run(key, async () => {
             if (!current()) throw new Error('Документ или проект изменился во время сохранения.');
-            await studio.deleteDraft(file, root);
+            await deleteDraftPreservingChanges(
+              () => studio.deleteDraft(file, root),
+              () => generation === projectGeneration.current && projectRootRef.current === root
+                ? draftsRef.current[file] : undefined,
+              submitted,
+              (content) => studio.persistDraft(file, draftBasesRef.current[file] ?? documents.current.get(file)?.revision ?? base, content, root),
+            );
           });
+          if (!current()) throw new Error('Документ или проект изменился во время сохранения.');
           journalSignatures.current.delete(key);
           setRecoveries((value) => ({ ...value, items: value.items.filter((item) => item.path !== file) }));
         },
         close: () => executeAction(action),
       });
+      if (warning) setNotice(warning);
     } catch (failure) {
-      setError(normalizeStudioError(failure));
+      const explained = normalizeStudioError(failure);
+      setError(explained);
+      compareConflict = explained.code === 'RESOURCE_CHANGED_ON_DISK';
     } finally {
       closingSave.current = false;
       setTransitioning(false);
+      if (compareConflict && selectedPathRef.current === file) void compareCurrent(true);
     }
   }
 
@@ -957,10 +973,11 @@ export default function App() {
       void focusResource(action.path);
       return;
     }
-    const closing = tabState.tabs.find((tab) => tabId(tab) === action.path);
+    const currentTabs = tabStateRef.current;
+    const closing = currentTabs.tabs.find((tab) => tabId(tab) === action.path);
     if (!closing) return;
-    const next = closeTab(tabState, action.path);
-    if (next.active !== tabState.active) {
+    const next = closeCurrentTab(() => tabStateRef.current, action.path);
+    if (next.active !== currentTabs.active) {
       setJumpTarget(null);
       prototypeInteraction.current = interaction.current;
     }
@@ -978,7 +995,7 @@ export default function App() {
       return updated;
     });
     }
-    if (next.active !== tabState.active) {
+    if (next.active !== currentTabs.active) {
       const active = next.tabs.find((tab) => tabId(tab) === next.active);
       if (active) {
         void focusResource(active.path);
@@ -992,9 +1009,9 @@ export default function App() {
   }
 
   // Inspect fresh disk contents. This does not update the editor baseline or write.
-  async function compareCurrent() {
+  async function compareCurrent(afterSave = false) {
     const file = selectedPathRef.current;
-    if (!file || !overview || opening || transitioning || refreshing) return;
+    if (!file || !overview || opening || (transitioning && !afterSave) || refreshing) return;
     const loaded = documents.current.get(file);
     if (!loaded) return;
     const request = ++comparisonVersion.current;

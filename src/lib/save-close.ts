@@ -1,3 +1,9 @@
+import { closeTab, type TabState } from './tabs';
+
+export function closeCurrentTab(current: () => TabState, id: string): TabState {
+  return closeTab(current(), id);
+}
+
 export async function saveAndClose(request: {
   current: () => boolean;
   save: () => Promise<void>;
@@ -11,4 +17,24 @@ export async function saveAndClose(request: {
   await request.cleanup();
   check();
   request.close();
+}
+
+/** A deletion may already be in flight when an asynchronous edit arrives. */
+export async function deleteDraftPreservingChanges(
+  remove: () => Promise<unknown>,
+  latest: () => string | undefined,
+  submitted: string,
+  persist: (content: string) => Promise<unknown>,
+): Promise<void> {
+  try {
+    await remove();
+  } finally {
+    let content = latest();
+    while (content !== undefined && content !== submitted) {
+      await persist(content);
+      const next = latest();
+      if (next === content) break;
+      content = next;
+    }
+  }
 }
