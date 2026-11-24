@@ -1440,6 +1440,7 @@ pub fn run() -> Result<(), tauri::Error> {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             app_updater::register(app)?;
             Ok(())

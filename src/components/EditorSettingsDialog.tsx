@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
 import { listen } from '@tauri-apps/api/event';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { Settings2, X } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { DEFAULT_EDITOR_SETTINGS, type EditorSettings } from '../lib/editor-settings';
 import { sanitizeLocalizationSettings, type LocalizationSettings } from '../lib/localization-settings';
 import { studio, type AppUpdateCheck, type AppUpdateProgress } from '../lib/api';
 import { normalizeStudioError } from '../lib/errors';
+
+const REPOSITORY_URL = 'https://github.com/darvin7531/SpaceStation14-Studio';
 
 interface Props {
   value: EditorSettings;
@@ -27,6 +30,7 @@ export default function EditorSettingsDialog({ value, onChange, localizationSett
   const [updateProgress, setUpdateProgress] = useState<AppUpdateProgress | null>(null);
   const [localeInput, setLocaleInput] = useState(localizationSettings.requiredLocales.join(', '));
   const [appVersion, setAppVersion] = useState<string | null>(null);
+  const [linkError, setLinkError] = useState(false);
   const localeInputRef = useRef(localeInput);
   const onLocalizationChangeRef = useRef(onLocalizationChange);
   onLocalizationChangeRef.current = onLocalizationChange;
@@ -200,8 +204,12 @@ export default function EditorSettingsDialog({ value, onChange, localizationSett
           <dt>{t('settings.aboutVersion')}</dt><dd>{appVersion ?? '—'}</dd>
           <dt>{t('settings.aboutAuthor')}</dt><dd>darvin7531</dd>
           <dt>{t('settings.aboutLicense')}</dt><dd>AGPL-3.0-or-later</dd>
-          <dt>GitHub</dt><dd>github.com/darvin7531/SpaceStation14-Studio</dd>
+          <dt>GitHub</dt><dd><button type="button" onClick={() => {
+            setLinkError(false);
+            void openUrl(REPOSITORY_URL).catch(() => setLinkError(true));
+          }}>github.com/darvin7531/SpaceStation14-Studio</button></dd>
         </dl>
+        {linkError && <p role="alert">{t('settings.openLinkError')}</p>}
       </div>}
       <footer>
         {section === 'editor' && <button type="button" onClick={() => onChange({ ...DEFAULT_EDITOR_SETTINGS })}>{t('settings.reset')}</button>}

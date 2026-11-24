@@ -8,6 +8,10 @@
   "permissions": [
     "core:default",
     "dialog:allow-open",
-    "core:window:allow-destroy"
+    "core:window:allow-destroy",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://github.com/darvin7531/SpaceStation14-Studio" }]
+    }
   ]
 }
