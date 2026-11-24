@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react';
 import { AlertTriangle, Pencil } from 'lucide-react';
 import { studio, type RenamedRsiState } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
+import { rsiErrorText } from '../lib/rsi-error-text';
 
 interface Props {
   path: string;
@@ -64,9 +65,9 @@ export default function RsiRenamePanel({
       </div>
       {error && <div className="rsi-error" role="alert">
         <AlertTriangle size={16}/>
-        <span>{language === 'ru' ? `${error.message} ${error.hint}` : t('rsi.error.operation')} <code>{error.code}</code></span>
-        {language === 'en' && <pre>{error.message} {error.hint}</pre>}
-        {error.details && <pre>{error.details}</pre>}
+        <span>{rsiErrorText(error, language)} <code>{error.code}</code></span>
+        {language === 'en' && <details><summary>{t('app.errorDetails')}</summary><pre>{error.message} {error.hint}{error.details && `\n${error.details}`}</pre></details>}
+        {language === 'ru' && error.details && <pre>{error.details}</pre>}
       </div>}
       <button type="submit" disabled={saving || !validName || confirmation !== name}>
         <Pencil size={15}/>{saving ? t('rsi.rename.busy') : t('rsi.rename.submit')}

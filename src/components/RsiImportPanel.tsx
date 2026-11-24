@@ -3,6 +3,7 @@ import { useRef, useState, type DragEvent, type FormEvent } from 'react';
 import { AlertCircle, ImagePlus } from 'lucide-react';
 import { studio, type ImportedRsiState } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
+import { rsiErrorText } from '../lib/rsi-error-text';
 import type { RsiState } from '../lib/rsi-layout';
 import { toggleRsiImportMode } from '../lib/rsi-import-mode';
 import { readPngAsDataUrl } from '../lib/rsi-png-data-url';
@@ -200,13 +201,9 @@ export default function RsiImportPanel({
       {attaching && <p>{t('rsi.import.attachHint')}</p>}
       {!metadataOnly && file && <small>{t('rsi.import.selected', { name: file.name, size: Math.ceil(file.size / 1024) })}</small>}
       {error && <div className="rsi-error" role="alert"><AlertCircle size={16}/>
-        <span>{error.code === 'RSI_IMPORT_FILE_EXTENSION' ? t('rsi.import.errorExtension')
-          : error.code === 'RSI_IMPORT_PNG_TOO_LARGE' && error.message === 'Выберите непустой PNG не больше 8 МиБ.' ? t('rsi.import.errorSize')
-          : error.code === 'RSI_IMPORT_SINGLE_FILE' ? t('rsi.import.errorSingle')
-          : error.code === 'RSI_REPLACE_PNG_REVISION_MISSING' ? t('rsi.import.errorRevision')
-          : language === 'ru' ? `${error.message} ${error.hint}` : t('rsi.error.operation')} <code>{error.code}</code></span>
-        {language === 'en' && !['RSI_IMPORT_FILE_EXTENSION', 'RSI_IMPORT_SINGLE_FILE', 'RSI_REPLACE_PNG_REVISION_MISSING'].includes(error.code) && !(error.code === 'RSI_IMPORT_PNG_TOO_LARGE' && error.message === 'Выберите непустой PNG не больше 8 МиБ.') && <pre>{error.message} {error.hint}</pre>}
-        {error.details && <pre>{error.details}</pre>}
+        <span>{rsiErrorText(error, language)} <code>{error.code}</code></span>
+        {language === 'en' && <details><summary>{t('app.errorDetails')}</summary><pre>{error.message} {error.hint}{error.details && `\n${error.details}`}</pre></details>}
+        {language === 'ru' && error.details && <pre>{error.details}</pre>}
       </div>}
       <button type="submit" disabled={uploading || (!metadataOnly && !file) || (!replacing && !name)
           || (!attaching && (!Number.isInteger(frames) || frames < 1 || frames > 128 || frames * directions > 256))
