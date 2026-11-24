@@ -23,21 +23,41 @@ pub(crate) fn strict_metadata(bytes: &[u8]) -> Result<Value, serde_json::Error> 
                 fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
                     f.write_str("JSON without duplicate keys")
                 }
-                fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<Checked, E> { Ok(Checked) }
-                fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<Checked, E> { Ok(Checked) }
-                fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<Checked, E> { Ok(Checked) }
-                fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<Checked, E> { Ok(Checked) }
-                fn visit_str<E: serde::de::Error>(self, _: &str) -> Result<Checked, E> { Ok(Checked) }
-                fn visit_unit<E: serde::de::Error>(self) -> Result<Checked, E> { Ok(Checked) }
-                fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Checked, A::Error> {
+                fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<Checked, E> {
+                    Ok(Checked)
+                }
+                fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<Checked, E> {
+                    Ok(Checked)
+                }
+                fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<Checked, E> {
+                    Ok(Checked)
+                }
+                fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<Checked, E> {
+                    Ok(Checked)
+                }
+                fn visit_str<E: serde::de::Error>(self, _: &str) -> Result<Checked, E> {
+                    Ok(Checked)
+                }
+                fn visit_unit<E: serde::de::Error>(self) -> Result<Checked, E> {
+                    Ok(Checked)
+                }
+                fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                    self,
+                    mut seq: A,
+                ) -> Result<Checked, A::Error> {
                     while seq.next_element::<Checked>()?.is_some() {}
                     Ok(Checked)
                 }
-                fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Checked, A::Error> {
+                fn visit_map<A: serde::de::MapAccess<'de>>(
+                    self,
+                    mut map: A,
+                ) -> Result<Checked, A::Error> {
                     let mut keys = std::collections::HashSet::new();
                     while let Some(key) = map.next_key::<String>()? {
                         if !keys.insert(key.clone()) {
-                            return Err(serde::de::Error::custom(format!("duplicate JSON key: {key}")));
+                            return Err(serde::de::Error::custom(format!(
+                                "duplicate JSON key: {key}"
+                            )));
                         }
                         map.next_value::<Checked>()?;
                     }
