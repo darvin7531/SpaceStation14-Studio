@@ -374,6 +374,25 @@ mod tests {
     }
 
     #[test]
+    fn live_yaml_analyzer_preserves_parser_diagnostics_for_repair_hints() {
+        for (source, message) in [
+            (
+                "value: [one, two\n",
+                "while parsing a flow sequence, expected ',' or ']'",
+            ),
+            (
+                "value: {one: 1\n",
+                "while parsing a flow mapping, did not find expected ',' or '}'",
+            ),
+            ("value: @bad\n", "unexpected character: `@'"),
+        ] {
+            let report = analyze_yaml(source).unwrap();
+            assert!(!report.valid, "{source}");
+            assert_eq!(report.message.as_deref(), Some(message), "{source}");
+        }
+    }
+
+    #[test]
     fn live_yaml_analyzer_enforces_input_limit() {
         let oversized = "x".repeat(MAX_TEXT_BYTES as usize + 1);
         assert_eq!(
