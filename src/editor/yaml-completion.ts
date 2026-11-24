@@ -27,7 +27,7 @@ export async function yamlCurrentCompletion<T>(model: EditorModel, request: () =
 
 export function yamlCompletionEndColumn(line: string, column: number, kind: YamlCompletionContext['kind']): number {
   const suffix = line.slice(column - 1);
-  const token = kind === 'rsi-path' ? /^[A-Za-z0-9_./-]*/ : /^[A-Za-z0-9_-]*/;
+  const token = kind === 'rsi-path' ? /^[^"'#\s]*/ : /^[A-Za-z0-9_-]*/;
   return column + (suffix.match(token)?.[0].length ?? 0);
 }
 
@@ -132,9 +132,18 @@ export function yamlCompletionContext(
   const line = lines[lineNumber - 1] ?? '';
   if (!Number.isInteger(column) || column < 1 || column > line.length + 1) return null;
   const prefix = line.slice(0, column - 1);
+  const suffix = line.slice(column - 1);
+  // ponytail: ambiguous whitespace/quoted values are skipped; parse YAML scalars to support them.
+  if (/^\s+[^#\s,\]:]/.test(suffix)) return null;
+  const quotedSprite = /^\s*sprite:\s*(["'])[^"'#\s]*$/.test(prefix);
+  if (/^["']/.test(suffix) && !quotedSprite) return null;
+  const isSprite = /^\s*sprite:/.test(prefix);
+  const tokenEnd = yamlCompletionEndColumn(line, column, isSprite ? 'rsi-path' : 'prototype-parent');
+  const rest = line.slice(tokenEnd - 1);
+  if (rest && !/^[\s#,:\]]/.test(rest) && !(quotedSprite && /^["']/.test(rest))) return null;
   let match = prefix.match(/^\s*parent:\s*([A-Za-z0-9_-]*)$/);
   if (match) return { kind: 'prototype-parent', query: match[1], startColumn: column - match[1].length };
-  match = prefix.match(/^\s*parent:\s*\[[^\]\n]*$/);
+  match = prefix.match(/^\s*parent:\s*\[(?:[A-Za-z0-9_-]+\s*,\s*)*[A-Za-z0-9_-]*$/);
   if (match) {
     const query = prefix.match(/([A-Za-z0-9_-]*)$/)?.[1] ?? '';
     return { kind: 'prototype-parent', query, startColumn: column - query.length };

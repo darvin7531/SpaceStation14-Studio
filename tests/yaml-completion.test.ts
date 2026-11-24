@@ -146,6 +146,23 @@ test('applied completions preserve existing YAML delimiters and values', () => {
   assert.equal(apply('    sprite: "Objects/Test.rsi" # keep', 18, 'Objects/New.rsi', component), '    sprite: "Objects/New.rsi" # keep');
   assert.equal(apply('  - type: Sprite # keep', 14, 'Sprite', ['- type: entity', '  components:']), '  - type: Sprite # keep');
   assert.equal(apply('  - Spr # keep', 7, 'Sprite', ['- type: entity', '  components:']), '  - type: Sprite # keep');
+  assert.equal(apply('    sprite: "Objects/a@b+é.rsi" # keep', 22, 'Objects/New.rsi', component), '    sprite: "Objects/New.rsi" # keep');
+  assert.equal(apply('    sprite: Objects/a@b+é.rsi # keep', 21, 'Objects/New.rsi', component), '    sprite: Objects/New.rsi # keep');
+});
+
+test('completion is suppressed before whitespace or quotes leading to an existing value', () => {
+  for (const [before, line, column] of [
+    [['- type: entity', '  components:'], '  - type: Sprite', 10],
+    [['- type: entity'], '  parent: Base', 10],
+    [['- type: entity'], '  parent: "Base"', 11],
+    [['- type: entity'], '  parent: [ Base]', 12],
+    [['- type: entity', '  components:', '  - type: Sprite'], '    sprite: "Objects/Test.rsi"', 12],
+    [['- type: entity', '  components:', '  - type: Sprite'], "    sprite: 'Objects/Test.rsi'", 13],
+    [['- type: entity'], '  parent: [Base.foo]', 20],
+  ] as const) {
+    const lines = [...before, line];
+    assert.equal(yamlCompletionContext(lines, lines.length, column), null, line);
+  }
 });
 
 test('existing component type key is never replaced by an entry completion', () => {
