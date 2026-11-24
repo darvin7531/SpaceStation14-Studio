@@ -581,7 +581,12 @@ try {
     button.click(); return true;
   `));
   await until('save and close confirmation', () => script("const button = [...document.querySelectorAll('.discard-confirmation button')].find(b => b.textContent.includes('Сохранить и закрыть')); if (!button) return false; button.click(); return true;"));
-  await until('warning and cleanup failure visible', () => script("return document.body.innerText.includes('durability warning smoke') && document.body.innerText.includes('cleanup failed');"));
+  try {
+    await until('warning and cleanup failure visible', () => script("return document.body.innerText.includes('durability warning smoke') && document.body.innerText.includes('cleanup failed');"));
+  } catch (error) {
+    console.error('Cleanup diagnostic:', await script('return document.body.innerText;'));
+    throw error;
+  }
   assert.ok(await find('[role=tab][title="Resources/Prototypes/smoke.yml"]'), 'cleanup failure keeps tab open');
   await click('.discard-confirmation button:first-of-type');
   await edit(draft, 'SmokeDraft');
