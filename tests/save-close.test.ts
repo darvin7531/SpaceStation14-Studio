@@ -55,6 +55,75 @@ test('edits during recovery restoration are persisted before returning', async (
 });
 
 
+test('reverting during recovery persistence cannot leave a stale draft before close', async () => {
+  let draft = 'A';
+  let journal: string | undefined = 'A';
+  let started!: () => void;
+  let release!: () => void;
+  const writing = new Promise<void>((resolve) => { started = resolve; });
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let closed = false;
+  const operation = saveAndClose({
+    current: () => draft === 'A',
+    save: async () => {},
+    cleanup: () => deleteDraftPreservingChanges(async () => { journal = undefined; draft = 'B'; },
+      () => draft, 'A', async (content) => {
+        if (content === 'B') { started(); await gate; }
+        journal = content;
+      }),
+    close: () => { closed = true; },
+  });
+  await writing;
+  draft = 'A';
+  release();
+  await operation;
+  assert.notEqual(journal, 'B');
+  assert.equal(closed, true);
+});
+
+test('edits during persistence of a reverted draft are preserved and prevent close', async () => {
+  let draft = 'A';
+  let journal: string | undefined = 'A';
+  let closed = false;
+  const operation = saveAndClose({
+    current: () => draft === 'A',
+    save: async () => {},
+    cleanup: () => deleteDraftPreservingChanges(async () => { journal = undefined; draft = 'B'; },
+      () => draft, 'A', async (content) => {
+        journal = content;
+        if (content === 'B') draft = 'A';
+        else if (content === 'A') draft = 'C';
+      }),
+    close: () => { closed = true; },
+  });
+  await assert.rejects(operation, /измен/);
+  assert.equal(journal, 'C');
+  assert.equal(closed, false);
+});
+
+test('recovery deletion and persistence failures prevent close', async () => {
+  for (const failure of ['delete', 'persist']) {
+    let draft = 'A';
+    let journal: string | undefined = 'A';
+    let closed = false;
+    await assert.rejects(saveAndClose({
+      current: () => draft === 'A',
+      save: async () => {},
+      cleanup: () => deleteDraftPreservingChanges(async () => {
+        draft = 'B';
+        if (failure === 'delete') throw Error('delete failed');
+        journal = undefined;
+      }, () => draft, 'A', async (content) => {
+        if (failure === 'persist') throw Error('persist failed');
+        journal = content;
+      }),
+      close: () => { closed = true; },
+    }), new RegExp(`${failure} failed`));
+    assert.equal(closed, false);
+    if (failure === 'delete') assert.equal(journal, 'B');
+  }
+});
+
 test('closing after an async save retains a recovery tab opened meanwhile', async () => {
   let tabs: import('../src/lib/tabs').TabState = { tabs: [{ path: 'a.yaml', kind: 'yaml' }], active: 'a.yaml' };
   await saveAndClose({
