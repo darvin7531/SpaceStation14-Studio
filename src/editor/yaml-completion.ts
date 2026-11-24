@@ -27,7 +27,8 @@ export async function yamlCurrentCompletion<T>(model: EditorModel, request: () =
 
 export function yamlCompletionEndColumn(line: string, column: number, kind: YamlCompletionContext['kind']): number {
   const suffix = line.slice(column - 1);
-  const token = kind === 'rsi-path' ? /^[^"'#\s]*/ : /^[A-Za-z0-9_-]*/;
+  const quoted = kind === 'rsi-path' && /^\s*sprite:\s*["']/.test(line.slice(0, column - 1));
+  const token = kind === 'rsi-path' ? (quoted ? /^[^"'#\\]*/ : /^[^"'#\s]*/) : /^[A-Za-z0-9_-]*/;
   return column + (suffix.match(token)?.[0].length ?? 0);
 }
 
@@ -55,7 +56,7 @@ export function yamlEditorCompletionContext(model: EditorModel, lineNumber: numb
   const line = model.getLineContent(lineNumber);
   if (!Number.isInteger(column) || column < 1 || column > line.length + 1) return null;
   const prefix = line.slice(0, column - 1);
-  if (!/^\s*(?:parent:\s*(?:[A-Za-z0-9_-]*|\[[^\]\n]*)|-\s*(?:type:\s*)?[A-Za-z0-9_-]*|sprite:\s*["']?[^"'#\s]*|[a-zA-Z_][\w-]*)$/.test(prefix)) return null;
+  if (!/^\s*(?:parent:\s*(?:[A-Za-z0-9_-]*|\[[^\]\n]*)|-\s*(?:type:\s*)?[A-Za-z0-9_-]*|sprite:\s*(?:["'][^"'#\\]*|[^"'#\s]*)|[a-zA-Z_][\w-]*)$/.test(prefix)) return null;
   const lines = yamlEditorContextLines(model, lineNumber);
   return yamlCompletionContext(lines, lines.length, column);
 }
@@ -135,9 +136,9 @@ export function yamlCompletionContext(
   const suffix = line.slice(column - 1);
   // ponytail: skip quoted paths with # or escapes; parse YAML scalars to support them.
   if (/^\s*sprite:\s*(?:"[^"]*[#\\]|'[^']*[#\\])/.test(line)) return null;
-  // ponytail: ambiguous whitespace/quoted values are skipped; parse YAML scalars to support them.
-  if (/^\s+[^#\s,\]:]/.test(suffix)) return null;
-  const quotedSprite = /^\s*sprite:\s*(["'])[^"'#\s]*$/.test(prefix);
+  const quotedSprite = /^\s*sprite:\s*(["'])[^"'#\\]*$/.test(prefix);
+  // Avoid inserting before an existing value, except within a quoted scalar.
+  if (!quotedSprite && /^\s+[^#\s,\]:]/.test(suffix)) return null;
   if (/^["']/.test(suffix) && !quotedSprite) return null;
   const isSprite = /^\s*sprite:/.test(prefix);
   const tokenEnd = yamlCompletionEndColumn(line, column, isSprite ? 'rsi-path' : 'prototype-parent');
@@ -145,7 +146,7 @@ export function yamlCompletionContext(
   if (rest && !/^[\s#,:\]]/.test(rest) && !(quotedSprite && /^["']/.test(rest))) return null;
   let match = prefix.match(/^\s*parent:\s*([A-Za-z0-9_-]*)$/);
   if (match) return { kind: 'prototype-parent', query: match[1], startColumn: column - match[1].length };
-  match = prefix.match(/^\s*parent:\s*\[(?:[A-Za-z0-9_-]+\s*,\s*)*[A-Za-z0-9_-]*$/);
+  match = prefix.match(/^\s*parent:\s*\[\s*(?:[A-Za-z0-9_-]+\s*,\s*)*[A-Za-z0-9_-]*$/);
   if (match) {
     const query = prefix.match(/([A-Za-z0-9_-]*)$/)?.[1] ?? '';
     return { kind: 'prototype-parent', query, startColumn: column - query.length };
@@ -163,9 +164,10 @@ export function yamlCompletionContext(
     return { kind: 'component-entry-start', query: match[1], startColumn: column - match[1].length };
   }
   if (!scope.component) return null;
-  match = prefix.match(/^\s*sprite:\s*(["']?)([^"'#\s]*)$/);
+  match = prefix.match(/^\s*sprite:\s*(?:(["'])([^"'#\\]*)|()([^"'#\s]*))$/);
   if (match && RSI_COMPONENTS.has(scope.component.type)) {
-    return { kind: 'rsi-path', query: match[2], startColumn: column - match[2].length,
+    const query = match[2] ?? match[4];
+    return { kind: 'rsi-path', query, startColumn: column - query.length,
       componentType: scope.component.type };
   }
   match = prefix.match(/^\s*([a-zA-Z_][\w-]*)$/);
@@ -192,12 +194,20 @@ export function yamlComponentHoverTarget(
 
 
 export function indexedRsiPath(raw: string): string | null {
-  if (!/^[A-Za-z0-9_./-]+\.rsi$/.test(raw)) return null;
+  if (!raw.endsWith('.rsi') || /[\\\x00-\x1f\x7f]/.test(raw) || raw.startsWith('/') || /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(raw)) return null;
   const path = raw.startsWith('Resources/Textures/') ? raw : 'Resources/Textures/' + raw;
   const parts = path.split('/');
   if (parts.length < 4 || parts[0] !== 'Resources' || parts[1] !== 'Textures'
       || parts.some((part) => !part || part === '.' || part === '..')) return null;
   return path;
+}
+
+/** Encode an indexed path for the scalar already being edited. */
+export function yamlRsiInsertText(line: string, context: YamlCompletionContext, path: string): string {
+  const quote = line[context.startColumn - 2];
+  if (quote === '"') return JSON.stringify(path).slice(1, -1);
+  if (quote === "'") return path.replace(/'/g, "''");
+  return /^[A-Za-z0-9_./-]+$/.test(path) ? path : JSON.stringify(path);
 }
 
 export function yamlSpriteLinkTarget(

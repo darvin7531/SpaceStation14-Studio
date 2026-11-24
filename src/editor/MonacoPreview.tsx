@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { studio, type ResourceDocument, type ResourceEntry } from '../lib/api';
-import { indexedRsiPath, yamlEditorCompletionContext, yamlEditorComponentHoverTarget, yamlSpriteLinkTarget, yamlComponentInsertText, yamlCompletionEndColumn, yamlFieldInsertText, yamlCurrentCompletion } from './yaml-completion';
+import { yamlRsiInsertText, indexedRsiPath, yamlEditorCompletionContext, yamlEditorComponentHoverTarget, yamlSpriteLinkTarget, yamlComponentInsertText, yamlCompletionEndColumn, yamlFieldInsertText, yamlCurrentCompletion } from './yaml-completion';
 import { componentHoverMarkdown } from './component-hover';
 import { yamlLocaleClickField } from './yaml-locale-navigation';
 import { missingEntityLocaleUnderlines } from './yaml-locale-markers';
@@ -185,6 +185,7 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
                         .map((item) => ({
                           label: item.path.slice('Resources/Textures/'.length),
                           detail: item.path,
+                          insertText: yamlRsiInsertText(source.getLineContent(position.lineNumber), target, item.path.slice('Resources/Textures/'.length)),
                         }));
                     }
                     if (token.isCancellationRequested || cancelled) return { suggestions: [] };

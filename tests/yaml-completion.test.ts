@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { indexedRsiPath, yamlCompletionContext, yamlComponentHoverTarget, yamlSpriteLinkTarget, yamlEditorContextLines, yamlEditorCompletionContext, yamlEditorComponentHoverTarget, yamlComponentInsertText, yamlCompletionEndColumn, yamlFieldInsertText, yamlCurrentCompletion } from '../src/editor/yaml-completion';
+import { yamlRsiInsertText, indexedRsiPath, yamlCompletionContext, yamlComponentHoverTarget, yamlSpriteLinkTarget, yamlEditorContextLines, yamlEditorCompletionContext, yamlEditorComponentHoverTarget, yamlComponentInsertText, yamlCompletionEndColumn, yamlFieldInsertText, yamlCurrentCompletion } from '../src/editor/yaml-completion';
 
 test('editor completions and hover retain context beyond 64 lines without crossing prototypes', () => {
   const lines = ['- type: entity', '  components:', '  - type: Old', '- type: entity', '  components:',
@@ -157,19 +157,35 @@ test('applied completions preserve existing YAML delimiters and values', () => {
   }
 });
 
-test('unsafe indexed RSI candidates are not offered for insertion', () => {
+test('RSI candidate insertion quotes paths for the current scalar', () => {
   const component = ['- type: entity', '  components:', '  - type: Sprite'];
   for (const quote of ['', '"', "'"]) {
-    const line = `    sprite: ${quote}Objects/old.rsi${quote}`;
+    const line = `    sprite: ${quote}Objects/old.rsi${quote} # keep`;
     const column = line.indexOf('old') + 2;
     const context = yamlCompletionContext([...component, line], 4, column)!;
-    for (const candidate of ['Objects/a"b.rsi', "Objects/a'b.rsi", 'Objects/a #b.rsi', 'Objects/[a].rsi', 'Objects/a: b.rsi', 'Objects/safe.rsi']) {
-      const applied = indexedRsiPath(candidate)
-        ? line.slice(0, context.startColumn - 1) + candidate + line.slice(yamlCompletionEndColumn(line, column, context.kind) - 1)
-        : null;
-      assert.equal(applied, candidate === 'Objects/safe.rsi' ? `    sprite: ${quote}Objects/safe.rsi${quote}` : null, candidate);
+    for (const candidate of ['Objects/a b@é.rsi', 'Objects/a"b.rsi', "Objects/a'b.rsi", 'Objects/a #b.rsi', 'Objects/[a].rsi', 'Objects/a: b.rsi', 'Objects/safe.rsi']) {
+      assert.ok(indexedRsiPath(candidate), candidate);
+      const text = yamlRsiInsertText(line, context, candidate);
+      const applied = line.slice(0, context.startColumn - 1) + text + line.slice(yamlCompletionEndColumn(line, column, context.kind) - 1);
+      const encoded = quote === '"' ? JSON.stringify(candidate) : quote === "'" ? "'" + candidate.replace(/'/g, "''") + "'" : /^[A-Za-z0-9_./-]+$/.test(candidate) ? candidate : JSON.stringify(candidate);
+      assert.equal(applied, `    sprite: ${encoded} # keep`, candidate);
     }
   }
+  const line = '    sprite: "Objects/old file@é.rsi" # keep';
+  const column = line.indexOf('old') + 2;
+  const context = yamlCompletionContext([...component, line], 4, column)!;
+  const text = yamlRsiInsertText(line, context, 'Objects/new file@é.rsi');
+  assert.equal(line.slice(0, context.startColumn - 1) + text + line.slice(yamlCompletionEndColumn(line, column, context.kind) - 1), '    sprite: "Objects/new file@é.rsi" # keep');
+});
+
+test('parent completion handles spaces after flow sequence opening', () => {
+  const line = '  parent: [ Base, Other] # keep';
+  const column = line.indexOf('Base') + 3;
+  const lines = ['- type: entity', line];
+  const model = { getLineContent: (n: number) => lines[n - 1], getVersionId: () => 1 };
+  const context = yamlEditorCompletionContext(model, 2, column)!;
+  assert.equal(context.query, 'Ba');
+  assert.equal(line.slice(0, context.startColumn - 1) + 'Basic' + line.slice(yamlCompletionEndColumn(line, column, context.kind) - 1), '  parent: [ Basic, Other] # keep');
 });
 
 test('completion is suppressed before whitespace or quotes leading to an existing value', () => {
