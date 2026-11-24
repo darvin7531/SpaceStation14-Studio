@@ -575,7 +575,11 @@ try {
       return new Response(JSON.stringify(result), {status:response.status, headers:response.headers});
     };
   `);
-  await click('.tab:has([role=tab][title="Resources/Prototypes/smoke.yml"]) .tab-close');
+  await until('warning tab close enabled', () => script(`
+    const button = document.querySelector('.tab:has([role=tab][title="Resources/Prototypes/smoke.yml"]) .tab-close');
+    if (!button || button.disabled) return false;
+    button.click(); return true;
+  `));
   await until('save and close confirmation', () => script("const button = [...document.querySelectorAll('.discard-confirmation button')].find(b => b.textContent.includes('Сохранить и закрыть')); if (!button) return false; button.click(); return true;"));
   await until('warning and cleanup failure visible', () => script("return document.body.innerText.includes('durability warning smoke') && document.body.innerText.includes('cleanup failed');"));
   assert.ok(await find('[role=tab][title="Resources/Prototypes/smoke.yml"]'), 'cleanup failure keeps tab open');
