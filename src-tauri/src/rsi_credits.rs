@@ -34,7 +34,7 @@ fn checked_content(
             "Ограничьте лицензию 128 байтами, а авторство 8 КиБ. Управляющие символы в лицензии запрещены.",
         ));
     }
-    let mut doc: Value = serde_json::from_slice(original).map_err(|error| {
+    let mut doc: Value = crate::rsi_import::strict_metadata(original).map_err(|error| {
         issue(
             "RSI_CREDITS_META_INVALID",
             "meta.json содержит повреждённый JSON.",
@@ -217,6 +217,23 @@ mod tests {
         let result = update(&fixture.root, &request).unwrap();
         assert_eq!(result.content, original);
         assert_eq!(result.revision, request.expected_revision);
+    }
+
+    #[test]
+    fn duplicate_keys_at_any_depth_leave_metadata_and_png_unchanged() {
+        let fixture = Fixture::new();
+        let folder = fixture.root.join(&fixture.path);
+        let file = folder.join("meta.json");
+        for original in [
+            r#"{"version":1,"version":1,"size":{},"states":[]}"#,
+            r#"{"version":1,"size":{},"states":[{"name":"idle","extra":[{"a":1,"\u0061":2}]}]}"#,
+        ] {
+            fs::write(&file, original).unwrap();
+            let error = update(&fixture.root, &fixture.request()).unwrap_err();
+            assert_eq!(error.code, "RSI_CREDITS_META_INVALID");
+            assert_eq!(fs::read(&file).unwrap(), original.as_bytes());
+            assert_eq!(fs::read(folder.join("idle.png")).unwrap(), b"png unchanged");
+        }
     }
 
     #[test]

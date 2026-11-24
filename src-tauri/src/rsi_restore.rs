@@ -281,7 +281,7 @@ pub fn list(root: &Path, rsi_path: &str) -> Result<RsiArchiveList, StudioError> 
 }
 
 fn restored_metadata(current: &[u8], original: &[u8], name: &str) -> Result<String, StudioError> {
-    let mut current_meta: Value = serde_json::from_slice(current).map_err(|error| {
+    let mut current_meta: Value = crate::rsi_import::strict_metadata(current).map_err(|error| {
         issue(
             "RSI_RESTORE_META_INVALID",
             "Текущий meta.json некорректен.",
@@ -289,7 +289,7 @@ fn restored_metadata(current: &[u8], original: &[u8], name: &str) -> Result<Stri
         )
         .with_details(error.to_string())
     })?;
-    let backup_meta: Value = serde_json::from_slice(original).map_err(|error| {
+    let backup_meta: Value = crate::rsi_import::strict_metadata(original).map_err(|error| {
         issue(
             "RSI_RESTORE_ARCHIVE_INVALID",
             "Архивный meta.json некорректен.",

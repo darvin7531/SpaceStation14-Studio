@@ -65,7 +65,7 @@ fn updated_metadata(
     update: &RsiTimingUpdate,
 ) -> Result<Option<String>, StudioError> {
     validated_delays(&update.delays)?;
-    let mut doc: Value = serde_json::from_slice(original).map_err(|error| {
+    let mut doc: Value = crate::rsi_import::strict_metadata(original).map_err(|error| {
         issue(
             "RSI_TIMING_META_INVALID",
             "meta.json содержит повреждённый JSON.",

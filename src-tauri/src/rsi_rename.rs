@@ -89,7 +89,7 @@ fn metadata_after_rename(
     original: &[u8],
     request: &RsiRenameRequest,
 ) -> Result<String, StudioError> {
-    let mut metadata: Value = serde_json::from_slice(original).map_err(|error| {
+    let mut metadata: Value = crate::rsi_import::strict_metadata(original).map_err(|error| {
         issue(
             "RSI_RENAME_META_INVALID",
             "meta.json содержит некорректный JSON.",

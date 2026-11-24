@@ -70,7 +70,7 @@ fn validate(request: &RsiDeleteRequest) -> Result<(), StudioError> {
 }
 
 fn metadata_after_deletion(original: &[u8], state_name: &str) -> Result<String, StudioError> {
-    let mut metadata: Value = serde_json::from_slice(original).map_err(|error| {
+    let mut metadata: Value = crate::rsi_import::strict_metadata(original).map_err(|error| {
         issue(
             "RSI_DELETE_META_INVALID",
             "meta.json содержит некорректный JSON.",

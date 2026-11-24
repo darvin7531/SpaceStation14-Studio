@@ -195,7 +195,7 @@ fn checked_content(
             "Укажите положительные целые значения ширины и высоты.",
         ));
     }
-    let mut doc: Value = serde_json::from_slice(source).map_err(|reason| {
+    let mut doc: Value = crate::rsi_import::strict_metadata(source).map_err(|reason| {
         issue(
             "RSI_SIZE_META_INVALID",
             "meta.json содержит некорректный JSON.",

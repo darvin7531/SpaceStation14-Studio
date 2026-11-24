@@ -51,7 +51,7 @@ fn prevalidate(root: &Path, request: &RsiStateImport) -> Result<(usize, Value), 
         ));
     }
 
-    let mut base: Value = serde_json::from_slice(&metadata).map_err(|error| {
+    let mut base: Value = crate::rsi_import::strict_metadata(&metadata).map_err(|error| {
         issue(
             "RSI_REPLACE_META_INVALID",
             "meta.json содержит некорректный JSON.",

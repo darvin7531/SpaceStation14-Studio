@@ -12,6 +12,45 @@ use std::io::{Read, Write};
 use std::path::{Component, Path};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+// Validate before parsing into Value, which otherwise silently discards duplicate keys.
+pub(crate) fn strict_metadata(bytes: &[u8]) -> Result<Value, serde_json::Error> {
+    struct Checked;
+    impl<'de> Deserialize<'de> for Checked {
+        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            struct Visitor;
+            impl<'de> serde::de::Visitor<'de> for Visitor {
+                type Value = Checked;
+                fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    f.write_str("JSON without duplicate keys")
+                }
+                fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<Checked, E> { Ok(Checked) }
+                fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<Checked, E> { Ok(Checked) }
+                fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<Checked, E> { Ok(Checked) }
+                fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<Checked, E> { Ok(Checked) }
+                fn visit_str<E: serde::de::Error>(self, _: &str) -> Result<Checked, E> { Ok(Checked) }
+                fn visit_unit<E: serde::de::Error>(self) -> Result<Checked, E> { Ok(Checked) }
+                fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Checked, A::Error> {
+                    while seq.next_element::<Checked>()?.is_some() {}
+                    Ok(Checked)
+                }
+                fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Checked, A::Error> {
+                    let mut keys = std::collections::HashSet::new();
+                    while let Some(key) = map.next_key::<String>()? {
+                        if !keys.insert(key.clone()) {
+                            return Err(serde::de::Error::custom(format!("duplicate JSON key: {key}")));
+                        }
+                        map.next_value::<Checked>()?;
+                    }
+                    Ok(Checked)
+                }
+            }
+            deserializer.deserialize_any(Visitor)
+        }
+    }
+    serde_json::from_slice::<Checked>(bytes)?;
+    serde_json::from_slice(bytes)
+}
+
 const MAX_PNG_BYTES: usize = 8 * 1024 * 1024;
 const MAX_META_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_DATA_URL_CHARS: usize = 12 * 1024 * 1024;
@@ -293,7 +332,7 @@ pub(crate) fn updated_metadata_at(
     insert_at: Option<usize>,
     preserve_state: Option<&Value>,
 ) -> Result<String, StudioError> {
-    let mut meta: Value = serde_json::from_slice(bytes).map_err(|e| {
+    let mut meta: Value = strict_metadata(bytes).map_err(|e| {
         issue(
             "RSI_IMPORT_META_INVALID",
             "meta.json содержит некорректный JSON.",
