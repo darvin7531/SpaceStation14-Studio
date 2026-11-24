@@ -522,6 +522,7 @@ try {
   await script("[...document.querySelectorAll('.discard-confirmation button')].find(b => b.textContent.includes('Сохранить и закрыть')).click();");
   await until('save and close completed', async () => !(await find('[role=tab][title="Resources/Prototypes/smoke.yml"]')));
   assert.equal(await readFile(file, 'utf8'), draft, 'save and close writes the submitted draft');
+  await click('.explorer-switch:has([data-testid=folder-view]) button:first-child');
   await click('.resource-row[title="Resources/Prototypes/smoke.yml"]');
   await until('reopened saved editor', () => script("return document.querySelector('.monaco-shell .view-lines')?.textContent?.includes('SmokeDraft');"));
 
