@@ -92,7 +92,7 @@ const RSI_COMPONENTS = new Set(['Sprite', 'Clothing', 'Icon', 'HumanoidAppearanc
 /** Find a component and its already declared fields without treating other YAML lists as components. */
 function componentScope(lines: readonly string[], lineNumber: number) {
   let sectionIndent: number | null = null;
-  let component: { type: string; depth: number; start: number; fields: Set<string> } | null = null;
+  let component: { type: string; depth: number; fieldDepth: number; start: number; fields: Set<string> } | null = null;
   for (let i = 0; i < lineNumber - 1; i += 1) {
     const line = lines[i];
     if (!line.trim() || /^\s*#/.test(line)) continue;
@@ -112,7 +112,7 @@ function componentScope(lines: readonly string[], lineNumber: number) {
     if (component && depth <= component.depth) component = null;
     const entry = line.match(/^\s*-\s*type:\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:#.*)?$/);
     if (entry) {
-      component = { type: entry[1], depth, start: i, fields: new Set() };
+      component = { type: entry[1], depth, fieldDepth: line.indexOf('type:'), start: i, fields: new Set() };
     }
   }
   const line = lines[lineNumber - 1] ?? '';
@@ -188,7 +188,7 @@ export function yamlCompletionContext(
       componentType: scope.component.type };
   }
   match = prefix.match(/^\s*([a-zA-Z_][\w-]*)$/);
-  if (match) {
+  if (match && prefix.search(/\S/) === scope.component.fieldDepth) {
     return { kind: 'component-field', query: match[1], startColumn: column - match[1].length,
       componentType: scope.component.type, existingFields: [...scope.component.fields] };
   }
@@ -227,7 +227,8 @@ export async function yamlRsiCandidates(
   const prefix = 'Resources/Textures/' + query;
   const paths: string[] = [];
   let offset = 0;
-  while (!cancelled() && paths.length < 80) {
+  // ponytail: at most two substring-search pages; add backend prefix search for complete results.
+  for (let pageNumber = 0; pageNumber < 2 && !cancelled() && paths.length < 80; pageNumber++) {
     const page = await search(prefix, offset, 80);
     for (const item of page.items) {
       if (item.path.startsWith('Resources/Textures/') && item.path.toLowerCase().startsWith(prefix.toLowerCase()) && indexedRsiPath(item.path)) paths.push(item.path);

@@ -76,6 +76,25 @@ test('component fields include siblings after the cursor but not nested or other
   assert.deepEqual(yamlCompletionContext(lines, 5, 8)?.existingFields, ['before', 'nested', 'state']);
 });
 
+test('nested mappings do not offer component fields while sibling fields still do', () => {
+  const lines = ['- type: entity', '  components:', '  - type: Sprite', '    layers:',
+    '      scale', '    sca'];
+  const model = { getLineContent: (n: number) => lines[n - 1], getLineCount: () => lines.length, getVersionId: () => 1 };
+  assert.equal(yamlCompletionContext(lines, 5, 12), null);
+  assert.equal(yamlEditorCompletionContext(model, 5, 12), null);
+  assert.equal(yamlEditorCompletionContext(model, 6, 8)?.kind, 'component-field');
+});
+
+test('RSI completion bounds searches when substring matches never match the prefix', async () => {
+  let calls = 0;
+  const candidates = await yamlRsiCandidates('Obj', async () => {
+    calls++;
+    return { total: 100000, items: Array.from({ length: 80 }, (_, i) => ({ path: `Resources/Textures/x/Resources/Textures/Obj${i}.rsi` })) };
+  });
+  assert.deepEqual(candidates, []);
+  assert.equal(calls, 2);
+});
+
 test('RSI completion finds prefix matches after a full page of substring matches', async () => {
   const items = [...Array.from({ length: 80 }, (_, i) => ({ path: `Resources/Textures/x/Resources/Textures/Obj${i}.rsi` })),
     { path: 'Resources/Textures/Objects/real.rsi' }];
