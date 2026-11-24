@@ -133,6 +133,8 @@ export function yamlCompletionContext(
   if (!Number.isInteger(column) || column < 1 || column > line.length + 1) return null;
   const prefix = line.slice(0, column - 1);
   const suffix = line.slice(column - 1);
+  // ponytail: skip quoted paths with # or escapes; parse YAML scalars to support them.
+  if (/^\s*sprite:\s*(?:"[^"]*[#\\]|'[^']*[#\\])/.test(line)) return null;
   // ponytail: ambiguous whitespace/quoted values are skipped; parse YAML scalars to support them.
   if (/^\s+[^#\s,\]:]/.test(suffix)) return null;
   const quotedSprite = /^\s*sprite:\s*(["'])[^"'#\s]*$/.test(prefix);
@@ -157,7 +159,7 @@ export function yamlCompletionContext(
   match = prefix.match(/^(\s*-\s*type:\s*)([A-Za-z0-9_-]*)$/);
   if (match) return { kind: 'component-type', query: match[2], startColumn: column - match[2].length };
   match = prefix.match(/^\s*-\s*([A-Za-z0-9_-]*)$/);
-  if (match && !/^\s*-\s*type\s*:/.test(line)) {
+  if (match && !/^\s*-\s*[A-Za-z0-9_-]+\s*:/.test(line)) {
     return { kind: 'component-entry-start', query: match[1], startColumn: column - match[1].length };
   }
   if (!scope.component) return null;

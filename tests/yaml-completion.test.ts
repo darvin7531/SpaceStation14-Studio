@@ -148,6 +148,28 @@ test('applied completions preserve existing YAML delimiters and values', () => {
   assert.equal(apply('  - Spr # keep', 7, 'Sprite', ['- type: entity', '  components:']), '  - type: Sprite # keep');
   assert.equal(apply('    sprite: "Objects/a@b+é.rsi" # keep', 22, 'Objects/New.rsi', component), '    sprite: "Objects/New.rsi" # keep');
   assert.equal(apply('    sprite: Objects/a@b+é.rsi # keep', 21, 'Objects/New.rsi', component), '    sprite: Objects/New.rsi # keep');
+  for (const quote of ['"', "'"]) {
+    const line = `    sprite: ${quote}Objects/a#old.rsi${quote} # keep`;
+    const lines = [...component, line];
+    const column = line.indexOf('#') - 2;
+    const context = yamlCompletionContext(lines, lines.length, column);
+    assert.equal(context, null, line);
+  }
+});
+
+test('unsafe indexed RSI candidates are not offered for insertion', () => {
+  const component = ['- type: entity', '  components:', '  - type: Sprite'];
+  for (const quote of ['', '"', "'"]) {
+    const line = `    sprite: ${quote}Objects/old.rsi${quote}`;
+    const column = line.indexOf('old') + 2;
+    const context = yamlCompletionContext([...component, line], 4, column)!;
+    for (const candidate of ['Objects/a"b.rsi', "Objects/a'b.rsi", 'Objects/a #b.rsi', 'Objects/[a].rsi', 'Objects/a: b.rsi', 'Objects/safe.rsi']) {
+      const applied = indexedRsiPath(candidate)
+        ? line.slice(0, context.startColumn - 1) + candidate + line.slice(yamlCompletionEndColumn(line, column, context.kind) - 1)
+        : null;
+      assert.equal(applied, candidate === 'Objects/safe.rsi' ? `    sprite: ${quote}Objects/safe.rsi${quote}` : null, candidate);
+    }
+  }
 });
 
 test('completion is suppressed before whitespace or quotes leading to an existing value', () => {
@@ -169,6 +191,15 @@ test('existing component type key is never replaced by an entry completion', () 
   const lines = ['- type: entity', '  components:', '  - type: Sprite'];
   for (const column of [4, 5, 6, 7, 8, 9]) {
     assert.equal(yamlCompletionContext(lines, 3, column), null, `column ${column}`);
+  }
+});
+
+test('existing component mapping keys are never replaced by entry completions', () => {
+  for (const line of ['  - Sprite: value', '  - Sprite  : value', '  - type: Sprite']) {
+    const lines = ['- type: entity', '  components:', line];
+    for (let column = 4; column <= line.indexOf(':') + 1; column++) {
+      assert.equal(yamlCompletionContext(lines, 3, column), null, `${line} at ${column}`);
+    }
   }
 });
 

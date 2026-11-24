@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { studio, type ResourceDocument, type ResourceEntry } from '../lib/api';
-import { yamlEditorCompletionContext, yamlEditorComponentHoverTarget, yamlSpriteLinkTarget, yamlComponentInsertText, yamlCompletionEndColumn, yamlFieldInsertText, yamlCurrentCompletion } from './yaml-completion';
+import { indexedRsiPath, yamlEditorCompletionContext, yamlEditorComponentHoverTarget, yamlSpriteLinkTarget, yamlComponentInsertText, yamlCompletionEndColumn, yamlFieldInsertText, yamlCurrentCompletion } from './yaml-completion';
 import { componentHoverMarkdown } from './component-hover';
 import { yamlLocaleClickField } from './yaml-locale-navigation';
 import { missingEntityLocaleUnderlines } from './yaml-locale-markers';
@@ -181,7 +181,7 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
                       }
                     } else if (target.kind === 'rsi-path') {
                       const page = await studio.searchResources(target.query, 'rsi', 0, 80);
-                      entries = page.items.filter((item) => item.path.startsWith('Resources/Textures/'))
+                      entries = page.items.filter((item) => item.path.startsWith('Resources/Textures/') && indexedRsiPath(item.path) !== null)
                         .map((item) => ({
                           label: item.path.slice('Resources/Textures/'.length),
                           detail: item.path,
