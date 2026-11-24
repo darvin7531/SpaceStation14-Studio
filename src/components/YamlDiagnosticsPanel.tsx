@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, FileWarning } from 'lucide-react';
 import { studio, type YamlSyntaxReport } from '../lib/api';
 import { normalizeStudioError, type StudioError } from '../lib/errors';
+import { yamlSyntaxHint } from '../lib/yaml-diagnostics-hint';
 
 interface Props {
   path: string;
@@ -59,7 +60,8 @@ export default function YamlDiagnosticsPanel({ path, source, enabled, delayMs, o
           : report ? <button type="button" className="yaml-diagnostics-error"
               onClick={() => onRevealLine(report.line ?? 1)}>
               <AlertCircle size={15}/>
-              <span>{report.line ?? '?'}:{report.column ?? '?'} — {report.message ?? 'Ошибка синтаксиса YAML'}</span>
+              <span>{report.line ?? '?'}:{report.column ?? '?'} — {report.message ?? 'Ошибка синтаксиса YAML'}<br/>
+                <strong>Как исправить:</strong> {yamlSyntaxHint(report.valid)}</span>
             </button>
             : <p role="status">Проверка текущего черновика…</p>}
     <footer>Проверяется синтаксис YAML, не типы компонентов, наследование или правила RobustToolbox.</footer>
