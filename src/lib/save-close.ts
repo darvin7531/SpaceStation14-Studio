@@ -32,7 +32,8 @@ export async function deleteDraftPreservingChanges(
     let content = latest();
     if (content !== submitted) {
       while (content !== undefined) {
-        await persist(content);
+        if (content === submitted) await remove();
+        else await persist(content);
         const next = latest();
         if (next === content) break;
         content = next;

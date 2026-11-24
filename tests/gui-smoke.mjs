@@ -516,6 +516,63 @@ try {
   await until('original file selected', () => find('[role=tab][title="Resources/Prototypes/smoke.yml"][aria-selected=true]'));
   await until('original file loaded', () => script("return document.querySelector('.monaco-shell .view-lines')?.textContent?.includes('SmokeSaved');"));
 
+  // Save and Close uses the real save and recovery IPC before removing the tab.
+  await edit(draft, 'SmokeDraft');
+  await click('.tab:has([role=tab][title="Resources/Prototypes/smoke.yml"]) .tab-close');
+  await script("[...document.querySelectorAll('.discard-confirmation button')].find(b => b.textContent.includes('Сохранить и закрыть')).click();");
+  await until('save and close completed', async () => !(await find('[role=tab][title="Resources/Prototypes/smoke.yml"]')));
+  assert.equal(await readFile(file, 'utf8'), draft, 'save and close writes the submitted draft');
+  await click('.resource-row[title="Resources/Prototypes/smoke.yml"]');
+  await until('reopened saved editor', () => script("return document.querySelector('.monaco-shell .view-lines')?.textContent?.includes('SmokeDraft');"));
+
+  // An inactive conflict must leave the draft accessible and unblock comparison.
+  await edit(saved, 'SmokeSaved');
+  await click('[role=tab][data-prototype-id="SmokeSecond"]');
+  await script(`
+    window.__closeOriginalFetch = window.fetch;
+    window.fetch = function(url, options) {
+      if (String(url).startsWith('ipc:') && decodeURIComponent(new URL(url).pathname.slice(1)) === 'save_yaml_resource') {
+        window.fetch = window.__closeOriginalFetch;
+        return Promise.resolve(new Response(JSON.stringify({code:'RESOURCE_CHANGED_ON_DISK', message:'conflict', hint:'compare'}),
+          {headers:{'Tauri-Response':'error', 'Content-Type':'application/json'}}));
+      }
+      return window.__closeOriginalFetch.call(this, url, options);
+    };
+  `);
+  await click('.tab:has([role=tab][title="Resources/Prototypes/smoke.yml"]) .tab-close');
+  await script("[...document.querySelectorAll('.discard-confirmation button')].find(b => b.textContent.includes('Сохранить и закрыть')).click();");
+  await until('inactive conflict reported', () => script("return document.body.innerText.includes('RESOURCE_CHANGED_ON_DISK') && !document.querySelector('.discard-confirmation');"));
+  assert.ok(await find('[role=tab][title="Resources/Prototypes/smoke.yml"]'), 'conflicting tab remains open');
+  await click('[role=tab][title="Resources/Prototypes/smoke.yml"]');
+  await until('conflicting draft selected', () => script("return document.querySelector('.monaco-shell .view-lines')?.textContent?.includes('SmokeSaved');"));
+  await click('button[title="Сравнить черновик с актуальной версией файла на диске"]');
+  await until('inactive conflict can be compared', () => find('.conflict-review'));
+  // Close the review by selecting the other tab and return to the draft.
+  await click('[role=tab][data-prototype-id="SmokeSecond"]');
+  await click('[role=tab][title="Resources/Prototypes/smoke.yml"]');
+  await until('draft editor restored', () => script("return document.querySelector('.monaco-shell .view-lines')?.textContent?.includes('SmokeSaved');"));
+
+  // The real write succeeds with a durability warning; simulated cleanup fails.
+  await script(`
+    window.__closeOriginalFetch = window.fetch;
+    window.fetch = async function(url, options) {
+      const command = String(url).startsWith('ipc:') ? decodeURIComponent(new URL(url).pathname.slice(1)) : '';
+      if (command === 'delete_draft') {
+        window.fetch = window.__closeOriginalFetch;
+        return new Response('cleanup failed', {headers:{'Tauri-Response':'error', 'Content-Type':'text/plain'}});
+      }
+      const response = await window.__closeOriginalFetch.call(this, url, options);
+      if (command !== 'save_yaml_resource') return response;
+      const result = await response.json();
+      result.durability_warning = 'durability warning smoke';
+      return new Response(JSON.stringify(result), {status:response.status, headers:response.headers});
+    };
+  `);
+  await click('.tab:has([role=tab][title="Resources/Prototypes/smoke.yml"]) .tab-close');
+  await script("[...document.querySelectorAll('.discard-confirmation button')].find(b => b.textContent.includes('Сохранить и закрыть')).click();");
+  await until('warning and cleanup failure visible', () => script("return document.body.innerText.includes('durability warning smoke') && document.body.innerText.includes('cleanup failed');"));
+  assert.ok(await find('[role=tab][title="Resources/Prototypes/smoke.yml"]'), 'cleanup failure keeps tab open');
+  await click('.discard-confirmation button:first-of-type');
   await edit(draft, 'SmokeDraft');
   await writeFile(file, external);
   // Wait for the watcher to reconcile the external revision with the dirty draft.

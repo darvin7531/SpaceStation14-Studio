@@ -77,7 +77,7 @@ test('reverting during recovery persistence cannot leave a stale draft before cl
   draft = 'A';
   release();
   await operation;
-  assert.notEqual(journal, 'B');
+  assert.equal(journal, undefined);
   assert.equal(closed, true);
 });
 
@@ -88,11 +88,10 @@ test('edits during persistence of a reverted draft are preserved and prevent clo
   const operation = saveAndClose({
     current: () => draft === 'A',
     save: async () => {},
-    cleanup: () => deleteDraftPreservingChanges(async () => { journal = undefined; draft = 'B'; },
+    cleanup: () => deleteDraftPreservingChanges(async () => { journal = undefined; draft = draft === 'A' ? 'B' : 'C'; },
       () => draft, 'A', async (content) => {
         journal = content;
         if (content === 'B') draft = 'A';
-        else if (content === 'A') draft = 'C';
       }),
     close: () => { closed = true; },
   });
@@ -101,21 +100,21 @@ test('edits during persistence of a reverted draft are preserved and prevent clo
   assert.equal(closed, false);
 });
 
-test('failure persisting a reverted draft prevents close', async () => {
+test('failure deleting a reverted recovery snapshot prevents close', async () => {
   let draft = 'A';
   let journal: string | undefined = 'A';
+  let removals = 0;
   let closed = false;
   await assert.rejects(saveAndClose({
     current: () => draft === 'A',
     save: async () => {},
-    cleanup: () => deleteDraftPreservingChanges(async () => { journal = undefined; draft = 'B'; },
-      () => draft, 'A', async (content) => {
-        if (content === 'A') throw Error('revert persistence failed');
-        journal = content;
-        draft = 'A';
-      }),
+    cleanup: () => deleteDraftPreservingChanges(async () => {
+      if (++removals === 2) throw Error('revert deletion failed');
+      journal = undefined;
+      draft = 'B';
+    }, () => draft, 'A', async (content) => { journal = content; draft = 'A'; }),
     close: () => { closed = true; },
-  }), /revert persistence failed/);
+  }), /revert deletion failed/);
   assert.equal(journal, 'B');
   assert.equal(closed, false);
 });

@@ -872,7 +872,8 @@ export default function App() {
     if (!baseline || submitted === undefined) return;
     const base = draftBasesRef.current[file] ?? baseline.revision;
     if (base !== baseline.revision) {
-      setError({ code: 'RECOVERED_DRAFT_CONFLICT', message: 'Восстановленный черновик основан на другой версии файла.', hint: 'Изучите различия во встроенном diff. Принятие новой ревизии не сохраняет файл автоматически.' });
+      setPendingAction(null);
+      setError({ code: 'RECOVERED_DRAFT_CONFLICT', message: 'Восстановленный черновик основан на другой версии файла.', hint: 'Выберите вкладку файла и изучите различия во встроенном diff. Принятие новой ревизии не сохраняет файл автоматически.' });
       if (selectedPathRef.current === file) void compareCurrent();
       return;
     }
@@ -925,12 +926,16 @@ export default function App() {
         },
         close: () => executeAction(action),
       });
-      if (warning) setNotice(warning);
     } catch (failure) {
       const explained = normalizeStudioError(failure);
-      setError(explained);
       compareConflict = explained.code === 'RESOURCE_CHANGED_ON_DISK';
+      if (compareConflict) {
+        setPendingAction(null);
+        if (selectedPathRef.current !== file) explained.hint = 'Выберите вкладку файла и сравните черновик с версией на диске.';
+      }
+      setError(explained);
     } finally {
+      if (warning) setNotice(warning);
       closingSave.current = false;
       setTransitioning(false);
       if (compareConflict && selectedPathRef.current === file) void compareCurrent(true);
