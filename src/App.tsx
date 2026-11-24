@@ -1,4 +1,5 @@
 import { completeProjectSave } from './lib/project-save-guard';
+import { saveAndClose } from './lib/save-close';
 import { refreshAfterRsiImport } from './lib/rsi-import-refresh';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useI18n } from './i18n';
@@ -190,6 +191,7 @@ export default function App() {
   const journalSignatures = useRef(new Map<string, string>());
   const journalEpoch = useRef(0);
   const [transitioning, setTransitioning] = useState(false);
+  const closingSave = useRef(false);
   const [comparison, setComparison] = useState<DiskComparison | null>(null);
   const [comparing, setComparing] = useState(false);
   const comparisonVersion = useRef(0);
@@ -309,6 +311,7 @@ export default function App() {
     let active = true;
     let stop: (() => void) | undefined;
     void getCurrentWindow().onCloseRequested((event) => {
+      if (closingSave.current) { event.preventDefault(); return; }
       if (dirtyPathsRef.current.length > 0) {
         event.preventDefault();
         if (active) {
@@ -452,6 +455,7 @@ export default function App() {
   }, [overview?.project_root, opening, query, kind, fileView, explorerMode, prototypeQuery, prototypeKind]);
 
   async function loadProject(requestedPath: string) {
+    if (closingSave.current) return;
     projectGeneration.current++;
     setSaving(false);
     const projectInteraction = interaction.current;
@@ -857,8 +861,68 @@ export default function App() {
     }
   }
 
+  async function savePendingClose() {
+    const action = pendingAction;
+    if (!overview || action?.type !== 'close' || closingSave.current || saving || opening || refreshing || transitioning) return;
+    const tab = tabStateRef.current.tabs.find((item) => tabId(item) === action.path);
+    if (!tab || !isEditableText(tab.kind)) return;
+    const file = tab.path;
+    const baseline = documents.current.get(file);
+    const submitted = draftsRef.current[file];
+    if (!baseline || submitted === undefined) return;
+    const base = draftBasesRef.current[file] ?? baseline.revision;
+    if (base !== baseline.revision) {
+      setError({ code: 'RECOVERED_DRAFT_CONFLICT', message: 'Восстановленный черновик основан на другой версии файла.', hint: 'Сначала изучите различия и примите новую ревизию.' });
+      return;
+    }
+    const root = overview.project_root;
+    const generation = projectGeneration.current;
+    const current = () => generation === projectGeneration.current && projectRootRef.current === root
+      && draftsRef.current[file] === submitted && tabStateRef.current.tabs.some((item) => tabId(item) === action.path);
+    closingSave.current = true;
+    setTransitioning(true);
+    setError(null);
+    try {
+      await saveAndClose({
+        current,
+        save: async () => {
+          const result = await (tab.kind === 'yaml'
+            ? studio.saveYamlResource(file, base, submitted, root)
+            : studio.saveFtlResource(file, base, submitted, root));
+          if (!current()) throw new Error('Документ или проект изменился во время сохранения.');
+          documents.current.set(file, result.document);
+          setDocument((value) => value?.path === file ? result.document : value);
+          const bases = { ...draftBasesRef.current };
+          delete bases[file];
+          draftBasesRef.current = bases;
+          setDraftBases(bases);
+          setWorkspaceRevision((value) => value + 1);
+          if (result.durability_warning) throw new Error(result.durability_warning);
+        },
+        cleanup: async () => {
+          const key = journalKey(root, file);
+          const timer = journalTimers.current.get(key);
+          if (timer !== undefined) window.clearTimeout(timer);
+          journalTimers.current.delete(key);
+          await journal.current.run(key, async () => {
+            if (!current()) throw new Error('Документ или проект изменился во время сохранения.');
+            await studio.deleteDraft(file, root);
+          });
+          journalSignatures.current.delete(key);
+          setRecoveries((value) => ({ ...value, items: value.items.filter((item) => item.path !== file) }));
+        },
+        close: () => executeAction(action),
+      });
+    } catch (failure) {
+      setError(normalizeStudioError(failure));
+    } finally {
+      closingSave.current = false;
+      setTransitioning(false);
+    }
+  }
+
   function requestAction(action: PendingAction) {
-    if (saving || transitioning || opening || refreshing) return;
+    if (closingSave.current || saving || transitioning || opening || refreshing) return;
     const file = action.type === 'close' ? tabState.tabs.find((tab) => tabId(tab) === action.path)?.path : action.path;
     const needsConfirmation = action.type === 'open'
       ? dirtyPaths.length > 0
@@ -1086,7 +1150,7 @@ export default function App() {
   }, [overview, creatingPrototype, selected?.path, document?.revision, drafts, draftBases, opening, transitioning, saving, refreshing, pendingAction, exitDialogOpen]);
 
   function openResource(item: EditorTab, preferredRsiState?: string | null): boolean {
-    if (saving || transitioning || opening || refreshing) return false;
+    if (closingSave.current || saving || transitioning || opening || refreshing) return false;
     if (item.kind === 'rsi') {
       setRsiRequested(preferredRsiState === undefined ? null : { path: item.path, state: preferredRsiState });
     }
@@ -1231,7 +1295,7 @@ export default function App() {
     const file = fieldTarget?.file;
     // Reject callbacks belonging to a closed or replaced form, even in the same file.
     if (!file || !canApplyPrototypeFields(fieldTarget, fieldTargetRef.current, locator, selectedPathRef.current)
-        || saving || opening || transitioning || refreshing) return false;
+        || closingSave.current || saving || opening || transitioning || refreshing) return false;
     const live = draftsRef.current[file] ?? documents.current.get(file)?.content;
     if (live !== original) return false;
     const next = { ...draftsRef.current, [file]: changed };
@@ -1332,7 +1396,7 @@ export default function App() {
   }
 
   function selectTab(path: string) {
-    if (saving || transitioning || opening || refreshing || tabState.active === path) return;
+    if (closingSave.current || saving || transitioning || opening || refreshing || tabState.active === path) return;
     setFieldTarget(null);
     setJumpTarget(null);
     prototypeInteraction.current = interaction.current;
@@ -1758,6 +1822,7 @@ export default function App() {
           : t('app.unsavedFile')}</p>
       </div>
       <button type="button" disabled={transitioning} onClick={() => setPendingAction(null)}>{t('common.cancel')}</button>
+      {pendingAction.type === 'close' && <button type="button" disabled={transitioning} onClick={() => void savePendingClose()}>Сохранить и закрыть</button>}
       <button type="button" className="danger-button" disabled={transitioning}
         onClick={() => void confirmPendingAction()}>
         {t('app.discard')}
@@ -1977,7 +2042,7 @@ export default function App() {
                 setYamlCursor((current) => current?.path === selected.path && current.line === line
                   ? current : { path: selected.path, line });
               } : undefined}
-              editable={isEditableText(selected.kind) && !saving && !refreshing}
+              editable={isEditableText(selected.kind) && !saving && !refreshing && !transitioning}
               onNavigateIdentifier={selected.kind === 'yaml'
                 ? (id) => void navigatePrototypeIdentifier(id, selected.path) : undefined}
               onNavigateRsi={selected.kind === 'yaml'
@@ -1985,6 +2050,7 @@ export default function App() {
               onNavigateLocalization={selected.kind === 'yaml'
                 ? (line, source) => void navigateYamlLocalization(line, source, selected.path) : undefined}
               onChange={isEditableText(selected.kind) ? (value) => {
+                if (closingSave.current) return;
                 const next = { ...draftsRef.current, [selected.path]: value };
                 draftsRef.current = next;
                 setDrafts(next);
