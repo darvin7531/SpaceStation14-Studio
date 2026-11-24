@@ -58,6 +58,7 @@ test('edits during recovery restoration are persisted before returning', async (
 test('reverting during recovery persistence cannot leave a stale draft before close', async () => {
   let draft = 'A';
   let journal: string | undefined = 'A';
+  let removals = 0;
   let started!: () => void;
   let release!: () => void;
   const writing = new Promise<void>((resolve) => { started = resolve; });
@@ -66,7 +67,7 @@ test('reverting during recovery persistence cannot leave a stale draft before cl
   const operation = saveAndClose({
     current: () => draft === 'A',
     save: async () => {},
-    cleanup: () => deleteDraftPreservingChanges(async () => { journal = undefined; draft = 'B'; },
+    cleanup: () => deleteDraftPreservingChanges(async () => { journal = undefined; if (++removals === 1) draft = 'B'; },
       () => draft, 'A', async (content) => {
         if (content === 'B') { started(); await gate; }
         journal = content;
@@ -84,11 +85,12 @@ test('reverting during recovery persistence cannot leave a stale draft before cl
 test('edits during persistence of a reverted draft are preserved and prevent close', async () => {
   let draft = 'A';
   let journal: string | undefined = 'A';
+  let removals = 0;
   let closed = false;
   const operation = saveAndClose({
     current: () => draft === 'A',
     save: async () => {},
-    cleanup: () => deleteDraftPreservingChanges(async () => { journal = undefined; draft = draft === 'A' ? 'B' : 'C'; },
+    cleanup: () => deleteDraftPreservingChanges(async () => { journal = undefined; draft = ++removals === 1 ? 'B' : 'C'; },
       () => draft, 'A', async (content) => {
         journal = content;
         if (content === 'B') draft = 'A';
