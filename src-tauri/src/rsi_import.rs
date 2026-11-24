@@ -576,7 +576,7 @@ pub fn attach(root: &Path, request: &RsiStateImport) -> Result<ImportedRsiState,
             "Обновите RSI.",
         ));
     }
-    let mut meta: Value = serde_json::from_slice(&original).map_err(|e| {
+    let mut meta: Value = strict_metadata(&original).map_err(|e| {
         issue(
             "RSI_IMPORT_META_INVALID",
             "Некорректный meta.json.",
@@ -1074,6 +1074,28 @@ mod tests {
             "RSI_IMPORT_CONFLICT"
         );
         assert!(!target.exists());
+    }
+
+    #[test]
+    fn attach_rejects_duplicate_metadata_keys_without_writes() {
+        for meta in [
+            r#"{"version":1,"size":{"x":2,"x":1,"y":1},"states":[{"name":"idle"}]}"#,
+            r#"{"version":1,"size":{"x":1,"y":1},"states":[{"name":"idle","delays":[[2]],"delays":[[1]]}]}"#,
+        ] {
+            let fx = Fixture::new();
+            let folder = fx.root.join(&fx.rel);
+            let meta_path = folder.join("meta.json");
+            let existing_png = folder.join("other.png");
+            fs::write(&meta_path, meta).unwrap();
+            fs::write(&existing_png, Fixture::png()).unwrap();
+            assert_eq!(
+                attach(&fx.root, &fx.request()).unwrap_err().code,
+                "RSI_IMPORT_META_INVALID"
+            );
+            assert_eq!(fs::read(&meta_path).unwrap(), meta.as_bytes());
+            assert_eq!(fs::read(&existing_png).unwrap(), Fixture::png());
+            assert!(!folder.join("idle.png").exists());
+        }
     }
 
     #[test]
