@@ -943,7 +943,7 @@ export default function App() {
   }
 
   function requestAction(action: PendingAction) {
-    document.body.dataset.closeDiagnostic = JSON.stringify({ action, saving, transitioning, opening, refreshing, closing: closingSave.current, dirtyPaths });
+    window.document.body.dataset.closeDiagnostic = JSON.stringify({ action, saving, transitioning, opening, refreshing, closing: closingSave.current, dirtyPaths });
     if (closingSave.current || saving || transitioning || opening || refreshing) return;
     const file = action.type === 'close' ? tabState.tabs.find((tab) => tabId(tab) === action.path)?.path : action.path;
     const needsConfirmation = action.type === 'open'
