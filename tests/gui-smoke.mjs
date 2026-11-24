@@ -541,9 +541,9 @@ try {
       return window.__closeOriginalFetch.call(this, url, options);
     };
   `);
-  console.log('Before inactive close:', await script("return JSON.stringify({tabs:[...document.querySelectorAll('.tab')].map(el => el.outerHTML), text:document.body.innerText});"));
+  console.log('Before inactive close:', await script("return document.body.dataset.closeDiagnostic;"));
   await click('.tab:has([role=tab][title="Resources/Prototypes/smoke.yml"]) .tab-close');
-  console.log('After inactive close:', await script("return JSON.stringify({tabs:[...document.querySelectorAll('.tab')].map(el => el.outerHTML), text:document.body.innerText});"));
+  console.log('After inactive close:', await script("return document.body.dataset.closeDiagnostic;"));
   await until('save and close confirmation', () => script("const button = [...document.querySelectorAll('.discard-confirmation button')].find(b => b.textContent.includes('Сохранить и закрыть')); if (!button) return false; button.click(); return true;"));
   await until('inactive conflict reported', () => script("return document.body.innerText.includes('RESOURCE_CHANGED_ON_DISK') && !document.querySelector('.discard-confirmation');"));
   assert.ok(await find('[role=tab][title="Resources/Prototypes/smoke.yml"]'), 'conflicting tab remains open');
