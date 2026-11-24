@@ -519,7 +519,7 @@ try {
   // Save and Close uses the real save and recovery IPC before removing the tab.
   await edit(draft, 'SmokeDraft');
   await click('.tab:has([role=tab][title="Resources/Prototypes/smoke.yml"]) .tab-close');
-  await script("[...document.querySelectorAll('.discard-confirmation button')].find(b => b.textContent.includes('Сохранить и закрыть')).click();");
+  await until('save and close confirmation', () => script("const button = [...document.querySelectorAll('.discard-confirmation button')].find(b => b.textContent.includes('Сохранить и закрыть')); if (!button) return false; button.click(); return true;"));
   await until('save and close completed', async () => !(await find('[role=tab][title="Resources/Prototypes/smoke.yml"]')));
   assert.equal(await readFile(file, 'utf8'), draft, 'save and close writes the submitted draft');
   await click('.explorer-switch:has([data-testid=folder-view]) button:first-child');
@@ -541,7 +541,7 @@ try {
     };
   `);
   await click('.tab:has([role=tab][title="Resources/Prototypes/smoke.yml"]) .tab-close');
-  await script("[...document.querySelectorAll('.discard-confirmation button')].find(b => b.textContent.includes('Сохранить и закрыть')).click();");
+  await until('save and close confirmation', () => script("const button = [...document.querySelectorAll('.discard-confirmation button')].find(b => b.textContent.includes('Сохранить и закрыть')); if (!button) return false; button.click(); return true;"));
   await until('inactive conflict reported', () => script("return document.body.innerText.includes('RESOURCE_CHANGED_ON_DISK') && !document.querySelector('.discard-confirmation');"));
   assert.ok(await find('[role=tab][title="Resources/Prototypes/smoke.yml"]'), 'conflicting tab remains open');
   await click('[role=tab][title="Resources/Prototypes/smoke.yml"]');
@@ -570,7 +570,7 @@ try {
     };
   `);
   await click('.tab:has([role=tab][title="Resources/Prototypes/smoke.yml"]) .tab-close');
-  await script("[...document.querySelectorAll('.discard-confirmation button')].find(b => b.textContent.includes('Сохранить и закрыть')).click();");
+  await until('save and close confirmation', () => script("const button = [...document.querySelectorAll('.discard-confirmation button')].find(b => b.textContent.includes('Сохранить и закрыть')); if (!button) return false; button.click(); return true;"));
   await until('warning and cleanup failure visible', () => script("return document.body.innerText.includes('durability warning smoke') && document.body.innerText.includes('cleanup failed');"));
   assert.ok(await find('[role=tab][title="Resources/Prototypes/smoke.yml"]'), 'cleanup failure keeps tab open');
   await click('.discard-confirmation button:first-of-type');
