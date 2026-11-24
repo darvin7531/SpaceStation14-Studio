@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { indexedRsiPath, yamlCompletionContext, yamlComponentHoverTarget, yamlSpriteLinkTarget, yamlEditorContextLines, yamlEditorCompletionContext, yamlEditorComponentHoverTarget } from '../src/editor/yaml-completion';
+import { indexedRsiPath, yamlCompletionContext, yamlComponentHoverTarget, yamlSpriteLinkTarget, yamlEditorContextLines, yamlEditorCompletionContext, yamlEditorComponentHoverTarget, yamlComponentInsertText } from '../src/editor/yaml-completion';
 
 test('editor completions and hover retain context beyond 64 lines without crossing prototypes', () => {
   const lines = ['- type: entity', '  components:', '  - type: Old', '- type: entity', '  components:',
@@ -66,6 +66,15 @@ test('component entry and DataField contexts preserve existing fields', () => {
   assert.equal(yamlCompletionContext([
     '- type: entity', '  components:', '  - type: Sprite', '  unrelated:', '    foo',
   ], 5, 8), null);
+});
+
+test('component completion inserts valid spacing for bare and partial list entries', () => {
+  for (const line of ['  -', '  - ', '  -Spr', '  - Spr', '  - type: Spr']) {
+    const lines = ['- type: entity', '  components:', line];
+    const context = yamlCompletionContext(lines, 3, line.length + 1)!;
+    const result = line.slice(0, context.startColumn - 1) + yamlComponentInsertText(line, context, 'Sprite');
+    assert.equal(result, '  - type: Sprite', line);
+  }
 });
 
 test('RSI paths require supported component context', () => {

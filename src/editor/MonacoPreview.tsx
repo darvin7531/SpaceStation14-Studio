@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { studio, type ResourceDocument, type ResourceEntry } from '../lib/api';
-import { yamlEditorCompletionContext, yamlEditorComponentHoverTarget, yamlSpriteLinkTarget } from './yaml-completion';
+import { yamlEditorCompletionContext, yamlEditorComponentHoverTarget, yamlSpriteLinkTarget, yamlComponentInsertText } from './yaml-completion';
 import { componentHoverMarkdown } from './component-hover';
 import { yamlLocaleClickField } from './yaml-locale-navigation';
 import { missingEntityLocaleUnderlines } from './yaml-locale-markers';
@@ -164,7 +164,7 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
                     const page = await studio.searchCSharpDefinitions(target.query, 'component', 0, 80);
                     if (page.complete) entries = page.items.map((item) => ({
                       label: item.name, detail: item.class_name + ' · ' + item.file,
-                      insertText: target.kind === 'component-entry-start' ? 'type: ' + item.name : item.name,
+                      insertText: yamlComponentInsertText(source.getLineContent(position.lineNumber), target, item.name),
                     }));
                   } else if (target.kind === 'component-field') {
                     const batch = await studio.inspectComponentSchemas([target.componentType!]);

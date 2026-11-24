@@ -9,6 +9,11 @@ export interface YamlCompletionContext {
   existingFields?: readonly string[];
 }
 
+export function yamlComponentInsertText(line: string, context: YamlCompletionContext, name: string): string {
+  if (context.kind !== 'component-entry-start') return name;
+  return (line[context.startColumn - 2] === '-' ? ' ' : '') + 'type: ' + name;
+}
+
 type EditorModel = { getLineContent(line: number): string; getVersionId(): number };
 const editorContexts = new WeakMap<EditorModel, { version: number; lineNumber: number; lines: string[] }>();
 
