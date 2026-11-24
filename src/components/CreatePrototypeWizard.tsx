@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useI18n } from '../i18n';
 import { open } from '@tauri-apps/plugin-dialog';
 import { projectFolderDefaultPath, relativeProjectFolder } from '../lib/project-folder-picker';
@@ -63,6 +63,19 @@ export default function CreatePrototypeWizard({
   const [checking, setChecking] = useState(true);
   const [creating, setCreating] = useState(false);
   const [pickingFolder, setPickingFolder] = useState(false);
+  const busyRef = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  useEffect(() => {
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const form = formRef.current;
+    form?.querySelector<HTMLInputElement>('input')?.focus();
+    return () => {
+      if (previous?.isConnected && (document.activeElement === document.body || form?.contains(document.activeElement))) {
+        previous.focus();
+      }
+    };
+  }, []);
 
 
   function switchDestination(next: 'project' | 'external') {
@@ -177,7 +190,8 @@ export default function CreatePrototypeWizard({
   }, [draft, mode, destination, targetIsDirty]);
 
   async function pickProjectFolder() {
-    if (mode !== 'new' || destination !== 'project') return;
+    if (busyRef.current || mode !== 'new' || destination !== 'project') return;
+    busyRef.current = true;
     setPickingFolder(true);
     setCreateError(null);
     try {
@@ -201,13 +215,15 @@ export default function CreatePrototypeWizard({
     } catch (failure) {
       setCreateError(normalizeStudioError(failure));
     } finally {
+      busyRef.current = false;
       setPickingFolder(false);
     }
   }
 
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (creating || pickingFolder || checking || !preview || targetIsDirty) return;
+    if (busyRef.current || creating || pickingFolder || checking || !preview || targetIsDirty) return;
+    busyRef.current = true;
     setCreating(true);
     setCreateError(null);
     try {
@@ -223,6 +239,7 @@ export default function CreatePrototypeWizard({
     } catch (error) {
       setCreateError(normalizeStudioError(error));
     } finally {
+      busyRef.current = false;
       setCreating(false);
     }
   }
@@ -230,9 +247,9 @@ export default function CreatePrototypeWizard({
   return <div className="create-proto-backdrop" role="presentation">
     <section className="create-proto-modal" role="dialog" aria-modal="true"
       aria-labelledby="create-proto-title">
-      <form className="create-proto-layout" onSubmit={(event) => void create(event)}
+      <form ref={formRef} className="create-proto-layout" onSubmit={(event) => void create(event)}
         onKeyDown={(event) => {
-          const action = prototypeWizardShortcut(event.nativeEvent, creating || pickingFolder);
+          const action = prototypeWizardShortcut(event.nativeEvent, busyRef.current || creating || pickingFolder);
           if (!action) return;
           event.preventDefault();
           event.stopPropagation();
@@ -244,7 +261,7 @@ export default function CreatePrototypeWizard({
             <div><small><FilePlus2 size={14}/> {t('wizard.proto.newContent')}</small>
               <h2 id="create-proto-title">{t('wizard.proto.title')}</h2>
             </div>
-            <button type="button" onClick={onClose} disabled={creating} aria-label={t('wizard.proto.close')}>
+            <button type="button" onClick={onClose} disabled={creating || pickingFolder} aria-label={t('wizard.proto.close')}>
               <X size={18}/>
             </button>
           </header>
@@ -267,7 +284,7 @@ export default function CreatePrototypeWizard({
           <fieldset className="create-proto-group">
             <legend>{t('wizard.proto.identity')}</legend>
             <label>{t('wizard.proto.type')}
-              <input autoFocus required list="new-prototype-kinds" value={draft.kind}
+              <input required list="new-prototype-kinds" value={draft.kind}
                 onChange={(event) => update('kind', event.target.value)}/>
               <datalist id="new-prototype-kinds">
                 {[...new Set([...availableKinds, 'entity', 'reagent', 'tile', 'construction', 'recipe'])]
@@ -388,7 +405,7 @@ export default function CreatePrototypeWizard({
             </div>
           </div>}
           <footer className="create-proto-actions">
-            <button type="button" onClick={onClose} disabled={creating}>{t('wizard.common.cancel')}</button>
+            <button type="button" onClick={onClose} disabled={creating || pickingFolder}>{t('wizard.common.cancel')}</button>
             <button type="submit" disabled={checking || creating || pickingFolder || !preview || targetIsDirty}>
               <FilePlus2 size={14}/>{creating
                 ? t('wizard.proto.writing')

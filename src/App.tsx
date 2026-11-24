@@ -1075,6 +1075,7 @@ export default function App() {
 
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
+      if (creatingPrototype) return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
         event.preventDefault();
         void saveCurrent();
@@ -1082,7 +1083,7 @@ export default function App() {
     };
     window.addEventListener('keydown', shortcut);
     return () => window.removeEventListener('keydown', shortcut);
-  }, [overview, selected?.path, document?.revision, drafts, draftBases, opening, transitioning, saving, refreshing, pendingAction, exitDialogOpen]);
+  }, [overview, selected?.path, document?.revision, drafts, draftBases, opening, transitioning, saving, refreshing, pendingAction, exitDialogOpen, creatingPrototype]);
 
   function openResource(item: EditorTab, preferredRsiState?: string | null): boolean {
     if (saving || transitioning || opening || refreshing) return false;
@@ -1349,6 +1350,10 @@ export default function App() {
     function shortcut(event: KeyboardEvent) {
       if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
       const key = event.key.toLowerCase();
+      if (creatingPrototype) {
+        if (['s', 'p', 'f', 'w', 'tab'].includes(key)) event.preventDefault();
+        return;
+      }
       if (key === 'p' && !event.shiftKey && overview && !settingsOpen) {
         event.preventDefault();
         if (!opening && !refreshing && !transitioning) {
@@ -1377,7 +1382,7 @@ export default function App() {
     }
     window.addEventListener('keydown', shortcut, true);
     return () => window.removeEventListener('keydown', shortcut, true);
-  }, [overview, settingsOpen, quickOpen, contentSearchOpen, opening, refreshing, transitioning, saving, tabState]);
+  }, [overview, settingsOpen, quickOpen, contentSearchOpen, opening, refreshing, transitioning, saving, tabState, creatingPrototype]);
 
   function reloadCurrent() {
     if (selected && isDirty(selected.path) && !isLastFileView(tabState, tabId(selected))) {
@@ -1672,7 +1677,7 @@ export default function App() {
         <span><b>{overview.prototype_files}</b> {t('app.yamlFiles')}</span>
         <span><b>{overview.rsi_directories}</b> RSI</span>
         <span><b>{overview.locale_files}</b> FTL</span>
-        <button type="button" className="create-proto-open" disabled={opening || saving || transitioning || refreshing || creatingFluent || creatingRsi || creatingPrototype}
+        <button type="button" className="create-proto-open" disabled={opening || saving || transitioning || refreshing || creatingFluent || creatingRsi}
           onClick={() => setCreatingPrototype(true)}>
           <FilePlus2 size={15}/> {t('app.createPrototype')}
         </button>

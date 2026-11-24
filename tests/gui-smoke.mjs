@@ -80,6 +80,51 @@ try {
   await click('.resource-row[title="Resources/Prototypes/smoke.yml"]');
   await until('editor before focus checks', () => find('.monaco-shell textarea.inputarea'));
 
+  // Exercise the real modal and IPC while a write is pending.
+  await click('.create-proto-open');
+  await until('wizard focus', () => script("return document.activeElement?.matches('.create-proto-modal input[list=new-prototype-kinds]');"));
+  const wizardInput = await find('.create-proto-modal input[placeholder=MyNewItem]');
+  await keys(wizardInput, 'WizardKeyboardSmoke');
+  await until('wizard validation', () => script("return !document.querySelector('.create-proto-modal button[type=submit]').disabled;"));
+  await script(`
+    const original = window.fetch;
+    window.__wizardGate = { writes: 0, saves: 0, release: null };
+    window.fetch = function(url, options) {
+      if (!String(url).startsWith('ipc:')) return original.call(this, url, options);
+      const command = decodeURIComponent(new URL(url).pathname.slice(1));
+      if (command.startsWith('save_')) window.__wizardGate.saves++;
+      if (command === 'create_new_prototype') {
+        window.__wizardGate.writes++;
+        return new Promise((resolve, reject) => { window.__wizardGate.release = () => original.call(this, url, options).then(resolve, reject); });
+      }
+      return original.call(this, url, options);
+    };
+    const input = document.querySelector('.create-proto-modal input[placeholder=MyNewItem]');
+    for (const [key, extra] of [['s', {}], ['p', {}], ['f', {shiftKey:true}], ['w', {}], ['Tab', {}]])
+      input.dispatchEvent(new KeyboardEvent('keydown', {key, ctrlKey:true, bubbles:true, cancelable:true, ...extra}));
+  `);
+  assert.equal(await script('return window.__wizardGate.saves;'), 0, 'workspace save is isolated');
+  assert.equal(await find('.content-search-modal, .quick-open-dialog'), undefined, 'workspace search stays closed');
+  assert.ok(await find('[role=tab][title="Resources/Prototypes/smoke.yml"]'), 'workspace tab stays open');
+  await script(`
+    const form = document.querySelector('.create-proto-modal form');
+    const input = form.querySelector('input[placeholder=MyNewItem]');
+    input.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', ctrlKey:true, bubbles:true, cancelable:true}));
+    form.requestSubmit();
+    input.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true, cancelable:true}));
+  `);
+  await until('wizard write held', () => script('return window.__wizardGate.release !== null;'));
+  assert.equal(await script('return window.__wizardGate.writes;'), 1, 'keyboard and button submits share a synchronous guard');
+  assert.ok(await find('.create-proto-modal'), 'escape cannot dismiss an in-flight write');
+  await script('window.__wizardGate.release();');
+  await until('wizard closes after create', async () => !(await find('.create-proto-modal')));
+  await access(join(process.env.SMOKE_PROJECT, 'Resources/Prototypes/_PrototypeStudio/WizardKeyboardSmoke.yml'));
+  await click('.create-proto-open');
+  await until('wizard reopened', () => find('.create-proto-modal input[list=new-prototype-kinds]'));
+  await keys(await find('.create-proto-modal input[list=new-prototype-kinds]'), '\uE00C');
+  await until('wizard dismissed', async () => !(await find('.create-proto-modal')));
+  assert.ok(await script("return document.activeElement === document.querySelector('.create-proto-open');"), 'escape restores launcher focus');
+
   // Resolve two Ctrl-click searches in reverse order; the older result must not win.
   await script(`
     const original = window.fetch;
