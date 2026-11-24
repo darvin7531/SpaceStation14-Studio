@@ -1,4 +1,5 @@
 import type { CSharpDefinition, CSharpField } from '../lib/api';
+import type { Language } from '../lib/ui-language';
 
 function safeMarkdown(text: string): string {
   return text.replace(/[\x60\\<>{}\r\n]/g, '').slice(0, 180);
@@ -45,7 +46,13 @@ export function componentYamlExample(definition: Pick<CSharpDefinition, 'name' |
   return lines.join('\n');
 }
 
-export function componentHoverMarkdown(definition: CSharpDefinition): string {
+export function ambiguousComponentHoverMarkdown(name: string, language: Language): string {
+  return '**' + safeDocumentation(name) + '** — ' + (language === 'en'
+    ? 'C# schema is ambiguous or the index is incomplete. Check the source manually.'
+    : 'C# схема неоднозначна или индекс неполный. Проверьте исходники вручную.');
+}
+
+export function componentHoverMarkdown(definition: CSharpDefinition, language: Language = 'ru'): string {
   const lines = [
     '### ' + safeMarkdown(definition.name),
     '\x60' + safeMarkdown(definition.class_name) + '\x60',
@@ -54,14 +61,16 @@ export function componentHoverMarkdown(definition: CSharpDefinition): string {
   ];
   if (definition.summary) lines.push('', safeDocumentation(definition.summary));
   if (definition.fields.length) {
-    lines.push('', '**Прямые DataField**');
+    lines.push('', language === 'en' ? '**Direct DataFields**' : '**Прямые DataField**');
     for (const field of definition.fields.slice(0, 20)) {
       lines.push('- \x60' + safeMarkdown(field.name) + '\x60: \x60' + safeMarkdown(field.field_type) + '\x60'
-        + (field.required ? ' (обязательно)' : '')
+        + (field.required ? (language === 'en' ? ' (required)' : ' (обязательно)') : '')
         + (field.summary ? ' — ' + safeDocumentation(field.summary) : ''));
     }
   }
-  lines.push('', '**Пример YAML (шаблон)**', '\x60\x60\x60yaml', componentYamlExample(definition),
-    '\x60\x60\x60', '', 'Показаны только прямые DataField без проверки движкового наследования.');
+  lines.push('', language === 'en' ? '**Example YAML (template)**' : '**Пример YAML (шаблон)**', '\x60\x60\x60yaml', componentYamlExample(definition),
+    '\x60\x60\x60', '', language === 'en'
+      ? 'Only direct DataFields are shown, without verifying engine inheritance.'
+      : 'Показаны только прямые DataField без проверки движкового наследования.');
   return lines.join('\n');
 }

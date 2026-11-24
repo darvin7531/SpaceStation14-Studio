@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { studio, type ResourceDocument, type ResourceEntry } from '../lib/api';
 import { yamlRsiCandidates, yamlRsiInsertText, yamlEditorCompletionContext, yamlEditorComponentHoverTarget, yamlSpriteLinkTarget, yamlComponentInsertText, yamlCompletionEndColumn, yamlFieldInsertText, yamlCurrentCompletion } from './yaml-completion';
-import { componentHoverMarkdown } from './component-hover';
+import { ambiguousComponentHoverMarkdown, componentHoverMarkdown } from './component-hover';
+import { useI18n } from '../i18n';
 import { yamlLocaleClickField } from './yaml-locale-navigation';
 import { missingEntityLocaleUnderlines } from './yaml-locale-markers';
 import type { EditorSettings } from '../lib/editor-settings';
@@ -31,6 +32,9 @@ interface Props {
  * workers' consumers and editor on tab switch/unmount.
  */
 export default function MonacoPreview({ resource, document, revealLine, jumpToken, shouldFocusJump, onJumpConsumed, value, editable, onChange, onNavigateIdentifier, onNavigateRsi, onNavigateLocalization, onCursorLineChange, gameLocales = [], settings }: Props) {
+  const { language } = useI18n();
+  const languageRef = useRef(language);
+  languageRef.current = language;
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Parameters<typeof revealEditorLine>[0] | null>(null);
   const latestJump = useRef({ revealLine, jumpToken, shouldFocusJump, onJumpConsumed });
@@ -233,14 +237,12 @@ export default function MonacoPreview({ resource, document, revealLine, jumpToke
                   if (token.isCancellationRequested || cancelled) return null;
                   const schema = batch.components.find((item) => item.type_name === hover.name);
                   if (!schema) return null;
-                  const title = hover.name.replace(/[`\\]/g, '');
                   const status = schema.status === 'unique' && batch.index_complete
                     && schema.declarations.length === 1;
                   const definition = status ? schema.declarations[0] : null;
                   const content = definition
-                    ? componentHoverMarkdown(definition)
-                    : '**' + title
-                      + '** — C# схема неоднозначна или индекс неполный. Проверьте исходники вручную.';
+                    ? componentHoverMarkdown(definition, languageRef.current)
+                    : ambiguousComponentHoverMarkdown(hover.name, languageRef.current);
                   return {
                     range: new monaco.Range(position.lineNumber, hover.startColumn,
                       position.lineNumber, hover.endColumn),

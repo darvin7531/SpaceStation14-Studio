@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { componentHoverMarkdown, componentYamlExample, sampleYamlValue } from '../src/editor/component-hover';
+import { componentHoverMarkdown, componentYamlExample, sampleYamlValue, ambiguousComponentHoverMarkdown } from '../src/editor/component-hover';
 import type { CSharpDefinition } from '../src/lib/api';
 
 const fixture: CSharpDefinition = {
@@ -29,6 +29,19 @@ test('hover exposes C# source, required fields and example YAML', () => {
   assert.match(shown, /visible.*bool.*обязательно/);
   assert.match(shown, /\x60\x60\x60yaml\n- type: Sprite\n  visible: true/);
   assert.match(shown, /без проверки движкового наследования/);
+});
+
+test('component hover follows the interface language including uncertain schemas', () => {
+  const english = componentHoverMarkdown(fixture, 'en');
+  assert.match(english, /Direct DataFields/);
+  assert.match(english, /visible.*required/);
+  assert.match(english, /Example YAML/);
+  assert.match(english, /without verifying engine inheritance/);
+  assert.doesNotMatch(english, /обязательно|Пример|Прямые/);
+  assert.match(componentHoverMarkdown(fixture, 'ru'), /Прямые DataField/);
+  assert.match(ambiguousComponentHoverMarkdown('Sprite', 'en'), /ambiguous.*incomplete/i);
+  assert.match(ambiguousComponentHoverMarkdown('Sprite', 'ru'), /неоднозначна/);
+  assert.doesNotMatch(ambiguousComponentHoverMarkdown('[x](https://evil.test)', 'en'), /\[x\]\(https:\/\/evil.test\)/);
 });
 
 test('source field names cannot insert another markdown code fence', () => {
