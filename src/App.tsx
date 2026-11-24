@@ -564,7 +564,7 @@ export default function App() {
     setRefreshing(true);
     cancelJournalTimers();
     setError(null);
-    setNotice(null);
+    if (!automatic) setNotice(null);
     try {
       // Persist pending unsaved edits before rebuilding the indexed path set.
       // The new index may no longer contain a file deleted by another editor.
@@ -627,12 +627,11 @@ export default function App() {
         }));
       }
       if (!automatic || changed.added_resources || changed.removed_resources || result.reloaded.length) {
-        setNotice(
-          (automatic ? 'Внешние изменения обнаружены. ' : '')
+        const message = (automatic ? 'Внешние изменения обнаружены. ' : '')
           + 'Индекс обновлён: +' + changed.added_resources + ' / −' + changed.removed_resources
           + ' ресурсов. Перечитано вкладок: ' + result.reloaded.length
-          + '. Черновики сохранены в памяти.',
-        );
+          + '. Черновики сохранены в памяти.';
+        setNotice((previous) => automatic && previous ? previous : message);
       }
       if (result.conflicting.length || result.unavailable.length) {
         const unavailable = reads.filter((item) => item.error !== null);

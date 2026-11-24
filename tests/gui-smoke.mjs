@@ -562,13 +562,8 @@ try {
   // The real write succeeds with a durability warning; simulated cleanup fails.
   await script(`
     window.__closeOriginalFetch = window.fetch;
-    window.__closeTrace = [];
-    window.__noticeTrace = [];
-    window.__noticeObserver = new MutationObserver(() => window.__noticeTrace.push(document.querySelector('.save-notice')?.textContent ?? null));
-    window.__noticeObserver.observe(document.body, {childList:true, subtree:true, characterData:true});
     window.fetch = async function(url, options) {
       const command = String(url).startsWith('ipc:') ? decodeURIComponent(new URL(url).pathname.slice(1)) : '';
-      window.__closeTrace.push(command);
       if (command === 'delete_draft') {
         window.fetch = window.__closeOriginalFetch;
         return new Response(JSON.stringify({code:'DRAFT_DELETE_FAILED', message:'cleanup failed', hint:'retry'}),
@@ -577,7 +572,6 @@ try {
       const response = await window.__closeOriginalFetch.call(this, url, options);
       if (command !== 'save_yaml_resource') return response;
       const result = await response.json();
-      window.__closeTrace.push(JSON.stringify(result));
       result.durability_warning = 'durability warning smoke';
       return new Response(JSON.stringify(result), {status:response.status, headers:response.headers});
     };
@@ -591,7 +585,7 @@ try {
   try {
     await until('warning and cleanup failure visible', () => script("return document.body.innerText.includes('durability warning smoke') && document.body.innerText.includes('cleanup failed');"));
   } catch (error) {
-    console.error('Cleanup diagnostic:', await script('return document.body.innerText;'), await script('return [window.__closeTrace, [...new Set(window.__noticeTrace)]];'));
+    console.error('Cleanup diagnostic:', await script('return document.body.innerText;'));
     throw error;
   }
   assert.ok(await find('[role=tab][title="Resources/Prototypes/smoke.yml"]'), 'cleanup failure keeps tab open');
