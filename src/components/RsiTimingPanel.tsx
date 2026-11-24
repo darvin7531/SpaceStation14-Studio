@@ -91,6 +91,7 @@ export default function RsiTimingPanel({ projectRoot, path, revision, state, png
       {error && <div className="rsi-error" role="alert">
         <AlertCircle size={15}/>
         <span>{error.message} {error.hint} <code>{error.code}</code></span>
+        {error.details && <pre>{error.details}</pre>}
       </div>}
       <button type="submit" disabled={!valid || !changed || saving}>
         <Save size={15}/>{saving ? 'Сохраняю…' : 'Сохранить состояние'}

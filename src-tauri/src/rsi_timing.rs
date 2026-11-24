@@ -158,7 +158,9 @@ fn updated_metadata(
         }
     };
 
-    if update.expected_missing_png { validated_delays(&old_delays)?; }
+    if update.expected_missing_png && old_delays.iter().flatten().any(|value| !value.is_finite() || *value <= 0.0 || *value > 3600.0) {
+        return Err(issue("RSI_TIMING_META_INVALID", "В выбранном состоянии некорректные длительности.", "Исправьте metadata вручную перед изменением длительности."));
+    }
     if update.expected_missing_png && update.delays.len() != directions as usize
         && update.delays.iter().any(|row| row.len() != update.delays[0].len())
     {
@@ -373,7 +375,7 @@ pub fn update(root: &Path, request: &RsiTimingUpdate) -> Result<ImportedRsiState
             "recovery": "Stop external writers and manually reconcile the archived metadata with current files; do not replace meta.json wholesale."
         })).map_err(|error| issue("RSI_TIMING_ARCHIVE_FAILED", "Не удалось сформировать архив.", "Исходные данные не изменены.").with_details(error.to_string()))?;
         crate::rsi_delete::write_backup_file(&archive.join("manifest.json"), &manifest)?;
-        for directory in [&archive, archive.parent().unwrap_or(&folder)] {
+        for directory in [&archive, archive.parent().unwrap_or(&folder), &folder] {
             crate::rsi_delete::sync_directory(directory).map_err(|error| issue("RSI_TIMING_ARCHIVE_FAILED", "Не удалось синхронизировать архив.", "Исходные данные не изменены.").with_details(error.to_string()))?;
         }
         Some(archive)
@@ -448,6 +450,22 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+
+    #[test]
+    fn metadata_only_can_correct_preview_valid_delays_outside_editor_limits() {
+        let fixture = Fixture::new();
+        let folder = fixture.root.join(&fixture.relative);
+        fs::remove_file(folder.join("walk.png")).unwrap();
+        let meta = folder.join("meta.json");
+        let original = br#"{"version":1,"states":[{"name":"walk","delays":[[0.005,120.0]]}]}"#;
+        fs::write(&meta, original).unwrap();
+        let mut request = fixture.request();
+        request.expected_missing_png = true;
+        request.delays = vec![vec![0.01, 60.0]];
+        let result = update(&fixture.root, &request).unwrap();
+        assert_eq!(fs::read(fixture.root.join(result.archive_path.unwrap()).join("meta.json.before")).unwrap(), original);
+        assert_eq!(serde_json::from_str::<Value>(&result.content).unwrap()["states"][0]["delays"], serde_json::json!([[0.01, 60.0]]));
     }
 
     #[test]
