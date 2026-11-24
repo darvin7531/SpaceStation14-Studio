@@ -1517,14 +1517,23 @@ mod rsi_project_binding_tests {
 
     #[test]
     fn editor_saves_reject_a_different_project_even_with_matching_files() {
-        let base = std::env::temp_dir().join(format!("studio-editor-binding-{}", std::process::id()));
+        let base =
+            std::env::temp_dir().join(format!("studio-editor-binding-{}", std::process::id()));
         let a = base.join("a");
         let b = base.join("b");
         for root in [&a, &b] {
             std::fs::create_dir_all(root.join("Resources/Prototypes")).unwrap();
             std::fs::create_dir_all(root.join("Resources/Locale/en-US")).unwrap();
-            std::fs::write(root.join("Resources/Prototypes/test.yml"), "- type: entity\n  id: Test\n").unwrap();
-            std::fs::write(root.join("Resources/Locale/en-US/test.ftl"), "test = Original\n").unwrap();
+            std::fs::write(
+                root.join("Resources/Prototypes/test.yml"),
+                "- type: entity\n  id: Test\n",
+            )
+            .unwrap();
+            std::fs::write(
+                root.join("Resources/Locale/en-US/test.ftl"),
+                "test = Original\n",
+            )
+            .unwrap();
         }
         let first = Arc::new(ProjectIndex::open(a.to_str().unwrap()).unwrap());
         let expected = first.overview().project_root.clone();
@@ -1534,7 +1543,10 @@ mod rsi_project_binding_tests {
         let ftl_revision = first.read_resource(ftl).unwrap().revision;
         let state = WorkspaceState(Mutex::new(Some(first)));
         *state.0.lock().unwrap() = Some(Arc::new(ProjectIndex::open(b.to_str().unwrap()).unwrap()));
-        for (path, revision, content) in [(yaml, yaml_revision, "- type: entity\n  id: Changed\n"), (ftl, ftl_revision, "test = Changed\n")] {
+        for (path, revision, content) in [
+            (yaml, yaml_revision, "- type: entity\n  id: Changed\n"),
+            (ftl, ftl_revision, "test = Changed\n"),
+        ] {
             let before = std::fs::read(b.join(path)).unwrap();
             let result = project_for_operation(&state, Some(&expected)).and_then(|index| {
                 if path == yaml {
