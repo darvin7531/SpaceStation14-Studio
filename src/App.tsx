@@ -1083,7 +1083,7 @@ export default function App() {
     };
     window.addEventListener('keydown', shortcut);
     return () => window.removeEventListener('keydown', shortcut);
-  }, [overview, selected?.path, document?.revision, drafts, draftBases, opening, transitioning, saving, refreshing, pendingAction, exitDialogOpen, creatingPrototype]);
+  }, [overview, creatingPrototype, selected?.path, document?.revision, drafts, draftBases, opening, transitioning, saving, refreshing, pendingAction, exitDialogOpen]);
 
   function openResource(item: EditorTab, preferredRsiState?: string | null): boolean {
     if (saving || transitioning || opening || refreshing) return false;
