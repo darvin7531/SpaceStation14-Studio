@@ -74,6 +74,7 @@ jobs:
         run: |
           packages=(src-tauri/target/release/bundle/deb/*.deb)
           [[ ${#packages[@]} -eq 1 && -f "${packages[0]}" ]]
+          echo "Debian package version: $(dpkg-deb -f "${packages[0]}" Version)"
           sudo apt-get install -y "./${packages[0]}"
           dpkg -L "$(dpkg-deb -f "${packages[0]}" Package)" | grep -Fx /usr/bin/ss14-studio
           test -x /usr/bin/ss14-studio
@@ -114,6 +115,7 @@ jobs:
           if ((Get-Item $binary).Length -lt 1MB) {
             throw "Portable executable is unexpectedly small: $binary"
           }
+          Write-Host "Windows executable version: $((Get-Item $binary).VersionInfo.FileVersion)"
       - name: Publish portable Windows executable (unsigned)
         uses: actions/upload-artifact@v4
         with:
