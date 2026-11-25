@@ -5,6 +5,7 @@ mod error;
 mod fluent_create;
 mod fluent_diagnostics;
 mod fluent_locale;
+mod gpu_settings;
 mod project;
 mod project_watcher;
 mod prototype_append;
@@ -1432,6 +1433,7 @@ pub fn run() -> Result<(), tauri::Error> {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            gpu_settings::create_window(app)?;
             app_updater::register(app)?;
             Ok(())
         })
@@ -1440,6 +1442,8 @@ pub fn run() -> Result<(), tauri::Error> {
         .manage(ProjectWatcher::default())
         .manage(DraftStorageLock::default())
         .invoke_handler(tauri::generate_handler![
+            gpu_settings::hardware_acceleration,
+            gpu_settings::set_hardware_acceleration,
             open_project,
             refresh_project,
             refresh_project_bound,

@@ -13,6 +13,7 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "SS14 Studio — Rust Rework",
         "width": 1240,
         "height": 820,

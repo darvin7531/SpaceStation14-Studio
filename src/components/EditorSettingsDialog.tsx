@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
 import { listen } from '@tauri-apps/api/event';
 import { openUrl } from '@tauri-apps/plugin-opener';
@@ -31,6 +32,26 @@ export default function EditorSettingsDialog({ value, onChange, localizationSett
   const [localeInput, setLocaleInput] = useState(localizationSettings.requiredLocales.join(', '));
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [linkError, setLinkError] = useState(false);
+  const [gpuEnabled, setGpuEnabled] = useState<boolean | null>(null);
+  const [gpuError, setGpuError] = useState(false);
+  const [gpuBusy, setGpuBusy] = useState(false);
+  const [gpuLoaded, setGpuLoaded] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void invoke<boolean | null>('hardware_acceleration').then((enabled) => {
+      if (active) { setGpuEnabled(enabled); setGpuLoaded(true); }
+    }).catch(() => { if (active) setGpuError(true); });
+    return () => { active = false; };
+  }, []);
+  async function changeGpu(enabled: boolean) {
+    setGpuBusy(true);
+    setGpuError(false);
+    try {
+      await invoke('set_hardware_acceleration', { enabled });
+      setGpuEnabled(enabled);
+    } catch { setGpuError(true); }
+    finally { setGpuBusy(false); }
+  }
   const localeInputRef = useRef(localeInput);
   const onLocalizationChangeRef = useRef(onLocalizationChange);
   onLocalizationChangeRef.current = onLocalizationChange;
@@ -130,6 +151,9 @@ export default function EditorSettingsDialog({ value, onChange, localizationSett
       </nav>
       <p>{t('settings.description')}</p>
       {section === 'general' && <div className="settings-fields">
+        {gpuEnabled !== null && <label className="settings-check"><input type="checkbox" checked={gpuEnabled} disabled={gpuBusy} onChange={(event) => void changeGpu(event.target.checked)}/>{t('settings.hardwareAcceleration')}</label>}
+        {gpuLoaded && <small>{gpuEnabled === null ? t('settings.hardwareAccelerationUnsupported') : t('settings.hardwareAccelerationHint')}</small>}
+        {gpuError && <small role="alert">{t('settings.hardwareAccelerationError')}</small>}
         <label>{t('settings.language')}
           <select value={language} onChange={(event) => setLanguage(event.target.value === 'en' ? 'en' : 'ru')}>
             <option value="ru">Русский</option>
