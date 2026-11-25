@@ -1,6 +1,6 @@
 [package]
 name = "ss14-studio"
-version = "0.1.5-alpha.1"
+version = "0.1.5-beta.1"
 description = "Rust rework of the Space Station 14 content editor"
 authors = ["darvin7531"]
 edition = "2021"
