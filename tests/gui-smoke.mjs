@@ -44,6 +44,7 @@ async function click(selector) {
   await until(selector, async () => {
     const id = await find(selector);
     if (!id || !(await call('GET', `/element/${id}/enabled`))) return false;
+    if (await script(`return !!document.querySelector(${JSON.stringify(selector)})?.closest('[aria-disabled="true"]');`)) return false;
     try { await call('POST', `/element/${id}/click`, {}); } catch (error) {
       if (!/stale element reference/i.test(error.message)) throw error;
       return false;
@@ -61,8 +62,13 @@ async function edit(value, token) {
   const editor = await until('Monaco input', () => find('.monaco-shell textarea.inputarea'));
   await script("document.querySelector('.monaco-shell textarea.inputarea').focus();");
   await keys(editor, '\uE009a\uE000'); // Ctrl+A, then release modifiers
-  // Yield between keystrokes so Monaco and React process each input before the next.
-  for (const character of value) await keys(editor, character);
+  // WebDriver can return before WebKit delivers a key to Monaco.
+  let prefix = '';
+  for (const character of value) {
+    prefix += character;
+    await keys(editor, character);
+    await until(`editor input ${prefix}`, () => script(`return document.querySelector('.monaco-shell .view-lines')?.textContent?.replace(/\u00a0/g, ' ').startsWith(${JSON.stringify(prefix)});`));
+  }
   await keys(editor, '\uE017\uE017'); // Remove Monaco's auto-inserted closing brackets.
   try {
     await until(`edited draft ${token}`, () => script(`return document.querySelector('.monaco-shell .view-lines')?.textContent?.replace(/\u00a0/g, ' ') === ${JSON.stringify(value)};`));
