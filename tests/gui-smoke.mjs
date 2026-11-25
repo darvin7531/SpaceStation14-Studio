@@ -61,10 +61,11 @@ async function edit(value, token) {
   const editor = await until('Monaco input', () => find('.monaco-shell textarea.inputarea'));
   await script("document.querySelector('.monaco-shell textarea.inputarea').focus();");
   await keys(editor, '\uE009a\uE000'); // Ctrl+A, then release modifiers
-  await keys(editor, value);
+  // Yield between keystrokes so Monaco and React process each input before the next.
+  for (const character of value) await keys(editor, character);
   await keys(editor, '\uE017\uE017'); // Remove Monaco's auto-inserted closing brackets.
   try {
-    await until('edited draft', () => script(`return document.querySelector('.monaco-shell .view-lines')?.textContent?.includes(${JSON.stringify(token)});`));
+    await until(`edited draft ${token}`, () => script(`return document.querySelector('.monaco-shell .view-lines')?.textContent?.replace(/\u00a0/g, ' ') === ${JSON.stringify(value)};`));
   } catch (error) {
     console.error('Edit diagnostic:', await script("return JSON.stringify({active: document.activeElement?.outerHTML, lines: document.querySelector('.monaco-shell .view-lines')?.textContent, tabs: [...document.querySelectorAll('[role=tab]')].map(tab => tab.outerHTML)});"));
     throw error;
