@@ -10,7 +10,7 @@ use tauri_plugin_updater::{Update, UpdaterExt};
 use crate::error::{internal_lock, StudioError};
 
 const MANIFEST_URL: &str =
-    "https://github.com/darvin7531/SpaceStation14-Studio/releases/latest/download/tauri-latest.json";
+    "https://github.com/darvin7531/SpaceStation14-Studio/releases/download/beta-updates/tauri-latest.json";
 
 #[derive(Default)]
 pub struct PendingUpdate(pub Mutex<Option<Update>>);
@@ -186,9 +186,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_tauri_manifest_is_accepted_not_electron_feed() {
-        assert!(MANIFEST_URL.starts_with("https://github.com/darvin7531/"));
-        assert!(MANIFEST_URL.ends_with("/tauri-latest.json"));
-        assert!(!MANIFEST_URL.ends_with("/latest.yml"));
+    fn beta_discovery_uses_fixed_repository_and_channel_asset() {
+        assert_eq!(
+            MANIFEST_URL,
+            "https://github.com/darvin7531/SpaceStation14-Studio/releases/download/beta-updates/tauri-latest.json"
+        );
     }
 }

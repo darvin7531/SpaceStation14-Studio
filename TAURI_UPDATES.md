@@ -12,9 +12,10 @@ The updater cannot operate without an independently signed Tauri artifact.
 3. Store the private key in protected CI secrets TAURI_SIGNING_PRIVATE_KEY
    (and TAURI_SIGNING_PRIVATE_KEY_PASSWORD if applicable).
    Enable release bundles with bundle.createUpdaterArtifacts=true only for signed releases.
-4. Publish the signed Tauri update bundles and their .sig files with a separate
-   tauri-latest.json static manifest on the GitHub latest stable release.
-   Each platform entry needs a download URL and the actual signature contents.
+4. Publish the signed Tauri update bundles and their .sig files on the versioned
+   beta prerelease. Publish its separate tauri-latest.json on the fixed
+   `beta-updates` release as described in .github/BETA-RELEASE.md. Each platform
+   entry needs a download URL and the actual signature contents.
 5. Manual smoke-test Windows, Linux and macOS install, signatures, GUI and restart.
    The normal repository CI builds only unsigned test executables.
 
