@@ -35,15 +35,16 @@ export default function EditorSettingsDialog({ value, onChange, localizationSett
   const [gpuEnabled, setGpuEnabled] = useState<boolean | null>(null);
   const [gpuError, setGpuError] = useState(false);
   const [gpuBusy, setGpuBusy] = useState(false);
-  const [gpuLoaded, setGpuLoaded] = useState(false);
+  const [gpuSupported, setGpuSupported] = useState<boolean | null>(null);
+  const [gpuPolicyError, setGpuPolicyError] = useState(false);
   useEffect(() => {
     let active = true;
-    void invoke<boolean | null>('hardware_acceleration').then((enabled) => {
-      if (active) { setGpuEnabled(enabled); setGpuLoaded(true); }
-    }).catch(() => { if (active) setGpuError(true); });
+    void invoke<{ supported: boolean; enabled: boolean | null; policy_error: boolean }>('hardware_acceleration').then((setting) => {
+      if (active) { setGpuEnabled(setting.enabled); setGpuSupported(setting.supported); setGpuPolicyError(setting.policy_error); }
+    }).catch(() => { if (active) { setGpuError(true); setGpuSupported(true); } });
     return () => { active = false; };
   }, []);
-  async function changeGpu(enabled: boolean) {
+  async function changeGpu(enabled: boolean | null) {
     setGpuBusy(true);
     setGpuError(false);
     try {
@@ -151,9 +152,18 @@ export default function EditorSettingsDialog({ value, onChange, localizationSett
       </nav>
       <p>{t('settings.description')}</p>
       {section === 'general' && <div className="settings-fields">
-        {gpuEnabled !== null && <label className="settings-check"><input type="checkbox" checked={gpuEnabled} disabled={gpuBusy} onChange={(event) => void changeGpu(event.target.checked)}/>{t('settings.hardwareAcceleration')}</label>}
-        {gpuLoaded && <small>{gpuEnabled === null ? t('settings.hardwareAccelerationUnsupported') : t('settings.hardwareAccelerationHint')}</small>}
+        {gpuSupported && <label>{t('settings.hardwareAcceleration')}
+          <select value={gpuError ? 'error' : gpuEnabled === null ? 'default' : String(gpuEnabled)} disabled={gpuBusy}
+            onChange={(event) => void changeGpu(event.target.value === 'default' ? null : event.target.value === 'true')}>
+            {gpuError && <option value="error" disabled>{t('settings.hardwareAccelerationError')}</option>}
+            <option value="default">{t('settings.hardwareAccelerationDefault')}</option>
+            <option value="true">{t('settings.enabled')}</option>
+            <option value="false">{t('settings.disabled')}</option>
+          </select>
+        </label>}
+        {gpuSupported !== null && <small>{gpuSupported ? t('settings.hardwareAccelerationHint') : t('settings.hardwareAccelerationUnsupported')}</small>}
         {gpuError && <small role="alert">{t('settings.hardwareAccelerationError')}</small>}
+        {gpuPolicyError && <small role="alert">{t('settings.hardwareAccelerationPolicyError')}</small>}
         <label>{t('settings.language')}
           <select value={language} onChange={(event) => setLanguage(event.target.value === 'en' ? 'en' : 'ru')}>
             <option value="ru">Русский</option>
